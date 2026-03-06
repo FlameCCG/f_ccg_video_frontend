@@ -43,7 +43,7 @@ const routes: RouteRecordRaw[] = [
       {
         path: 'video/:id',
         name: 'video-detail',
-        component: () => import('@/views/Home.vue'), // Placeholder - will be replaced
+        component: () => import('@/views/video/VideoDetail.vue'),
       },
       {
         path: 'upload',

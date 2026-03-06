@@ -4,18 +4,21 @@
 
 ```
 ┌─────────────────────────────────────────────────────────┐
-│  主 Agent (Opus 4.6) — 架构 / DOM / API 对接 / 编排     │
+│  主 Agent (Composer 1.5) — 架构 / DOM / API 对接 / 编排     │
 │  职责: 读 tasks.md → 写 Vue 组件骨架+逻辑+API 调用      │
 │        → 跑 lint/typecheck → 派发子 Agent                │
 └─────────────┬───────────────────────────┬───────────────┘
               │ ① 完成 DOM + API 后       │ ② 样式完成后
               ▼                           ▼
-┌──────────────────────────┐ ┌──────────────────────────────┐
-│ 样式 Agent (gemini-3.1-pro)  │ │ 测试 Agent (gpt-5.4-xhigh-fast)   │
-│ 技能: ui-ux-pro-max      │ │ 技能: e2e-playwright-test     │
-│ 输入: 组件路径+设计要求   │ │ 输入: 页面URL+验收清单        │
-│ 输出: Tailwind/CSS 样式   │ │ 输出: PASS/FAIL + issue.md    │
-└──────────────────────────┘ └──────────────────────────────┘
+┌──────────────────────────────┐ ┌──────────────────────────────┐
+│ 样式 Agent (gemini-3.1-pro) │ │ 测试 Agent (gpt-5.4-medium)  │
+│ subagent: css-artisan        │ │ subagent: e2e-playwright-test│
+│ 输入: 组件路径+设计要求      │ │ 输入: 页面URL+验收清单       │
+│ 范围: Tailwind class + CSS   │ │ 输出: PASS/FAIL + issue.md   │
+│ 可改: <template> class 属性  │ │                              │
+│       <style> 块             │ │                              │
+│ 禁改: DOM 结构 / JS 逻辑    │ │                              │
+└──────────────────────────────┘ └──────────────────────────────┘
 ```
 
 ### 执行顺序 (严格)
@@ -27,12 +30,15 @@
    - 确保 `pnpm dev` 能启动且页面可访问
 2. **派发样式 Agent** (subagent_type=`css-artisan`, model 指定 Gemini 3.1 Pro)
    - 传入：需要美化的组件文件路径列表 + 设计上下文（参考 ui-ux-pro-max 设计系统）
+   - 样式 Agent 可修改：`<template>` 中的 Tailwind class 属性、`<style>` 块
+   - 样式 Agent 禁止修改：DOM 结构（标签嵌套）、`<script>` 逻辑代码
    - 等待返回，检查 lint 无报错
-3. **派发测试 Agent** (subagent_type=`generalPurpose`, model 指定 GPT-5.3 Codex)
+3. **派发测试 Agent** (subagent_type=`e2e-playwright-test`, model 指定 gpt-5.4-medium)
    - 传入：测试的页面 URL + 验收清单（从 tasks.md Requirements 提取）
    - 等待返回测试报告
-4. **如果测试 FAIL**：主 Agent 根据 issue.md 修复 → 重跑步骤 2-3
-5. **全部 PASS**：Git 提交（Angular 规范、中文 body）
+4. **如果测试 FAIL**：主 Agent 根据 issue.md 修复 → 重跑步骤 2-3（最多重试 3 次）
+5. **如果重试 3 次仍 FAIL**：记录到 issue.md 标记为 🟡 待排查，继续下一个 Task
+6. **全部 PASS**：Git 提交（Angular 规范、中文 body）
 
 ### 子 Agent 派发模板
 
@@ -50,7 +56,12 @@
 - 技术栈: Vue 3 + shadcn-vue + Tailwind CSS
 - 主题色: Bilibili 蓝 (#00a1d6)
 - 要求: 参考 ui-ux-pro-max 设计系统，bilibili 风格，响应式适配
-- 不改变组件的 DOM 结构和逻辑代码，只优化 class / style
+
+修改范围:
+- ✅ 可改: <template> 中的 Tailwind class 属性
+- ✅ 可改: <style> 块 (CSS Variables、动画、过渡)
+- ❌ 禁改: DOM 标签结构 (不增删改标签嵌套)
+- ❌ 禁改: <script> 中的任何逻辑代码
 ```
 
 #### 派发测试 Agent
@@ -82,8 +93,10 @@
 - ArtPlayer + artplayer-plugin-danmuku (视频播放器)
 - Tailwind CSS + CSS Variables (样式)
 - Pinia + pinia-plugin-persistedstate (状态管理)
-- VeeValidate + Zod (表单验证)
 - Lucide Icons (图标)
+
+### 按需引入
+- VeeValidate + Zod (复杂表单验证场景，如上传投稿表单)
 
 ### 禁止使用
 - Element Plus (太重，难定制)
@@ -234,14 +247,17 @@ Playwright MCP 支持本地文件上传，无需脚本替代:
 
 ```
 src/
-├── api/          # API 封装
-├── components/   # 通用组件
-├── composables/  # 组合式函数
-├── layouts/      # 布局组件
+├── api/          # API 封装 (按模块: user.ts, video.ts, comment.ts ...)
+├── assets/       # 静态资源 (styles/, images/)
+├── components/   # 通用组件 (ui/, layout/, common/, player/, comment/ ...)
+├── composables/  # 组合式函数 (useChunkUpload, useChatWebSocket ...)
+├── layouts/      # 布局组件 (MainLayout.vue)
+├── lib/          # 第三方库工具封装 (utils.ts)
 ├── router/       # 路由配置
-├── stores/       # Pinia stores
-├── utils/        # 工具函数
-└── views/        # 页面视图
+├── stores/       # Pinia stores (auth.ts, video.ts, theme.ts ...)
+├── types/        # TypeScript 类型定义 (api.d.ts, components.d.ts ...)
+├── utils/        # 业务工具函数 (hash.ts, format.ts ...)
+└── views/        # 页面视图 (按模块分目录: home/, video/, user/ ...)
 ```
 
 ## Bug 追踪
@@ -256,7 +272,7 @@ src/
 - **截图**: (如有)
 - **API 异常**: (如有，附 network request 信息)
 - **控制台错误**: (如有)
-- **状态**: 🔴 未修复 / 🟢 已修复
+- **状态**: 🔴 未修复 / 🟡 待排查 (重试 3 次仍失败) / 🟢 已修复
 ```
 
 ---
@@ -283,14 +299,15 @@ src/
 ├──────────────────────────── ↓ ──────────────────────────────┤
 │ 7. 主 Agent 验证样式改动无 lint 错误                        │
 ├──────────────────────────── ↓ ──────────────────────────────┤
-│ 8. 派发测试 Agent (GPT-5.3 Codex)                          │
+│ 8. 派发测试 Agent (subagent: e2e-playwright-test)            │
 │    - 输入: 页面 URL + 验收清单 (从 Requirements 提取)       │
 │    - 测试 Agent 用 Playwright MCP 执行 E2E 测试             │
 │    - 输出: ALL PASS / FAIL (写入 issue.md)                  │
 ├──────────────────────────── ↓ ──────────────────────────────┤
-│ 9. 如果 FAIL → 主 Agent 修复 → 跳回步骤 5                  │
-│ 10. 如果 PASS → Git 提交 (Angular 规范)                    │
-│ 11. 标记 tasks.md 中对应 Task 为 [x]                       │
-│ 12. 进入下一个 Task，循环                                   │
+│ 9. 如果 FAIL → 主 Agent 修复 → 跳回步骤 5 (最多重试 3 次)  │
+│ 10. 如果重试 3 次仍 FAIL → 记录 issue.md 🟡 → 继续下一 Task│
+│ 11. 如果 PASS → Git 提交 (Angular 规范)                    │
+│ 12. 标记 tasks.md 中对应 Task 为 [x]                       │
+│ 13. 进入下一个 Task，循环                                   │
 └────────────────────────────────────────────────────────────┘
 ```

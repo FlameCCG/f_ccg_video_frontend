@@ -1,43 +1,69 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, onBeforeUnmount } from 'vue'
 import { RouterView } from 'vue-router'
 import Navbar from '@/components/layout/Navbar.vue'
 import ChannelNav from '@/components/layout/ChannelNav.vue'
-import { getTopBanners, type BannerItem } from '@/api/banner'
 
-const banner = ref<BannerItem | null>(null)
+const bannerRef = ref<HTMLDivElement | null>(null)
+const videoRef = ref<HTMLVideoElement | null>(null)
+let mouseEnterX = 0
 
-onMounted(async () => {
-  try {
-    const banners = await getTopBanners()
-    if (banners.length > 0) {
-      banner.value = banners[0] as BannerItem
-    }
-  } catch (error) {
-    console.error('Failed to fetch top banner:', error)
+const onBannerMouseEnter = (e: MouseEvent) => {
+  mouseEnterX = e.clientX
+  if (videoRef.value) {
+    videoRef.value.style.transition = 'none'
+  }
+}
+
+const onBannerMouseMove = (e: MouseEvent) => {
+  if (!videoRef.value) return
+  const dx = e.clientX - mouseEnterX
+  const shift = -dx / 20
+  videoRef.value.style.transform = `translateX(${shift}px) translateY(-4px) scale(1.15)`
+}
+
+const onBannerMouseLeave = () => {
+  if (!videoRef.value) return
+  videoRef.value.style.transition = 'transform 0.4s cubic-bezier(0.4, 0, 0.2, 1)'
+  videoRef.value.style.transform = 'translateX(0) translateY(-4px) scale(1.15)'
+}
+
+onMounted(() => {
+  const el = bannerRef.value
+  if (el) {
+    el.addEventListener('mouseenter', onBannerMouseEnter)
+    el.addEventListener('mousemove', onBannerMouseMove)
+    el.addEventListener('mouseleave', onBannerMouseLeave)
+  }
+})
+
+onBeforeUnmount(() => {
+  const el = bannerRef.value
+  if (el) {
+    el.removeEventListener('mouseenter', onBannerMouseEnter)
+    el.removeEventListener('mousemove', onBannerMouseMove)
+    el.removeEventListener('mouseleave', onBannerMouseLeave)
   }
 })
 </script>
 
 <template>
   <div class="relative min-h-screen bg-background">
-    <!-- Header with Banner - only covers navbar area -->
-    <div class="relative h-[150px]">
-      <!-- Banner Background -->
-      <div class="absolute inset-0 z-0 w-full overflow-hidden">
-        <img
-          v-if="banner"
-          :src="banner.cover"
-          alt="Banner"
-          class="h-full w-full object-cover object-top"
+    <!-- Header with Video Banner (Bilibili-style parallax) -->
+    <div ref="bannerRef" class="banner-shell relative h-[200px] cursor-pointer">
+      <!-- Video Background -->
+      <div class="absolute inset-0 z-0 flex items-center justify-center overflow-hidden">
+        <video
+          ref="videoRef"
+          loop
+          autoplay
+          muted
+          playsinline
+          src="/banner-video.mp4"
+          class="banner-video pointer-events-none h-full min-w-full object-cover"
         />
-        <div v-else class="h-full w-full bg-gradient-to-r from-sky-400 to-blue-500"></div>
-        <!-- Gradient Overlay -->
-        <div
-          class="absolute inset-0 bg-gradient-to-b from-black/30 via-transparent to-transparent"
-        ></div>
-        <!-- Banner Link -->
-        <a v-if="banner" :href="banner.href" target="_blank" class="absolute inset-0"></a>
+        <!-- Gradient overlays for readability -->
+        <div class="absolute inset-0 bg-gradient-to-b from-black/40 via-black/10 to-black/30"></div>
       </div>
 
       <!-- Navbar -->
@@ -46,7 +72,7 @@ onMounted(async () => {
       </div>
     </div>
 
-    <!-- Channel Navigation - white background, separate from banner -->
+    <!-- Channel Navigation -->
     <div class="sticky top-0 z-40 w-full bg-background shadow-sm">
       <ChannelNav />
     </div>
@@ -57,3 +83,10 @@ onMounted(async () => {
     </main>
   </div>
 </template>
+
+<style scoped>
+.banner-video {
+  transform: translateX(0) translateY(-4px) scale(1.15);
+  will-change: transform;
+}
+</style>

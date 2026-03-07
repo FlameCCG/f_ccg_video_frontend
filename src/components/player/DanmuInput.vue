@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
 import { useAuthStore } from '@/stores/auth'
-import { sendDanmu, type DanmuPositionType, DanmuPosition } from '@/api/danmu'
+import { sendDanmu, getDanmuHistory, type DanmuPositionType, DanmuPosition } from '@/api/danmu'
 import { toast } from 'vue-sonner'
 import {
   Send,
@@ -11,6 +11,7 @@ import {
   MoveHorizontal,
   Eye,
   EyeOff,
+  Calendar,
 } from 'lucide-vue-next'
 
 const props = defineProps<{
@@ -22,6 +23,7 @@ const props = defineProps<{
 const emit = defineEmits<{
   sent: [danmu: { text: string; time: number; color: string; mode: 0 | 1 | 2 }]
   toggleVisible: [visible: boolean]
+  loadHistory: [danmuList: { text: string; time: number; color: string; mode: 0 | 1 | 2 }[]]
 }>()
 
 const authStore = useAuthStore()
@@ -96,6 +98,32 @@ const handleSend = async () => {
 const toggleDanmuVisible = () => {
   danmuVisible.value = !danmuVisible.value
   emit('toggleVisible', danmuVisible.value)
+}
+
+const historyDate = ref('')
+const loadingHistory = ref(false)
+
+const handleLoadHistory = async () => {
+  if (!historyDate.value || loadingHistory.value) return
+  loadingHistory.value = true
+  try {
+    const result = await getDanmuHistory({
+      videoId: props.videoId,
+      partId: props.partId,
+    })
+    const mapped = (result.list ?? []).map((d) => ({
+      text: d.content,
+      time: d.timeOffset / 1000,
+      color: d.color || '#ffffff',
+      mode: (d.position ?? 0) as 0 | 1 | 2,
+    }))
+    emit('loadHistory', mapped)
+    toast.success(`已加载 ${mapped.length} 条历史弹幕`)
+  } catch {
+    toast.error('加载历史弹幕失败')
+  } finally {
+    loadingHistory.value = false
+  }
 }
 
 const handleKeydown = (e: KeyboardEvent) => {
@@ -182,6 +210,22 @@ const handleKeydown = (e: KeyboardEvent) => {
               >
                 <component :is="pos.icon" :size="16" />
                 <span>{{ pos.label }}</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- Historical Danmu -->
+          <div>
+            <p class="setting-title">历史弹幕</p>
+            <div class="flex items-center gap-2">
+              <Calendar :size="14" class="shrink-0 text-muted-foreground" />
+              <input v-model="historyDate" type="date" class="history-date-input flex-1" />
+              <button
+                class="history-load-btn"
+                :disabled="!historyDate || loadingHistory"
+                @click="handleLoadHistory"
+              >
+                {{ loadingHistory ? '加载中...' : '加载' }}
               </button>
             </div>
           </div>
@@ -488,6 +532,52 @@ const handleKeydown = (e: KeyboardEvent) => {
   color: #00a1d6;
   background: rgb(0 161 214 / 0.15);
   border-color: rgb(0 161 214 / 0.4);
+}
+
+/* --- Historical Danmu --- */
+.history-date-input {
+  height: 30px;
+  border-radius: 6px;
+  background: #f1f2f3;
+  border: 1px solid transparent;
+  padding: 0 8px;
+  font-size: 12px;
+  color: #18191c;
+  outline: none;
+  transition: all 0.2s ease;
+}
+
+.history-date-input:focus {
+  border-color: #00a1d6;
+  background: #fff;
+}
+
+:deep(.dark) .history-date-input,
+.dark .history-date-input {
+  background: #2f3134;
+  color: #e3e5e7;
+}
+
+.history-load-btn {
+  padding: 4px 12px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 500;
+  background: #00a1d6;
+  color: white;
+  border: none;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+}
+
+.history-load-btn:hover:not(:disabled) {
+  background: #0091c2;
+}
+
+.history-load-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 /* --- Animations --- */

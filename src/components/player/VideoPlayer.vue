@@ -14,6 +14,7 @@ const props = defineProps<{
 const emit = defineEmits<{
   ready: [instance: Artplayer]
   danmuPlugin: [plugin: ReturnType<ReturnType<typeof artplayerPluginDanmuku>>]
+  danmuClick: [event: MouseEvent, text: string]
 }>()
 
 const videoStore = useVideoStore()
@@ -251,6 +252,23 @@ const initPlayer = () => {
     | undefined
   if (danmuPlugin) {
     emit('danmuPlugin', danmuPlugin)
+  }
+
+  // Danmu click interaction via event delegation (Requirements: 4.7)
+  const container = containerRef.value
+  if (container) {
+    container.addEventListener('click', (e: MouseEvent) => {
+      const target = e.target as HTMLElement
+      if (target.classList.contains('art-danmuku-item') || target.closest('.art-danmuku-item')) {
+        const el = target.classList.contains('art-danmuku-item')
+          ? target
+          : (target.closest('.art-danmuku-item') as HTMLElement)
+        if (el) {
+          e.stopPropagation()
+          emit('danmuClick', e, el.textContent?.trim() ?? '')
+        }
+      }
+    })
   }
 }
 

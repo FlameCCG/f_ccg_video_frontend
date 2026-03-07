@@ -116,16 +116,11 @@ const navActions = [
 </script>
 
 <template>
-  <nav class="mx-auto flex h-14 max-w-[2000px] items-center justify-between px-6 sm:px-10 lg:px-16">
+  <nav class="mx-auto flex h-14 max-w-[1800px] items-center justify-between px-4 sm:px-6 lg:px-8">
     <!-- Left: Logo -->
     <div class="flex items-center gap-6">
       <router-link to="/" class="flex items-center gap-2">
-        <div
-          class="flex h-8 w-8 items-center justify-center rounded-lg bg-white text-primary text-xl font-bold"
-        >
-          B
-        </div>
-        <span class="hidden text-lg font-bold text-white sm:block drop-shadow-sm">BiliVideo</span>
+        <img src="/logo.png" alt="Logo" class="h-10 w-auto object-contain drop-shadow-md" />
       </router-link>
     </div>
 

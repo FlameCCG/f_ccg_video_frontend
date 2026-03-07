@@ -45,7 +45,7 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="mx-auto max-w-[2000px] px-4 py-4 sm:px-6 lg:px-8">
+  <div class="mx-auto mt-6 mb-8 max-w-[1800px] px-4 sm:px-6 lg:px-8">
     <!-- Page Header -->
     <div class="mb-6 flex items-center gap-3">
       <div class="flex h-10 w-10 items-center justify-center rounded-full bg-yellow-500/10">

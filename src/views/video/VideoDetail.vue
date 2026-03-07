@@ -10,7 +10,17 @@ import AuthorCard from '@/components/user/AuthorCard.vue'
 import VideoRecommend from '@/components/video/VideoRecommend.vue'
 import PartList from '@/components/video/PartList.vue'
 import { useDanmuWebSocket } from '@/composables/useDanmuWebSocket'
-import { Eye, MessageSquare, Clock, Tag as TagIcon, ChevronDown, ChevronUp } from 'lucide-vue-next'
+import { toast } from 'vue-sonner'
+import {
+  Eye,
+  MessageSquare,
+  Clock,
+  Tag as TagIcon,
+  ChevronDown,
+  ChevronUp,
+  ThumbsUp,
+  Flag,
+} from 'lucide-vue-next'
 
 const route = useRoute()
 const videoStore = useVideoStore()
@@ -51,6 +61,50 @@ const handleDanmuSent = (danmu: { text: string; time: number; color: string; mod
 
 const handleDanmuToggleVisible = (visible: boolean) => {
   playerRef.value?.setDanmuVisible(visible)
+}
+
+const danmuMenu = ref<{ show: boolean; x: number; y: number; text: string }>({
+  show: false,
+  x: 0,
+  y: 0,
+  text: '',
+})
+
+const handleDanmuClick = (event: MouseEvent, text: string) => {
+  danmuMenu.value = {
+    show: true,
+    x: event.clientX,
+    y: event.clientY,
+    text,
+  }
+}
+
+const closeDanmuMenu = () => {
+  danmuMenu.value.show = false
+}
+
+const handleDanmuLike = () => {
+  toast.info('弹幕点赞需要弹幕ID，当前暂不支持')
+  closeDanmuMenu()
+}
+
+const handleDanmuReport = () => {
+  toast.info('举报功能即将上线')
+  closeDanmuMenu()
+}
+
+const handleDanmuLoadHistory = (
+  danmuList: { text: string; time: number; color: string; mode: 0 | 1 | 2 }[]
+) => {
+  if (!playerRef.value?.artRef) return
+  const plugin = playerRef.value.artRef.plugins?.artplayerPluginDanmuku as
+    | { load: (data: unknown) => Promise<unknown> }
+    | undefined
+  if (plugin) {
+    void plugin.load(
+      danmuList.map((d) => ({ text: d.text, time: d.time, color: d.color, mode: d.mode }))
+    )
+  }
 }
 
 const formatCount = (count: number): string => {
@@ -125,7 +179,12 @@ onBeforeUnmount(() => {
       <!-- Left Column: Player + Info -->
       <div class="min-w-0 flex-1">
         <!-- Video Player -->
-        <VideoPlayer ref="playerRef" :part-id="currentPartId" class="player-container" />
+        <VideoPlayer
+          ref="playerRef"
+          :part-id="currentPartId"
+          class="player-container"
+          @danmu-click="handleDanmuClick"
+        />
 
         <!-- Danmu Input -->
         <DanmuInput
@@ -136,6 +195,7 @@ onBeforeUnmount(() => {
           class="mt-2"
           @sent="handleDanmuSent"
           @toggle-visible="handleDanmuToggleVisible"
+          @load-history="handleDanmuLoadHistory"
         />
 
         <!-- Video Info Section -->
@@ -242,6 +302,37 @@ onBeforeUnmount(() => {
         <p class="mt-4 text-lg font-medium text-muted-foreground">视频不存在或已删除</p>
       </div>
     </div>
+
+    <!-- Danmu Context Menu (floating) -->
+    <Teleport to="body">
+      <Transition name="fade">
+        <div v-if="danmuMenu.show" class="fixed inset-0 z-[9999]" @click="closeDanmuMenu">
+          <div
+            class="danmu-ctx-menu absolute rounded-lg border border-border bg-popover p-1 shadow-lg"
+            :style="{ left: danmuMenu.x + 'px', top: danmuMenu.y + 'px' }"
+            @click.stop
+          >
+            <p class="mb-1 truncate px-2 py-1 text-xs text-muted-foreground">
+              {{ danmuMenu.text }}
+            </p>
+            <button
+              class="flex w-full items-center gap-2 rounded px-2 py-1.5 text-sm hover:bg-muted"
+              @click="handleDanmuLike"
+            >
+              <ThumbsUp :size="14" />
+              <span>点赞弹幕</span>
+            </button>
+            <button
+              class="flex w-full items-center gap-2 rounded px-2 py-1.5 text-sm text-destructive hover:bg-destructive/10"
+              @click="handleDanmuReport"
+            >
+              <Flag :size="14" />
+              <span>举报弹幕</span>
+            </button>
+          </div>
+        </div>
+      </Transition>
+    </Teleport>
   </div>
 </template>
 
@@ -317,5 +408,20 @@ onBeforeUnmount(() => {
 
 :global(.dark) .desc-box:hover {
   box-shadow: 0 2px 8px rgb(0 0 0 / 0.2);
+}
+
+.danmu-ctx-menu {
+  min-width: 140px;
+  transform: translate(-50%, 8px);
+}
+
+.fade-enter-active,
+.fade-leave-active {
+  transition: opacity 0.15s ease;
+}
+
+.fade-enter-from,
+.fade-leave-to {
+  opacity: 0;
 }
 </style>

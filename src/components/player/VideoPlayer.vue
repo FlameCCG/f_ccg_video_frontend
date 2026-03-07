@@ -1,8 +1,10 @@
 <script setup lang="ts">
 import { ref, onMounted, onBeforeUnmount, watch, computed } from 'vue'
 import Artplayer, { type Option, type Setting } from 'artplayer'
+import artplayerPluginDanmuku from 'artplayer-plugin-danmuku'
 import { useVideoStore } from '@/stores/video'
 import { useAuthStore } from '@/stores/auth'
+import { getDanmuList, type DanmuItem } from '@/api/danmu'
 import type { VideoResourceItem } from '@/api/video'
 
 const props = defineProps<{
@@ -11,6 +13,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   ready: [instance: Artplayer]
+  danmuPlugin: [plugin: ReturnType<ReturnType<typeof artplayerPluginDanmuku>>]
 }>()
 
 const videoStore = useVideoStore()
@@ -57,6 +60,78 @@ let progressSaveTimer: ReturnType<typeof setInterval> | null = null
 const PROGRESS_SAVE_INTERVAL = 10000
 
 let qualitySwitchTime = 0
+
+const danmuVisible = ref(true)
+const danmuOpacity = ref(1)
+
+const loadDanmuList = async (): Promise<
+  { text: string; time: number; color: string; mode: 0 | 1 | 2 }[]
+> => {
+  const vid = videoStore.currentVideo?.id
+  if (!vid) return []
+  try {
+    const result = await getDanmuList({
+      videoId: vid,
+      partId: props.partId,
+      pageSize: 5000,
+    })
+    return (result.list ?? []).map((d: DanmuItem) => ({
+      text: d.content,
+      time: d.timeOffset / 1000,
+      color: d.color || '#ffffff',
+      mode: (d.position ?? 0) as 0 | 1 | 2,
+    }))
+  } catch {
+    return []
+  }
+}
+
+const emitDanmu = (danmu: { text: string; time: number; color?: string; mode?: 0 | 1 | 2 }) => {
+  if (!artRef.value) return
+  const plugin = artRef.value.plugins?.artplayerPluginDanmuku as
+    | ReturnType<ReturnType<typeof artplayerPluginDanmuku>>
+    | undefined
+  if (plugin) {
+    plugin.emit({
+      text: danmu.text,
+      time: danmu.time,
+      color: danmu.color,
+      mode: danmu.mode ?? 0,
+    })
+  }
+}
+
+const setDanmuVisible = (visible: boolean) => {
+  danmuVisible.value = visible
+  if (!artRef.value) return
+  const plugin = artRef.value.plugins?.artplayerPluginDanmuku as
+    | ReturnType<ReturnType<typeof artplayerPluginDanmuku>>
+    | undefined
+  if (plugin) {
+    if (visible) plugin.show()
+    else plugin.hide()
+  }
+}
+
+const setDanmuOpacity = (opacity: number) => {
+  danmuOpacity.value = opacity
+  if (!artRef.value) return
+  const plugin = artRef.value.plugins?.artplayerPluginDanmuku as
+    | ReturnType<ReturnType<typeof artplayerPluginDanmuku>>
+    | undefined
+  if (plugin) {
+    plugin.config({ ...plugin.option, opacity })
+  }
+}
+
+defineExpose({
+  emitDanmu,
+  setDanmuVisible,
+  setDanmuOpacity,
+  danmuVisible,
+  danmuOpacity,
+  artRef,
+})
 
 const initPlayer = () => {
   if (!containerRef.value || !primaryUrl.value) return
@@ -112,6 +187,21 @@ const initPlayer = () => {
     playsInline: true,
     layers: [],
     settings,
+    plugins: [
+      artplayerPluginDanmuku({
+        danmuku: loadDanmuList,
+        speed: 5,
+        opacity: 1,
+        fontSize: 18,
+        color: '#ffffff',
+        mode: 0,
+        antiOverlap: true,
+        synchronousPlayback: true,
+        emitter: false,
+        heatmap: true,
+        maxLength: 200,
+      }),
+    ],
   }
 
   const art = new Artplayer(option)
@@ -155,6 +245,13 @@ const initPlayer = () => {
 
   artRef.value = art
   emit('ready', art)
+
+  const danmuPlugin = art.plugins?.artplayerPluginDanmuku as
+    | ReturnType<ReturnType<typeof artplayerPluginDanmuku>>
+    | undefined
+  if (danmuPlugin) {
+    emit('danmuPlugin', danmuPlugin)
+  }
 }
 
 const setupProgressSave = (art: Artplayer) => {

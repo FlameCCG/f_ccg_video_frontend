@@ -4,14 +4,17 @@ import { useRoute } from 'vue-router'
 import { useVideoStore } from '@/stores/video'
 import { addVideoView } from '@/api/video'
 import VideoPlayer from '@/components/player/VideoPlayer.vue'
+import DanmuInput from '@/components/player/DanmuInput.vue'
 import VideoActions from '@/components/video/VideoActions.vue'
 import AuthorCard from '@/components/user/AuthorCard.vue'
 import VideoRecommend from '@/components/video/VideoRecommend.vue'
 import PartList from '@/components/video/PartList.vue'
+import { useDanmuWebSocket } from '@/composables/useDanmuWebSocket'
 import { Eye, MessageSquare, Clock, Tag as TagIcon, ChevronDown, ChevronUp } from 'lucide-vue-next'
 
 const route = useRoute()
 const videoStore = useVideoStore()
+const playerRef = ref<InstanceType<typeof VideoPlayer> | null>(null)
 
 const videoId = computed(() => {
   const id = route.params.id
@@ -24,6 +27,31 @@ const video = computed(() => videoStore.currentVideo)
 
 const currentPartId = ref<number | undefined>(undefined)
 const descExpanded = ref(false)
+const currentPlayerTime = computed(() => videoStore.playerState.currentTime)
+
+const { newDanmu } = useDanmuWebSocket(
+  () => videoId.value,
+  () => currentPartId.value
+)
+
+watch(newDanmu, (danmu) => {
+  if (danmu && playerRef.value) {
+    playerRef.value.emitDanmu({
+      text: danmu.content,
+      time: danmu.timeOffset / 1000,
+      color: danmu.color || '#ffffff',
+      mode: (danmu.position ?? 0) as 0 | 1 | 2,
+    })
+  }
+})
+
+const handleDanmuSent = (danmu: { text: string; time: number; color: string; mode: 0 | 1 | 2 }) => {
+  playerRef.value?.emitDanmu(danmu)
+}
+
+const handleDanmuToggleVisible = (visible: boolean) => {
+  playerRef.value?.setDanmuVisible(visible)
+}
 
 const formatCount = (count: number): string => {
   if (count >= 10000) return `${(count / 10000).toFixed(1)}万`
@@ -97,7 +125,18 @@ onBeforeUnmount(() => {
       <!-- Left Column: Player + Info -->
       <div class="min-w-0 flex-1">
         <!-- Video Player -->
-        <VideoPlayer :part-id="currentPartId" class="player-container" />
+        <VideoPlayer ref="playerRef" :part-id="currentPartId" class="player-container" />
+
+        <!-- Danmu Input -->
+        <DanmuInput
+          v-if="video"
+          :video-id="video.id"
+          :part-id="currentPartId"
+          :current-time="currentPlayerTime"
+          class="mt-2"
+          @sent="handleDanmuSent"
+          @toggle-visible="handleDanmuToggleVisible"
+        />
 
         <!-- Video Info Section -->
         <div class="info-container mt-5 space-y-4 px-1">

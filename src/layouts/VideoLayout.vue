@@ -9,7 +9,9 @@ import Navbar from '@/components/layout/Navbar.vue'
     <div
       class="sticky top-0 z-50 w-full border-b border-border/50 bg-white shadow-sm dark:bg-[#18191c]"
     >
-      <Navbar />
+      <Navbar
+        class="[&_.text-white\\/90]:text-foreground/80 [&_.hover\\:text-white]:hover:text-primary [&_.border-white\\/50]:border-border [&_.group-hover\\:border-white]:group-hover:border-primary"
+      />
     </div>
 
     <main>

@@ -68,14 +68,15 @@ const handleSend = async () => {
   const timeMs = Math.round(props.currentTime * 1000)
 
   try {
-    await sendDanmu({
+    const sendParams: Parameters<typeof sendDanmu>[0] = {
       videoId: props.videoId,
-      partId: props.partId,
       content: text,
       timeOffset: timeMs,
       color: selectedColor.value,
       position: selectedPosition.value,
-    })
+    }
+    if (props.partId) sendParams.partId = props.partId
+    await sendDanmu(sendParams)
 
     emit('sent', {
       text,
@@ -99,10 +100,11 @@ const handleLoadHistory = async () => {
   if (!historyDate.value || loadingHistory.value) return
   loadingHistory.value = true
   try {
-    const result = await getDanmuHistory({
+    const historyParams: Parameters<typeof getDanmuHistory>[0] = {
       videoId: props.videoId,
-      partId: props.partId,
-    })
+    }
+    if (props.partId) historyParams.partId = props.partId
+    const result = await getDanmuHistory(historyParams)
     const mapped = (result.list ?? []).map((d) => ({
       text: d.content,
       time: d.timeOffset / 1000,

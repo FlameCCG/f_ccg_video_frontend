@@ -1,21 +1,34 @@
 <script setup lang="ts">
 import { ref, onMounted, watch } from 'vue'
 import { getDanmuList, type DanmuItem } from '@/api/danmu'
+import { MoreVertical, ChevronUp } from 'lucide-vue-next'
 
 const props = defineProps<{
   videoId: number
   partId?: number
 }>()
 
+const emit = defineEmits<{
+  seek: [time: number]
+}>()
+
 const list = ref<DanmuItem[]>([])
 const loading = ref(false)
-const activeTab = ref<'danmu' | 'list'>('danmu')
+const isCollapsed = ref(false)
+
+const isSecondsFormat = () => {
+  return list.value.length > 0 && list.value.every((d) => d.timeOffset > 0 && d.timeOffset < 10000)
+}
 
 const formatTime = (ms: number): string => {
-  const totalSec = Math.floor(ms / 1000)
+  const totalSec = isSecondsFormat() ? ms : Math.floor(ms / 1000)
   const min = Math.floor(totalSec / 60)
   const sec = totalSec % 60
   return `${String(min).padStart(2, '0')}:${String(sec).padStart(2, '0')}`
+}
+
+const getRealTime = (ms: number): number => {
+  return isSecondsFormat() ? ms : ms / 1000
 }
 
 const formatDate = (dateStr: string): string => {
@@ -27,11 +40,12 @@ const fetchList = async () => {
   if (!props.videoId) return
   loading.value = true
   try {
-    const result = await getDanmuList({
+    const params: { videoId: number; partId?: number; pageSize: number } = {
       videoId: props.videoId,
-      partId: props.partId,
       pageSize: 200,
-    })
+    }
+    if (props.partId) params.partId = props.partId
+    const result = await getDanmuList(params)
     list.value = result.list ?? []
   } catch {
     list.value = []
@@ -40,76 +54,111 @@ const fetchList = async () => {
   }
 }
 
+const seekTo = (timeOffset: number) => {
+  emit('seek', getRealTime(timeOffset))
+}
+
 onMounted(fetchList)
-watch(() => props.videoId, fetchList)
+watch(() => [props.videoId, props.partId], fetchList)
 </script>
 
 <template>
-  <div class="danmu-panel flex flex-col rounded-lg border border-border/60 bg-card">
-    <!-- Header Tabs -->
-    <div class="flex items-center border-b border-border/50 px-3">
-      <button
-        class="tab-btn"
-        :class="{ 'is-active': activeTab === 'danmu' }"
-        @click="activeTab = 'danmu'"
-      >
-        弹幕
-      </button>
-      <button
-        class="tab-btn"
-        :class="{ 'is-active': activeTab === 'list' }"
-        @click="activeTab = 'list'"
-      >
-        弹幕列表
-      </button>
-      <span class="ml-auto text-xs text-muted-foreground"> {{ list.length }}条 </span>
+  <div
+    class="danmu-panel flex flex-col rounded-lg border border-border/60 bg-card transition-all duration-300"
+    :class="{ 'h-auto': isCollapsed }"
+  >
+    <!-- Header -->
+    <div
+      class="flex items-center justify-between px-4 py-3 cursor-pointer select-none border-b border-border/50 bg-muted/10 hover:bg-muted/30 transition-colors rounded-t-lg"
+      @click="isCollapsed = !isCollapsed"
+    >
+      <div class="flex items-center gap-2">
+        <span class="font-medium text-[15px] text-foreground/90">弹幕列表</span>
+        <MoreVertical
+          :size="16"
+          class="text-muted-foreground hover:text-primary transition-colors"
+          @click.stop
+        />
+      </div>
+      <div class="flex items-center gap-2">
+        <span class="text-xs text-muted-foreground">{{ list.length }}条</span>
+        <ChevronUp
+          :size="18"
+          class="text-muted-foreground transition-transform duration-300"
+          :class="{ 'rotate-180': isCollapsed }"
+        />
+      </div>
     </div>
 
-    <!-- Danmu List Content -->
-    <div class="danmu-scroll flex-1 overflow-y-auto">
-      <div v-if="loading" class="flex items-center justify-center py-10">
-        <div
-          class="h-5 w-5 animate-spin rounded-full border-2 border-primary/30 border-t-primary"
-        ></div>
+    <!-- Content -->
+    <div v-show="!isCollapsed" class="flex-1 overflow-hidden flex flex-col">
+      <!-- table header -->
+      <div
+        class="grid grid-cols-[50px_1fr_80px] gap-2 px-4 py-2 text-[13px] text-muted-foreground/70 bg-muted/5 border-b border-border/30"
+      >
+        <div>时间</div>
+        <div>弹幕内容</div>
+        <div class="text-right">发送时间</div>
       </div>
 
-      <div v-else-if="list.length === 0" class="py-10 text-center text-xs text-muted-foreground">
-        暂无弹幕
-      </div>
-
-      <table v-else class="w-full text-xs">
-        <thead class="sticky top-0 bg-card">
-          <tr class="text-left text-muted-foreground/70">
-            <th class="px-3 py-1.5 font-medium">时间</th>
-            <th class="px-2 py-1.5 font-medium">弹幕内容</th>
-            <th class="px-3 py-1.5 font-medium text-right">发送时间</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr
+      <!-- list -->
+      <div class="danmu-scroll flex-1 overflow-y-auto px-2 py-1">
+        <div v-if="loading" class="flex items-center justify-center py-10">
+          <div
+            class="h-5 w-5 animate-spin rounded-full border-2 border-primary/30 border-t-primary"
+          ></div>
+        </div>
+        <div v-else-if="list.length === 0" class="py-10 text-center text-xs text-muted-foreground">
+          暂无弹幕
+        </div>
+        <template v-else>
+          <div
             v-for="item in list"
             :key="item.id"
-            class="danmu-row border-t border-border/30 transition-colors hover:bg-muted/40"
+            class="grid grid-cols-[50px_1fr_80px] gap-2 px-2 py-1.5 text-[13px] hover:bg-muted/40 rounded transition-colors group items-center"
           >
-            <td class="whitespace-nowrap px-3 py-1.5 text-primary/80">
+            <div
+              class="text-[#00a1d6] cursor-pointer hover:underline"
+              @click="seekTo(item.timeOffset)"
+            >
               {{ formatTime(item.timeOffset) }}
-            </td>
-            <td class="max-w-[160px] truncate px-2 py-1.5 text-foreground/80">
+            </div>
+            <div
+              class="truncate font-medium drop-shadow-sm"
+              :style="{
+                color:
+                  item.color && item.color.toUpperCase() !== '#FFFFFF' ? item.color : 'inherit',
+              }"
+              :title="item.content"
+            >
               {{ item.content }}
-            </td>
-            <td class="whitespace-nowrap px-3 py-1.5 text-right text-muted-foreground/60">
+            </div>
+            <div class="text-right text-muted-foreground/60 text-xs">
               {{ formatDate(item.createdAt) }}
-            </td>
-          </tr>
-        </tbody>
-      </table>
+            </div>
+          </div>
+        </template>
+      </div>
+
+      <!-- Footer -->
+      <div class="p-2 border-t border-border/50 bg-muted/5">
+        <button
+          class="w-full py-1.5 text-xs text-muted-foreground bg-muted/30 hover:bg-muted/50 hover:text-foreground rounded transition-colors"
+        >
+          查看历史弹幕
+        </button>
+      </div>
     </div>
   </div>
 </template>
 
 <style scoped>
 .danmu-panel {
-  height: 380px;
+  height: 420px;
+}
+
+.danmu-panel.h-auto {
+  height: auto;
 }
 
 .danmu-scroll {
@@ -124,36 +173,5 @@ watch(() => props.videoId, fetchList)
 .danmu-scroll::-webkit-scrollbar-thumb {
   background: hsl(var(--border));
   border-radius: 2px;
-}
-
-.tab-btn {
-  position: relative;
-  padding: 8px 12px;
-  font-size: 13px;
-  font-weight: 500;
-  color: hsl(var(--muted-foreground));
-  background: transparent;
-  border: none;
-  cursor: pointer;
-  transition: color 0.15s ease;
-}
-
-.tab-btn:hover {
-  color: hsl(var(--foreground));
-}
-
-.tab-btn.is-active {
-  color: #00a1d6;
-}
-
-.tab-btn.is-active::after {
-  content: '';
-  position: absolute;
-  bottom: 0;
-  left: 12px;
-  right: 12px;
-  height: 2px;
-  background: #00a1d6;
-  border-radius: 1px;
 }
 </style>

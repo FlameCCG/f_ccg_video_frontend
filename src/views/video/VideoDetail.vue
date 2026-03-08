@@ -116,6 +116,8 @@ const loadVideo = async (id: number) => {
   if (ok) {
     if (video.value?.parts && video.value.parts.length > 0) {
       currentPartId.value = video.value.parts[0]!.id
+    } else {
+      currentPartId.value = undefined
     }
     try {
       await addVideoView(id)
@@ -128,6 +130,13 @@ const loadVideo = async (id: number) => {
 
 const handlePartSelect = (partId: number) => {
   currentPartId.value = partId
+}
+
+const handleSeek = (time: number) => {
+  if (playerRef.value?.artRef) {
+    playerRef.value.artRef.currentTime = time
+    playerRef.value.artRef.play()
+  }
 }
 
 onMounted(() => {
@@ -269,7 +278,7 @@ onBeforeUnmount(() => {
           <AuthorCard v-if="video.author" :author="video.author" />
 
           <!-- Danmu List Panel (bilibili style) -->
-          <DanmuList :video-id="video.id" :part-id="currentPartId" />
+          <DanmuList :video-id="video.id" :part-id="currentPartId" @seek="handleSeek" />
 
           <!-- Part List -->
           <PartList

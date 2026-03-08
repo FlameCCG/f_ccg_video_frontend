@@ -70,15 +70,21 @@ const loadDanmuList = async (): Promise<
 > => {
   const vid = videoStore.currentVideo?.id
   if (!vid) return []
+  const hasParts = (videoStore.currentVideo?.parts?.length ?? 0) > 0
+  if (hasParts && !props.partId) return []
   try {
-    const result = await getDanmuList({
+    const params: { videoId: number; partId?: number; pageSize: number } = {
       videoId: vid,
-      partId: props.partId,
-      pageSize: 5000,
-    })
-    return (result.list ?? []).map((d: DanmuItem) => ({
+      pageSize: 200,
+    }
+    if (props.partId) params.partId = props.partId
+    const result = await getDanmuList(params)
+    const list = result.list ?? []
+    const isSeconds = list.length > 0 && list.every((d) => d.timeOffset > 0 && d.timeOffset < 10000)
+
+    return list.map((d: DanmuItem) => ({
       text: d.content,
-      time: d.timeOffset / 1000,
+      time: isSeconds ? d.timeOffset : d.timeOffset / 1000,
       color: d.color || '#ffffff',
       mode: (d.position ?? 0) as 0 | 1 | 2,
     }))
@@ -358,12 +364,47 @@ onBeforeUnmount(() => {
   filter: none !important;
 }
 
+/* Progress bar styling to match Bilibili */
+:deep(.art-control-progress) {
+  height: 14px !important;
+  bottom: 0 !important;
+}
+
 :deep(.art-control-progress-inner) {
+  height: 3px !important;
+  background: rgb(255 255 255 / 0.2) !important;
+  border-radius: 1.5px !important;
+  transition: height 0.2s ease !important;
+}
+
+:deep(.art-control-progress:hover .art-control-progress-inner) {
+  height: 6px !important;
+  border-radius: 3px !important;
+}
+
+:deep(.art-progress-loaded) {
+  background: rgb(255 255 255 / 0.4) !important;
+  border-radius: inherit !important;
+}
+
+:deep(.art-progress-played) {
   background: #00a1d6 !important;
+  border-radius: inherit !important;
 }
 
 :deep(.art-progress-indicator) {
   background: #00a1d6 !important;
+  border: 2px solid #fff !important;
+  width: 14px !important;
+  height: 14px !important;
+  border-radius: 50% !important;
+  box-shadow: 0 0 4px rgb(0 0 0 / 0.3) !important;
+  transform: scale(0) !important;
+  transition: transform 0.2s ease !important;
+}
+
+:deep(.art-control-progress:hover .art-progress-indicator) {
+  transform: scale(1) !important;
 }
 
 :deep(.art-setting-panel) {

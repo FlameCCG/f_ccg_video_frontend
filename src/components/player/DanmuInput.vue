@@ -9,8 +9,6 @@ import {
   ArrowUpToLine,
   ArrowDownToLine,
   MoveHorizontal,
-  Eye,
-  EyeOff,
   Calendar,
 } from 'lucide-vue-next'
 
@@ -33,7 +31,6 @@ const selectedColor = ref('#ffffff')
 const selectedPosition = ref<DanmuPositionType>(DanmuPosition.SCROLL)
 const showSettings = ref(false)
 const sending = ref(false)
-const danmuVisible = ref(true)
 
 const PRESET_COLORS = [
   '#ffffff',
@@ -95,11 +92,6 @@ const handleSend = async () => {
   }
 }
 
-const toggleDanmuVisible = () => {
-  danmuVisible.value = !danmuVisible.value
-  emit('toggleVisible', danmuVisible.value)
-}
-
 const historyDate = ref('')
 const loadingHistory = ref(false)
 
@@ -137,15 +129,6 @@ const handleKeydown = (e: KeyboardEvent) => {
 
 <template>
   <div class="danmu-control-bar relative flex items-center gap-3 px-4 py-2.5">
-    <!-- Danmu Visibility Toggle -->
-    <button
-      class="icon-btn shrink-0"
-      :title="danmuVisible ? '关闭弹幕' : '打开弹幕'"
-      @click="toggleDanmuVisible"
-    >
-      <component :is="danmuVisible ? Eye : EyeOff" :size="18" />
-    </button>
-
     <!-- Input -->
     <div class="relative flex-1 group">
       <input

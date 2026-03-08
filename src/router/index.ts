@@ -1,10 +1,23 @@
 import { createRouter, createWebHistory, type RouteRecordRaw } from 'vue-router'
 
-// Layout component
+// Layout components
 const MainLayout = () => import('@/layouts/MainLayout.vue')
+const VideoLayout = () => import('@/layouts/VideoLayout.vue')
 
 const routes: RouteRecordRaw[] = [
-  // Routes with MainLayout
+  // Video detail uses its own layout (no banner, no channel nav)
+  {
+    path: '/video/:id',
+    component: VideoLayout,
+    children: [
+      {
+        path: '',
+        name: 'video-detail',
+        component: () => import('@/views/video/VideoDetail.vue'),
+      },
+    ],
+  },
+  // Routes with MainLayout (homepage, hot, rank, etc.)
   {
     path: '/',
     component: MainLayout,
@@ -27,23 +40,18 @@ const routes: RouteRecordRaw[] = [
       {
         path: 'dynamic',
         name: 'dynamic',
-        component: () => import('@/views/Home.vue'), // Placeholder - will be replaced
+        component: () => import('@/views/Home.vue'),
         meta: { requiresAuth: true },
       },
       {
         path: 'search',
         name: 'search',
-        component: () => import('@/views/Home.vue'), // Placeholder - will be replaced
+        component: () => import('@/views/Home.vue'),
       },
       {
         path: 'partition',
         name: 'partition',
-        component: () => import('@/views/Home.vue'), // Placeholder - will be replaced
-      },
-      {
-        path: 'video/:id',
-        name: 'video-detail',
-        component: () => import('@/views/video/VideoDetail.vue'),
+        component: () => import('@/views/Home.vue'),
       },
       {
         path: 'upload',

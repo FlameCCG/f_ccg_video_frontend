@@ -9,6 +9,7 @@ import VideoActions from '@/components/video/VideoActions.vue'
 import AuthorCard from '@/components/user/AuthorCard.vue'
 import VideoRecommend from '@/components/video/VideoRecommend.vue'
 import PartList from '@/components/video/PartList.vue'
+import DanmuList from '@/components/player/DanmuList.vue'
 import { useDanmuWebSocket } from '@/composables/useDanmuWebSocket'
 import { toast } from 'vue-sonner'
 import {
@@ -58,10 +59,6 @@ watch(newDanmu, (danmu) => {
 
 const handleDanmuSent = (danmu: { text: string; time: number; color: string; mode: 0 | 1 | 2 }) => {
   playerRef.value?.emitDanmu(danmu)
-}
-
-const handleDanmuToggleVisible = (visible: boolean) => {
-  playerRef.value?.setDanmuVisible(visible)
 }
 
 const danmuMenu = ref<{ show: boolean; x: number; y: number; text: string }>({
@@ -220,7 +217,6 @@ onBeforeUnmount(() => {
             :part-id="currentPartId"
             :current-time="currentPlayerTime"
             @sent="handleDanmuSent"
-            @toggle-visible="handleDanmuToggleVisible"
             @load-history="handleDanmuLoadHistory"
           />
 
@@ -267,10 +263,13 @@ onBeforeUnmount(() => {
           </div>
         </div>
 
-        <!-- Right Column: Author + PartList + Recommend -->
+        <!-- Right Column: Author + DanmuList + PartList + Recommend -->
         <div class="hidden w-[350px] shrink-0 space-y-4 lg:block">
           <!-- Author Card (top of right column, bilibili style) -->
           <AuthorCard v-if="video.author" :author="video.author" />
+
+          <!-- Danmu List Panel (bilibili style) -->
+          <DanmuList :video-id="video.id" :part-id="currentPartId" />
 
           <!-- Part List -->
           <PartList

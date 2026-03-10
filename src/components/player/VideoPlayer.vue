@@ -17,13 +17,14 @@ const emit = defineEmits<{
   danmuHover: [
     payload: {
       el: HTMLElement
+      e?: MouseEvent
       text: string
       danmuId?: number
       likeCount: number
       isLiked: boolean
       createdAt?: string
       mode: 0 | 1 | 2
-    },
+    }
   ]
   danmuLeave: []
   danmuHoldEnd: []
@@ -386,6 +387,7 @@ const setupDanmuHover = (container: HTMLElement) => {
 
     emit('danmuHover', {
       el,
+      e,
       text: el.textContent?.trim() ?? '',
       danmuId: meta?.id,
       likeCount: meta?.likeCount ?? 0,
@@ -413,6 +415,7 @@ const setupDanmuHover = (container: HTMLElement) => {
 
     currentHoverEl = null
 
+    // We only trigger DanmuLeave if the mouse completely left the clone and didn't enter the tooltip
     if (heldDanmu && (heldDanmu.el === leavingEl || heldDanmu.originalEl === leavingEl)) {
       emit('danmuLeave')
     }

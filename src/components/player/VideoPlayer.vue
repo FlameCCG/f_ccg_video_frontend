@@ -70,6 +70,7 @@ let progressSaveTimer: ReturnType<typeof setInterval> | null = null
 const PROGRESS_SAVE_INTERVAL = 10000
 
 let qualitySwitchTime = 0
+let qualitySwitchTimer: ReturnType<typeof setTimeout> | null = null
 const isSwitchingQuality = ref(false)
 const switchingQualityLabel = ref('')
 
@@ -493,10 +494,24 @@ const initPlayer = () => {
         const url = (item as { url?: string }).url
         const html = (item as { html?: string }).html ?? ''
         if (url) {
+          // If URL is the same as current, no real switch needed
+          if (this.url === url) {
+            toast.success(`已切换至 ${html}`)
+            return html
+          }
           qualitySwitchTime = this.currentTime
           isSwitchingQuality.value = true
           switchingQualityLabel.value = html
           toast.info(`正在切换至 ${html}`)
+          // Safety timeout: dismiss overlay if canplay doesn't fire within 8s
+          if (qualitySwitchTimer) clearTimeout(qualitySwitchTimer)
+          qualitySwitchTimer = setTimeout(() => {
+            if (isSwitchingQuality.value) {
+              isSwitchingQuality.value = false
+              switchingQualityLabel.value = ''
+              toast.warning('清晰度切换超时')
+            }
+          }, 8000)
           void this.switchQuality(url)
         }
         return html
@@ -582,6 +597,10 @@ const initPlayer = () => {
     }
     if (isSwitchingQuality.value) {
       isSwitchingQuality.value = false
+      if (qualitySwitchTimer) {
+        clearTimeout(qualitySwitchTimer)
+        qualitySwitchTimer = null
+      }
       toast.success(`已切换至 ${switchingQualityLabel.value}`)
       switchingQualityLabel.value = ''
     }

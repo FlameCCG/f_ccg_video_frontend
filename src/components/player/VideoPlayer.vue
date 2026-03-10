@@ -88,14 +88,12 @@ const danmuIdToEl = new Map<number, HTMLElement>()
 // ---- Per-item hover hold state ----
 interface HeldDanmu {
   el: HTMLElement
+  originalEl: HTMLElement
   mode: 0 | 1 | 2
-  frozenTranslateX: number
   targetTranslateX: number
   speedPxPerSec: number
-  resumeTimer: ReturnType<typeof setTimeout> | null
 }
 let heldDanmu: HeldDanmu | null = null
-const HOLD_RESUME_DELAY = 5000
 
 // Keep a map of danmu id -> metadata for items loaded in batch
 const loadedDanmuMeta = new Map<number, DanmuMeta>()
@@ -204,102 +202,69 @@ const setDanmuOpacity = (opacity: number) => {
   }
 }
 
-// ---- Hold / Release a single danmu ----
-
-let holdCheckTimer: ReturnType<typeof setInterval> | null = null
-
-const getCurrentTranslateX = (el: HTMLElement): number => {
-  const style = getComputedStyle(el)
-  const matrix = new DOMMatrix(style.transform)
-  return matrix.m41
-}
-
 const holdDanmuItem = (el: HTMLElement, mode: 0 | 1 | 2) => {
-  if (heldDanmu && heldDanmu.el === el) return
+  if (heldDanmu && (heldDanmu.originalEl === el || heldDanmu.el === el)) return
   if (heldDanmu) releaseHeldDanmuItem('leave')
 
-  if (mode === 0) {
-    const currentX = getCurrentTranslateX(el)
-    const meta = danmuMetaMap.get(el)
+  const isAlreadyClone = el.dataset.isDanmuClone === 'true'
+  const originalEl = isAlreadyClone && heldDanmu ? heldDanmu.originalEl : el
 
-    let speedPxPerSec = meta?.originalSpeed
-    let targetX = meta?.originalTargetX
+  const currentX = getCurrentTranslateX(el)
+  const meta = danmuMetaMap.get(el)
 
-    if (speedPxPerSec === undefined || targetX === undefined) {
-      const targetMatch = el.style.transform.match(/translateX\(([-\d.]+)px\)/)
-      targetX = targetMatch ? parseFloat(targetMatch[1]!) : currentX
-      const transMatch = el.style.transition.match(/transform\s+([\d.]+)s/)
-      const totalDuration = transMatch ? parseFloat(transMatch[1]!) : 5
+  let speedPxPerSec = meta?.originalSpeed
+  let targetX = meta?.originalTargetX
 
-      const totalTravelDistance = Math.abs(targetX)
-      speedPxPerSec = totalDuration > 0 ? totalTravelDistance / totalDuration : 200
+  if (speedPxPerSec === undefined || targetX === undefined) {
+    const targetMatch = el.style.transform.match(/translateX\(([-\d.]+)px\)/)
+    targetX = targetMatch ? parseFloat(targetMatch[1]!) : currentX
+    const transMatch = el.style.transition.match(/transform\s+([\d.]+)s/)
+    const totalDuration = transMatch ? parseFloat(transMatch[1]!) : 5
 
-      if (meta) {
-        meta.originalSpeed = speedPxPerSec
-        meta.originalTargetX = targetX
-      }
-    }
+    const totalTravelDistance = Math.abs(targetX)
+    speedPxPerSec = totalDuration > 0 ? totalTravelDistance / totalDuration : 200
 
-    el.style.transform = `translateX(${currentX}px)`
-    el.style.transition = 'transform 0s linear 0s'
-
-    heldDanmu = {
-      el,
-      mode,
-      frozenTranslateX: currentX,
-      targetTranslateX: targetX,
-      speedPxPerSec,
-      resumeTimer: setTimeout(() => {
-        resumeHeldDanmu()
-      }, HOLD_RESUME_DELAY),
-    }
-  } else {
-    heldDanmu = {
-      el,
-      mode,
-      frozenTranslateX: 0,
-      targetTranslateX: 0,
-      speedPxPerSec: 0,
-      resumeTimer: setTimeout(() => {
-        resumeHeldDanmu()
-      }, HOLD_RESUME_DELAY),
+    if (meta) {
+      meta.originalSpeed = speedPxPerSec
+      meta.originalTargetX = targetX
     }
   }
 
-  startHoldCheck()
-}
+  let clone: HTMLElement
+  if (isAlreadyClone) {
+    clone = el
+    clone.style.transform = `translateX(${currentX}px)`
+    clone.style.transition = 'transform 0s linear 0s'
+  } else {
+    clone = el.cloneNode(true) as HTMLElement
+    clone.dataset.isDanmuClone = 'true'
+    clone.style.transform = `translateX(${currentX}px)`
+    clone.style.transition = 'transform 0s linear 0s'
+    clone.style.zIndex = '9999'
+    clone.style.pointerEvents = 'auto'
 
-const startHoldCheck = () => {
-  if (holdCheckTimer) return
-  holdCheckTimer = setInterval(() => {
-    if (!heldDanmu) {
-      stopHoldCheck()
-      return
-    }
-    if (!heldDanmu.el.isConnected) {
-      if (heldDanmu.resumeTimer) clearTimeout(heldDanmu.resumeTimer)
-      heldDanmu = null
-      stopHoldCheck()
-      emit('danmuHoldEnd')
-    }
-  }, 200)
-}
+    el.style.opacity = '0'
+    el.style.pointerEvents = 'none'
 
-const stopHoldCheck = () => {
-  if (holdCheckTimer) {
-    clearInterval(holdCheckTimer)
-    holdCheckTimer = null
+    if (meta) {
+      danmuMetaMap.set(clone, meta)
+    }
+
+    el.parentElement?.appendChild(clone)
+  }
+
+  heldDanmu = {
+    el: clone,
+    originalEl,
+    mode,
+    targetTranslateX: targetX,
+    speedPxPerSec,
   }
 }
 
 const resumeHeldDanmu = () => {
   if (!heldDanmu) return
-  const { el, mode, frozenTranslateX, targetTranslateX, speedPxPerSec } = heldDanmu
-  if (heldDanmu.resumeTimer) {
-    clearTimeout(heldDanmu.resumeTimer)
-    heldDanmu.resumeTimer = null
-  }
-  stopHoldCheck()
+  const { el, mode, targetTranslateX, speedPxPerSec } = heldDanmu
 
   if (!el.isConnected) {
     heldDanmu = null
@@ -308,11 +273,26 @@ const resumeHeldDanmu = () => {
   }
 
   if (mode === 0 && speedPxPerSec > 0) {
-    const remainingDistance = Math.abs(targetTranslateX - frozenTranslateX)
+    const currentX = getCurrentTranslateX(el)
+    const remainingDistance = Math.abs(targetTranslateX - currentX)
     const remainingTime = Math.max(remainingDistance / speedPxPerSec, 0.3)
 
     el.style.transform = `translateX(${targetTranslateX}px)`
     el.style.transition = `transform ${remainingTime}s linear 0s`
+
+    el.addEventListener(
+      'transitionend',
+      () => {
+        if (el.isConnected) el.remove()
+      },
+      { once: true }
+    )
+  } else {
+    el.style.opacity = '0'
+    el.style.transition = 'opacity 0.5s ease'
+    setTimeout(() => {
+      if (el.isConnected) el.remove()
+    }, 500)
   }
 
   heldDanmu = null
@@ -321,10 +301,6 @@ const resumeHeldDanmu = () => {
 
 const releaseHeldDanmuItem = (reason: 'leave' | 'timeout') => {
   if (!heldDanmu) return
-  if (heldDanmu.resumeTimer) {
-    clearTimeout(heldDanmu.resumeTimer)
-    heldDanmu.resumeTimer = null
-  }
   if (reason === 'leave') {
     resumeHeldDanmu()
   }
@@ -386,12 +362,22 @@ const setupDanmuHover = (container: HTMLElement) => {
   container.addEventListener('mouseout', (e: MouseEvent) => {
     if (!currentHoverEl) return
     const related = e.relatedTarget as HTMLElement | null
-    if (related && currentHoverEl.contains(related)) return
 
     const leavingEl = currentHoverEl
+
+    if (
+      related &&
+      (leavingEl.contains(related) ||
+        (heldDanmu &&
+          ((leavingEl === heldDanmu.originalEl && related === heldDanmu.el) ||
+            (leavingEl === heldDanmu.el && related === heldDanmu.originalEl))))
+    ) {
+      return
+    }
+
     currentHoverEl = null
 
-    if (heldDanmu && heldDanmu.el === leavingEl) {
+    if (heldDanmu && (heldDanmu.el === leavingEl || heldDanmu.originalEl === leavingEl)) {
       emit('danmuLeave')
     }
   })
@@ -588,12 +574,8 @@ const destroyPlayer = () => {
     clearInterval(progressSaveTimer)
     progressSaveTimer = null
   }
-  if (heldDanmu?.resumeTimer) {
-    clearTimeout(heldDanmu.resumeTimer)
-  }
   heldDanmu = null
   currentHoverEl = null
-  stopHoldCheck()
   danmuMetaMap.clear()
   danmuIdToEl.clear()
   loadedDanmuMeta.clear()

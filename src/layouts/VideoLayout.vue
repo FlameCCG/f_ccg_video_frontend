@@ -1,21 +1,57 @@
 <script setup lang="ts">
+import { onMounted, onBeforeUnmount } from 'vue'
 import { RouterView } from 'vue-router'
 import Navbar from '@/components/layout/Navbar.vue'
+
+let wasDark = false
+
+onMounted(() => {
+  wasDark = document.documentElement.classList.contains('dark')
+  document.documentElement.classList.remove('dark')
+})
+
+onBeforeUnmount(() => {
+  if (wasDark) {
+    document.documentElement.classList.add('dark')
+  }
+})
 </script>
 
 <template>
-  <div class="relative min-h-screen bg-background">
-    <!-- Solid background Navbar (no banner, no transparency) -->
+  <div class="video-layout relative min-h-screen" style="background: #f5f5f5">
     <div
-      class="sticky top-0 z-50 w-full border-b border-border/50 bg-white shadow-sm dark:bg-[#18191c]"
+      class="video-layout-header sticky top-0 z-50 w-full shadow-sm"
+      style="background: #fff; border-bottom: 1px solid #e3e5e7"
     >
-      <Navbar
-        class="[&_.text-white\\/90]:text-foreground/80 [&_.hover\\:text-white]:hover:text-primary [&_.border-white\\/50]:border-border [&_.group-hover\\:border-white]:group-hover:border-primary"
-      />
+      <Navbar />
     </div>
 
-    <main>
+    <main style="background: #f5f5f5">
       <RouterView />
     </main>
   </div>
 </template>
+
+<style scoped>
+/* Override Navbar's white-text classes for solid white header */
+.video-layout-header :deep([class*='text-white']) {
+  color: #61666d !important;
+}
+
+.video-layout-header :deep([class*='text-white']:hover) {
+  color: #00a1d6 !important;
+}
+
+.video-layout-header :deep([class*='border-white']) {
+  border-color: #e3e5e7 !important;
+}
+
+.video-layout-header :deep(input[type='text']) {
+  color: #18191c !important;
+  background: #f1f2f3 !important;
+}
+
+.video-layout-header :deep(input[type='text']:focus) {
+  background: #fff !important;
+}
+</style>

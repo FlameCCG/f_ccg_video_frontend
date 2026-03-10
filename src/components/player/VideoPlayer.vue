@@ -4,7 +4,7 @@ import Artplayer, { type Option, type Setting } from 'artplayer'
 import artplayerPluginDanmuku from 'artplayer-plugin-danmuku'
 import { useVideoStore } from '@/stores/video'
 import { useAuthStore } from '@/stores/auth'
-import { getDanmuList, type DanmuItem } from '@/api/danmu'
+import { getDanmuList, type DanmuItem, type PlayerDanmuPayload } from '@/api/danmu'
 import type { VideoResourceItem } from '@/api/video'
 
 const props = defineProps<{
@@ -14,7 +14,19 @@ const props = defineProps<{
 const emit = defineEmits<{
   ready: [instance: Artplayer]
   danmuPlugin: [plugin: ReturnType<ReturnType<typeof artplayerPluginDanmuku>>]
-  danmuClick: [event: MouseEvent, text: string]
+  danmuHover: [
+    payload: {
+      el: HTMLElement
+      text: string
+      danmuId?: number
+      likeCount: number
+      isLiked: boolean
+      createdAt?: string
+      mode: 0 | 1 | 2
+    },
+  ]
+  danmuLeave: []
+  danmuHoldEnd: []
 }>()
 
 const videoStore = useVideoStore()
@@ -23,10 +35,8 @@ const authStore = useAuthStore()
 const containerRef = ref<HTMLDivElement | null>(null)
 const artRef = ref<Artplayer | null>(null)
 
-// Volume persistence key (Requirements: 音量持久化)
 const VOLUME_STORAGE_KEY = 'artplayer_volume'
 
-// Get resources for current part (single video uses top-level resources)
 const resources = computed((): VideoResourceItem[] => {
   const video = videoStore.currentVideo
   if (!video) return []
@@ -38,7 +48,6 @@ const resources = computed((): VideoResourceItem[] => {
   return video.resources ?? []
 })
 
-// Build quality list for ArtPlayer (Requirements: 多清晰度切换)
 const qualityList = computed(() => {
   const list = resources.value
   if (!list.length) return undefined
@@ -50,13 +59,11 @@ const qualityList = computed(() => {
   }))
 })
 
-// Primary video URL (first resource)
 const primaryUrl = computed(() => {
   const list = resources.value
   return list[0]?.fileUrl ?? ''
 })
 
-// Progress save interval (every 10 seconds)
 let progressSaveTimer: ReturnType<typeof setInterval> | null = null
 const PROGRESS_SAVE_INTERVAL = 10000
 
@@ -65,8 +72,36 @@ let qualitySwitchTime = 0
 const danmuVisible = ref(true)
 const danmuOpacity = ref(1)
 
+// ---- Danmu metadata store (id -> extra info) ----
+interface DanmuMeta {
+  id?: number
+  likeCount: number
+  isLiked: boolean
+  createdAt?: string
+  mode: 0 | 1 | 2
+  originalSpeed?: number
+  originalTargetX?: number
+}
+const danmuMetaMap = new Map<HTMLElement, DanmuMeta>()
+const danmuIdToEl = new Map<number, HTMLElement>()
+
+// ---- Per-item hover hold state ----
+interface HeldDanmu {
+  el: HTMLElement
+  mode: 0 | 1 | 2
+  frozenTranslateX: number
+  targetTranslateX: number
+  speedPxPerSec: number
+  resumeTimer: ReturnType<typeof setTimeout> | null
+}
+let heldDanmu: HeldDanmu | null = null
+const HOLD_RESUME_DELAY = 5000
+
+// Keep a map of danmu id -> metadata for items loaded in batch
+const loadedDanmuMeta = new Map<number, DanmuMeta>()
+
 const loadDanmuList = async (): Promise<
-  { text: string; time: number; color: string; mode: 0 | 1 | 2 }[]
+  { id?: string; text: string; time: number; color: string; mode: 0 | 1 | 2 }[]
 > => {
   const vid = videoStore.currentVideo?.id
   if (!vid) return []
@@ -82,7 +117,18 @@ const loadDanmuList = async (): Promise<
     const list = result.list ?? []
     const isSeconds = list.length > 0 && list.every((d) => d.timeOffset > 0 && d.timeOffset < 10000)
 
+    list.forEach((d: DanmuItem) => {
+      loadedDanmuMeta.set(d.id, {
+        id: d.id,
+        likeCount: d.likeCount ?? 0,
+        isLiked: d.isLiked ?? false,
+        createdAt: d.createdAt,
+        mode: (d.position ?? 0) as 0 | 1 | 2,
+      })
+    })
+
     return list.map((d: DanmuItem) => ({
+      id: String(d.id),
       text: d.content,
       time: isSeconds ? d.timeOffset : d.timeOffset / 1000,
       color: d.color || '#ffffff',
@@ -93,18 +139,45 @@ const loadDanmuList = async (): Promise<
   }
 }
 
-const emitDanmu = (danmu: { text: string; time: number; color?: string; mode?: 0 | 1 | 2 }) => {
+const emitDanmu = (danmu: PlayerDanmuPayload) => {
   if (!artRef.value) return
   const plugin = artRef.value.plugins?.artplayerPluginDanmuku as
     | ReturnType<ReturnType<typeof artplayerPluginDanmuku>>
     | undefined
   if (plugin) {
-    plugin.emit({
+    const emitted = {
       text: danmu.text,
       time: danmu.time,
       color: danmu.color,
       mode: danmu.mode ?? 0,
-    })
+      border: !!danmu.isSelf,
+      id: danmu.id != null ? String(danmu.id) : undefined,
+    }
+    plugin.emit(emitted)
+
+    if (danmu.id != null) {
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          const container = containerRef.value
+          if (!container) return
+          const items = container.querySelectorAll<HTMLElement>(
+            `.art-danmuku [data-id="${danmu.id}"]`
+          )
+          items.forEach((el) => {
+            if (!danmuMetaMap.has(el)) {
+              danmuMetaMap.set(el, {
+                id: danmu.id,
+                likeCount: danmu.likeCount ?? 0,
+                isLiked: danmu.isLiked ?? false,
+                createdAt: danmu.createdAt,
+                mode: danmu.mode ?? 0,
+              })
+              if (danmu.id != null) danmuIdToEl.set(danmu.id, el)
+            }
+          })
+        })
+      })
+    }
   }
 }
 
@@ -131,6 +204,141 @@ const setDanmuOpacity = (opacity: number) => {
   }
 }
 
+// ---- Hold / Release a single danmu ----
+
+let holdCheckTimer: ReturnType<typeof setInterval> | null = null
+
+const getCurrentTranslateX = (el: HTMLElement): number => {
+  const style = getComputedStyle(el)
+  const matrix = new DOMMatrix(style.transform)
+  return matrix.m41
+}
+
+const holdDanmuItem = (el: HTMLElement, mode: 0 | 1 | 2) => {
+  if (heldDanmu && heldDanmu.el === el) return
+  if (heldDanmu) releaseHeldDanmuItem('leave')
+
+  if (mode === 0) {
+    const currentX = getCurrentTranslateX(el)
+    const meta = danmuMetaMap.get(el)
+
+    let speedPxPerSec = meta?.originalSpeed
+    let targetX = meta?.originalTargetX
+
+    if (speedPxPerSec === undefined || targetX === undefined) {
+      const targetMatch = el.style.transform.match(/translateX\(([-\d.]+)px\)/)
+      targetX = targetMatch ? parseFloat(targetMatch[1]!) : currentX
+      const transMatch = el.style.transition.match(/transform\s+([\d.]+)s/)
+      const totalDuration = transMatch ? parseFloat(transMatch[1]!) : 5
+
+      const totalTravelDistance = Math.abs(targetX)
+      speedPxPerSec = totalDuration > 0 ? totalTravelDistance / totalDuration : 200
+
+      if (meta) {
+        meta.originalSpeed = speedPxPerSec
+        meta.originalTargetX = targetX
+      }
+    }
+
+    el.style.transform = `translateX(${currentX}px)`
+    el.style.transition = 'transform 0s linear 0s'
+
+    heldDanmu = {
+      el,
+      mode,
+      frozenTranslateX: currentX,
+      targetTranslateX: targetX,
+      speedPxPerSec,
+      resumeTimer: setTimeout(() => {
+        resumeHeldDanmu()
+      }, HOLD_RESUME_DELAY),
+    }
+  } else {
+    heldDanmu = {
+      el,
+      mode,
+      frozenTranslateX: 0,
+      targetTranslateX: 0,
+      speedPxPerSec: 0,
+      resumeTimer: setTimeout(() => {
+        resumeHeldDanmu()
+      }, HOLD_RESUME_DELAY),
+    }
+  }
+
+  startHoldCheck()
+}
+
+const startHoldCheck = () => {
+  if (holdCheckTimer) return
+  holdCheckTimer = setInterval(() => {
+    if (!heldDanmu) {
+      stopHoldCheck()
+      return
+    }
+    if (!heldDanmu.el.isConnected) {
+      if (heldDanmu.resumeTimer) clearTimeout(heldDanmu.resumeTimer)
+      heldDanmu = null
+      stopHoldCheck()
+      emit('danmuHoldEnd')
+    }
+  }, 200)
+}
+
+const stopHoldCheck = () => {
+  if (holdCheckTimer) {
+    clearInterval(holdCheckTimer)
+    holdCheckTimer = null
+  }
+}
+
+const resumeHeldDanmu = () => {
+  if (!heldDanmu) return
+  const { el, mode, frozenTranslateX, targetTranslateX, speedPxPerSec } = heldDanmu
+  if (heldDanmu.resumeTimer) {
+    clearTimeout(heldDanmu.resumeTimer)
+    heldDanmu.resumeTimer = null
+  }
+  stopHoldCheck()
+
+  if (!el.isConnected) {
+    heldDanmu = null
+    emit('danmuHoldEnd')
+    return
+  }
+
+  if (mode === 0 && speedPxPerSec > 0) {
+    const remainingDistance = Math.abs(targetTranslateX - frozenTranslateX)
+    const remainingTime = Math.max(remainingDistance / speedPxPerSec, 0.3)
+
+    el.style.transform = `translateX(${targetTranslateX}px)`
+    el.style.transition = `transform ${remainingTime}s linear 0s`
+  }
+
+  heldDanmu = null
+  emit('danmuHoldEnd')
+}
+
+const releaseHeldDanmuItem = (reason: 'leave' | 'timeout') => {
+  if (!heldDanmu) return
+  if (heldDanmu.resumeTimer) {
+    clearTimeout(heldDanmu.resumeTimer)
+    heldDanmu.resumeTimer = null
+  }
+  if (reason === 'leave') {
+    resumeHeldDanmu()
+  }
+}
+
+const updateDanmuMeta = (danmuId: number, partial: { likeCount?: number; isLiked?: boolean }) => {
+  const el = danmuIdToEl.get(danmuId)
+  if (!el) return
+  const meta = danmuMetaMap.get(el)
+  if (!meta) return
+  if (partial.likeCount !== undefined) meta.likeCount = partial.likeCount
+  if (partial.isLiked !== undefined) meta.isLiked = partial.isLiked
+}
+
 defineExpose({
   emitDanmu,
   setDanmuVisible,
@@ -138,7 +346,105 @@ defineExpose({
   danmuVisible,
   danmuOpacity,
   artRef,
+  holdDanmu: holdDanmuItem,
+  releaseHeldDanmu: releaseHeldDanmuItem,
+  updateDanmuMeta,
 })
+
+// ---- Hover event delegation ----
+
+let currentHoverEl: HTMLElement | null = null
+
+const setupDanmuHover = (container: HTMLElement) => {
+  const danmukuLayer = (): HTMLElement | null => container.querySelector('.art-danmuku')
+
+  container.addEventListener('mouseover', (e: MouseEvent) => {
+    const target = e.target as HTMLElement
+    const layer = danmukuLayer()
+    if (!layer || !layer.contains(target)) return
+
+    const el = findDanmuEl(target, layer)
+    if (!el || el === currentHoverEl) return
+
+    currentHoverEl = el
+    const meta = danmuMetaMap.get(el)
+    const mode = Number(el.dataset.mode ?? '0') as 0 | 1 | 2
+
+    holdDanmuItem(el, mode)
+
+    emit('danmuHover', {
+      el,
+      text: el.textContent?.trim() ?? '',
+      danmuId: meta?.id,
+      likeCount: meta?.likeCount ?? 0,
+      isLiked: meta?.isLiked ?? false,
+      createdAt: meta?.createdAt,
+      mode,
+    })
+  })
+
+  container.addEventListener('mouseout', (e: MouseEvent) => {
+    if (!currentHoverEl) return
+    const related = e.relatedTarget as HTMLElement | null
+    if (related && currentHoverEl.contains(related)) return
+
+    const leavingEl = currentHoverEl
+    currentHoverEl = null
+
+    if (heldDanmu && heldDanmu.el === leavingEl) {
+      emit('danmuLeave')
+    }
+  })
+}
+
+const findDanmuEl = (target: HTMLElement, layer: HTMLElement): HTMLElement | null => {
+  if (target === layer) return null
+  if (target.parentElement === layer) return target
+  let current: HTMLElement | null = target
+  while (current && current.parentElement !== layer) {
+    current = current.parentElement
+  }
+  return current
+}
+
+// ---- Observe art-danmuku for metadata from loaded danmu (visible event) ----
+
+const setupDanmuVisibleObserver = () => {
+  if (!artRef.value) return
+
+  type DanmuVisiblePayload = {
+    text: string
+    mode: number
+    color: string
+    time: number
+    id?: string
+    $ref: HTMLElement | null
+  }
+
+  const handler = (...args: unknown[]) => {
+    const danmu = args[0] as DanmuVisiblePayload
+    if (!danmu?.$ref) return
+    if (!danmu.id) return
+    const numId = Number(danmu.id)
+    if (Number.isNaN(numId)) return
+    const existing = danmuMetaMap.get(danmu.$ref)
+    if (!existing || existing.id !== numId) {
+      const cached = loadedDanmuMeta.get(numId)
+      danmuMetaMap.set(
+        danmu.$ref,
+        cached ?? {
+          id: numId,
+          likeCount: 0,
+          isLiked: false,
+          mode: danmu.mode as 0 | 1 | 2,
+        }
+      )
+      danmuIdToEl.set(numId, danmu.$ref)
+    }
+  }
+
+  artRef.value.on('artplayerPluginDanmuku:visible' as 'ready', handler)
+}
 
 const initPlayer = () => {
   if (!containerRef.value || !primaryUrl.value) return
@@ -148,7 +454,6 @@ const initPlayer = () => {
 
   const settings: Setting[] = []
 
-  // Add quality selector if multiple resources (Requirements: 清晰度切换保持进度)
   if (qualityList.value && qualityList.value.length > 1) {
     settings.push({
       html: '清晰度',
@@ -213,19 +518,16 @@ const initPlayer = () => {
 
   const art = new Artplayer(option)
 
-  // Restore watch progress (Requirements: 播放进度记忆)
   if (watchProgress > 0) {
     art.on('ready', () => {
       art.currentTime = watchProgress
     })
   }
 
-  // Volume change -> persist to localStorage (Requirements: 音量持久化)
   art.on('video:volumechange', () => {
     localStorage.setItem(VOLUME_STORAGE_KEY, String(art.volume))
   })
 
-  // Sync player state to store
   art.on('video:timeupdate', () => {
     videoStore.updatePlayerState({
       currentTime: art.currentTime,
@@ -242,7 +544,6 @@ const initPlayer = () => {
     videoStore.updatePlayerState({ playing: false })
   })
 
-  // Restore progress after quality switch (Requirements: 切换清晰度时保持播放进度)
   art.on('video:canplay', () => {
     if (qualitySwitchTime > 0) {
       art.currentTime = qualitySwitchTime
@@ -260,21 +561,11 @@ const initPlayer = () => {
     emit('danmuPlugin', danmuPlugin)
   }
 
-  // Danmu click interaction via event delegation (Requirements: 4.7)
+  setupDanmuVisibleObserver()
+
   const container = containerRef.value
   if (container) {
-    container.addEventListener('click', (e: MouseEvent) => {
-      const target = e.target as HTMLElement
-      if (target.classList.contains('art-danmuku-item') || target.closest('.art-danmuku-item')) {
-        const el = target.classList.contains('art-danmuku-item')
-          ? target
-          : (target.closest('.art-danmuku-item') as HTMLElement)
-        if (el) {
-          e.stopPropagation()
-          emit('danmuClick', e, el.textContent?.trim() ?? '')
-        }
-      }
-    })
+    setupDanmuHover(container)
   }
 }
 
@@ -297,6 +588,16 @@ const destroyPlayer = () => {
     clearInterval(progressSaveTimer)
     progressSaveTimer = null
   }
+  if (heldDanmu?.resumeTimer) {
+    clearTimeout(heldDanmu.resumeTimer)
+  }
+  heldDanmu = null
+  currentHoverEl = null
+  stopHoldCheck()
+  danmuMetaMap.clear()
+  danmuIdToEl.clear()
+  loadedDanmuMeta.clear()
+
   if (artRef.value) {
     if (authStore.isLoggedIn && videoStore.videoId) {
       videoStore.updatePlayerState({
@@ -310,7 +611,6 @@ const destroyPlayer = () => {
   }
 }
 
-// Keyboard shortcuts: Space play/pause, Arrow seek/volume, F fullscreen (ArtPlayer hotkey: true)
 watch(
   () => [primaryUrl.value, videoStore.currentVideo?.id],
   () => {
@@ -409,5 +709,15 @@ onBeforeUnmount(() => {
 
 :deep(.art-setting-panel) {
   border-radius: 8px !important;
+}
+
+/* Enable pointer events on danmu items for hover interaction */
+:deep(.art-danmuku) {
+  pointer-events: none !important;
+}
+
+:deep(.art-danmuku > *) {
+  pointer-events: auto !important;
+  cursor: pointer;
 }
 </style>

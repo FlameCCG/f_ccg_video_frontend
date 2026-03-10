@@ -202,6 +202,14 @@ const setDanmuOpacity = (opacity: number) => {
   }
 }
 
+// ---- Hold / Release a single danmu ----
+
+const getCurrentTranslateX = (el: HTMLElement): number => {
+  const style = getComputedStyle(el)
+  const matrix = new DOMMatrix(style.transform)
+  return matrix.m41
+}
+
 const holdDanmuItem = (el: HTMLElement, mode: 0 | 1 | 2) => {
   if (heldDanmu && (heldDanmu.originalEl === el || heldDanmu.el === el)) return
   if (heldDanmu) releaseHeldDanmuItem('leave')

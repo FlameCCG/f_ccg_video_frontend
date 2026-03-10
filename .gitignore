@@ -7,6 +7,9 @@ yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
 .agent
+.agents
+.codex
+.gemini
 .kiro
 .cursor
 .serena
@@ -17,6 +20,10 @@ dist
 dist-ssr
 *.local
 .playwright-mcp
+
+# Test artifacts
+testAssets/
+test-*.png
 
 # Editor directories and files
 .vscode/*

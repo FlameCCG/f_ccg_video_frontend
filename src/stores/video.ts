@@ -232,10 +232,16 @@ export const useVideoStore = defineStore(
       }
 
       try {
+        const duration = Math.max(
+          1,
+          Math.round(playerState.value.duration || currentVideo.value.duration)
+        )
+        const progress = Math.min(duration, Math.max(0, Math.floor(playerState.value.currentTime)))
+
         await savePlayHistory({
           videoId: currentVideo.value.id,
-          progress: playerState.value.currentTime,
-          duration: playerState.value.duration || currentVideo.value.duration,
+          progress,
+          duration,
         })
         return true
       } catch {

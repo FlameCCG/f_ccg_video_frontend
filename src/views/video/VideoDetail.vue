@@ -255,6 +255,13 @@ const submitDanmuReport = async () => {
   }
 }
 
+const handleReportEnter = (e: KeyboardEvent) => {
+  // Don't submit if the event came from the textarea
+  if ((e.target as HTMLElement)?.tagName === 'TEXTAREA') return
+  e.preventDefault()
+  void submitDanmuReport()
+}
+
 const handleDanmuCopy = async () => {
   try {
     await navigator.clipboard.writeText(danmuTooltip.value.text)
@@ -521,59 +528,62 @@ onBeforeUnmount(() => {
 
     <Dialog :open="reportDialogOpen" @update:open="reportDialogOpen = $event">
       <DialogContent class="max-w-md gap-0 border-[#e3e5e7] bg-white p-0">
-        <div class="border-b border-[#f1f2f3] px-5 py-4">
-          <DialogTitle class="text-base font-semibold text-[#18191c]">举报弹幕</DialogTitle>
-          <DialogDescription class="mt-1 text-sm text-[#61666d] break-all line-clamp-2">
-            {{ reportingDanmu?.text }}
-          </DialogDescription>
-        </div>
+        <div @keydown.enter="handleReportEnter">
+          <div class="border-b border-[#f1f2f3] px-5 py-4">
+            <DialogTitle class="text-base font-semibold text-[#18191c]">举报弹幕</DialogTitle>
+            <DialogDescription class="mt-1 text-sm text-[#61666d] break-all line-clamp-2">
+              {{ reportingDanmu?.text }}
+            </DialogDescription>
+          </div>
 
-        <div class="space-y-4 px-5 py-4">
-          <div>
-            <p class="mb-2 text-sm font-medium text-[#18191c]">举报原因</p>
-            <div class="flex flex-wrap gap-2">
-              <button
-                v-for="reason in REPORT_REASONS"
-                :key="reason"
-                class="rounded-full border px-3 py-1 text-xs transition-colors"
-                :class="
-                  reportReason === reason
-                    ? 'border-[#00a1d6] bg-[#e6f7fc] text-[#00a1d6]'
-                    : 'border-[#e3e5e7] bg-white text-[#61666d] hover:border-[#c9ccd0] hover:text-[#18191c]'
-                "
-                @click="reportReason = reason"
-              >
-                {{ reason }}
-              </button>
+          <div class="space-y-4 px-5 py-4">
+            <div>
+              <p class="mb-2 text-sm font-medium text-[#18191c]">举报原因</p>
+              <div class="flex flex-wrap gap-2">
+                <button
+                  v-for="reason in REPORT_REASONS"
+                  :key="reason"
+                  class="rounded-full border px-3 py-1 text-xs transition-colors"
+                  :class="
+                    reportReason === reason
+                      ? 'border-[#00a1d6] bg-[#e6f7fc] text-[#00a1d6]'
+                      : 'border-[#e3e5e7] bg-white text-[#61666d] hover:border-[#c9ccd0] hover:text-[#18191c]'
+                  "
+                  @click="reportReason = reason"
+                >
+                  {{ reason }}
+                </button>
+              </div>
+            </div>
+
+            <div>
+              <p class="mb-2 text-sm font-medium text-[#18191c]">补充说明</p>
+              <textarea
+                v-model="reportDetail"
+                rows="4"
+                maxlength="200"
+                class="w-full resize-none rounded-xl border border-[#e3e5e7] bg-[#fafafa] px-3 py-2 text-sm text-[#18191c] outline-none transition-colors focus:border-[#00a1d6] focus:bg-white"
+                placeholder="选填，补充举报说明"
+                @keydown.enter.stop
+              />
             </div>
           </div>
 
-          <div>
-            <p class="mb-2 text-sm font-medium text-[#18191c]">补充说明</p>
-            <textarea
-              v-model="reportDetail"
-              rows="4"
-              maxlength="200"
-              class="w-full resize-none rounded-xl border border-[#e3e5e7] bg-[#fafafa] px-3 py-2 text-sm text-[#18191c] outline-none transition-colors focus:border-[#00a1d6] focus:bg-white"
-              placeholder="选填，补充举报说明"
-            />
+          <div class="flex items-center justify-end gap-3 border-t border-[#f1f2f3] px-5 py-4">
+            <button
+              class="rounded-full border border-[#e3e5e7] px-4 py-2 text-sm text-[#61666d] transition-colors hover:border-[#c9ccd0] hover:text-[#18191c]"
+              @click="reportDialogOpen = false"
+            >
+              取消
+            </button>
+            <button
+              class="rounded-full bg-[#fb7299] px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-[#fc8bab] disabled:cursor-not-allowed disabled:opacity-60"
+              :disabled="submittingReport"
+              @click="submitDanmuReport"
+            >
+              {{ submittingReport ? '提交中...' : '提交举报' }}
+            </button>
           </div>
-        </div>
-
-        <div class="flex items-center justify-end gap-3 border-t border-[#f1f2f3] px-5 py-4">
-          <button
-            class="rounded-full border border-[#e3e5e7] px-4 py-2 text-sm text-[#61666d] transition-colors hover:border-[#c9ccd0] hover:text-[#18191c]"
-            @click="reportDialogOpen = false"
-          >
-            取消
-          </button>
-          <button
-            class="rounded-full bg-[#fb7299] px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-[#fc8bab] disabled:cursor-not-allowed disabled:opacity-60"
-            :disabled="submittingReport"
-            @click="submitDanmuReport"
-          >
-            {{ submittingReport ? '提交中...' : '提交举报' }}
-          </button>
         </div>
       </DialogContent>
     </Dialog>

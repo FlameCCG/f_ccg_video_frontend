@@ -475,7 +475,7 @@ onBeforeUnmount(() => {
           class="danmu-hover-card"
           :style="{
             left: danmuTooltip.x + 'px',
-            top: danmuTooltip.y - 8 + 'px',
+            top: danmuTooltip.y + 32 + 'px',
           }"
           @mouseenter="handleTooltipEnter"
           @mouseleave="handleTooltipLeave"
@@ -576,7 +576,7 @@ onBeforeUnmount(() => {
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
   border: 1px solid rgba(255, 255, 255, 0.1);
-  transform: translateX(-50%) translateY(-100%);
+  transform: translateX(-50%);
   pointer-events: auto;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
 }
@@ -585,7 +585,7 @@ onBeforeUnmount(() => {
 .danmu-hover-card::after {
   content: '';
   position: absolute;
-  top: 100%;
+  bottom: 100%;
   left: -20px;
   right: -20px;
   height: 20px;

@@ -204,6 +204,54 @@ const setDanmuOpacity = (opacity: number) => {
 
 // ---- Hold / Release a single danmu ----
 
+const activeClones = new Set<HeldDanmu>()
+
+watch(
+  () => videoStore.playerState.playing,
+  (isPlaying) => {
+    activeClones.forEach((clone) => {
+      // Don't modify the currently hovered danmaku
+      if (heldDanmu && heldDanmu.el === clone.el) return
+
+      if (isPlaying) {
+        resumeCloneAnimation(clone)
+      } else {
+        if (clone.mode === 0) {
+          const currentX = getCurrentTranslateX(clone.el)
+          clone.el.style.transform = `translateX(${currentX}px)`
+          clone.el.style.transition = 'transform 0s linear 0s'
+        }
+      }
+    })
+  }
+)
+
+const removeClone = (clone: HeldDanmu) => {
+  if (clone.el.isConnected) clone.el.remove()
+  activeClones.delete(clone)
+}
+
+const resumeCloneAnimation = (clone: HeldDanmu) => {
+  if (!clone.el.isConnected) {
+    return removeClone(clone)
+  }
+
+  if (clone.mode === 0 && clone.speedPxPerSec > 0) {
+    const currentX = getCurrentTranslateX(clone.el)
+    const remainingDistance = Math.abs(clone.targetTranslateX - currentX)
+    const remainingTime = Math.max(remainingDistance / clone.speedPxPerSec, 0.1)
+
+    clone.el.style.transform = `translateX(${clone.targetTranslateX}px)`
+    clone.el.style.transition = `transform ${remainingTime}s linear 0s`
+
+    clone.el.addEventListener('transitionend', () => removeClone(clone), { once: true })
+  } else {
+    clone.el.style.opacity = '0'
+    clone.el.style.transition = 'opacity 0.5s ease'
+    setTimeout(() => removeClone(clone), 500)
+  }
+}
+
 const getCurrentTranslateX = (el: HTMLElement): number => {
   const style = getComputedStyle(el)
   const matrix = new DOMMatrix(style.transform)
@@ -261,50 +309,30 @@ const holdDanmuItem = (el: HTMLElement, mode: 0 | 1 | 2) => {
     el.parentElement?.appendChild(clone)
   }
 
-  heldDanmu = {
+  const cloneData = {
     el: clone,
     originalEl,
     mode,
     targetTranslateX: targetX,
     speedPxPerSec,
   }
+
+  if (!isAlreadyClone) {
+    activeClones.add(cloneData)
+  }
+
+  heldDanmu = cloneData
 }
 
 const resumeHeldDanmu = () => {
   if (!heldDanmu) return
-  const { el, mode, targetTranslateX, speedPxPerSec } = heldDanmu
-
-  if (!el.isConnected) {
-    heldDanmu = null
-    emit('danmuHoldEnd')
-    return
-  }
-
-  if (mode === 0 && speedPxPerSec > 0) {
-    const currentX = getCurrentTranslateX(el)
-    const remainingDistance = Math.abs(targetTranslateX - currentX)
-    const remainingTime = Math.max(remainingDistance / speedPxPerSec, 0.3)
-
-    el.style.transform = `translateX(${targetTranslateX}px)`
-    el.style.transition = `transform ${remainingTime}s linear 0s`
-
-    el.addEventListener(
-      'transitionend',
-      () => {
-        if (el.isConnected) el.remove()
-      },
-      { once: true }
-    )
-  } else {
-    el.style.opacity = '0'
-    el.style.transition = 'opacity 0.5s ease'
-    setTimeout(() => {
-      if (el.isConnected) el.remove()
-    }, 500)
-  }
-
+  const clone = heldDanmu
   heldDanmu = null
   emit('danmuHoldEnd')
+
+  if (videoStore.playerState.playing) {
+    resumeCloneAnimation(clone)
+  }
 }
 
 const releaseHeldDanmuItem = (reason: 'leave' | 'timeout') => {

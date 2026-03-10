@@ -672,18 +672,11 @@ onBeforeUnmount(() => {
 /* Tooltip animation */
 .danmu-tooltip-enter-active,
 .danmu-tooltip-leave-active {
-  transition:
-    opacity 0.15s ease,
-    transform 0.15s ease;
+  transition: opacity 0.15s ease;
 }
 
-.danmu-tooltip-enter-from {
-  opacity: 0;
-  transform: translateX(-50%) translateY(-80%);
-}
-
+.danmu-tooltip-enter-from,
 .danmu-tooltip-leave-to {
   opacity: 0;
-  transform: translateX(-50%) translateY(-100%);
 }
 </style>

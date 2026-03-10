@@ -247,17 +247,21 @@ const submitDanmuReport = async () => {
     })
     reportDialogOpen.value = false
     reportingDanmu.value = null
-    toast.success('举报已提交')
+    setTimeout(() => toast.success('举报已提交'), 300)
   } catch {
-    toast.error('举报弹幕失败')
+    setTimeout(() => toast.error('举报弹幕失败'), 300)
   } finally {
     submittingReport.value = false
   }
 }
 
-const handleReportEnter = (e: KeyboardEvent) => {
-  // Don't submit if the event came from the textarea
-  if ((e.target as HTMLElement)?.tagName === 'TEXTAREA') return
+const handleReportKeydown = (e: KeyboardEvent) => {
+  if (e.key !== 'Enter' || e.isComposing || submittingReport.value) return
+
+  const target = e.target as HTMLElement | null
+  const isTextarea = target?.tagName === 'TEXTAREA'
+  if (isTextarea && e.shiftKey) return
+
   e.preventDefault()
   void submitDanmuReport()
 }
@@ -343,6 +347,7 @@ watch(videoId, (id) => {
 onBeforeUnmount(() => {
   videoStore.clearVideo()
   if (hideTooltipTimer) clearTimeout(hideTooltipTimer)
+  document.removeEventListener('keydown', handleReportKeydown)
 })
 </script>
 
@@ -394,7 +399,7 @@ onBeforeUnmount(() => {
       </div>
 
       <!-- Two Column Layout -->
-      <div class="flex gap-5">
+      <div class="flex items-start gap-5">
         <!-- Left Column: Player + DanmuInput + Actions + Description -->
         <div class="min-w-0 flex-1">
           <!-- Video Player -->
@@ -528,10 +533,10 @@ onBeforeUnmount(() => {
 
     <Dialog :open="reportDialogOpen" @update:open="reportDialogOpen = $event">
       <DialogContent class="max-w-md gap-0 border-[#e3e5e7] bg-white p-0">
-        <div @keydown.enter="handleReportEnter">
+        <form @submit.prevent="submitDanmuReport" @keydown.capture="handleReportKeydown">
           <div class="border-b border-[#f1f2f3] px-5 py-4">
             <DialogTitle class="text-base font-semibold text-[#18191c]">举报弹幕</DialogTitle>
-            <DialogDescription class="mt-1 text-sm text-[#61666d] break-all line-clamp-2">
+            <DialogDescription class="mt-1 break-all line-clamp-2 text-sm text-[#61666d]">
               {{ reportingDanmu?.text }}
             </DialogDescription>
           </div>
@@ -543,6 +548,7 @@ onBeforeUnmount(() => {
                 <button
                   v-for="reason in REPORT_REASONS"
                   :key="reason"
+                  type="button"
                   class="rounded-full border px-3 py-1 text-xs transition-colors"
                   :class="
                     reportReason === reason
@@ -564,27 +570,27 @@ onBeforeUnmount(() => {
                 maxlength="200"
                 class="w-full resize-none rounded-xl border border-[#e3e5e7] bg-[#fafafa] px-3 py-2 text-sm text-[#18191c] outline-none transition-colors focus:border-[#00a1d6] focus:bg-white"
                 placeholder="选填，补充举报说明"
-                @keydown.enter.stop
               />
             </div>
           </div>
 
           <div class="flex items-center justify-end gap-3 border-t border-[#f1f2f3] px-5 py-4">
             <button
+              type="button"
               class="rounded-full border border-[#e3e5e7] px-4 py-2 text-sm text-[#61666d] transition-colors hover:border-[#c9ccd0] hover:text-[#18191c]"
               @click="reportDialogOpen = false"
             >
               取消
             </button>
             <button
+              type="submit"
               class="rounded-full bg-[#fb7299] px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-[#fc8bab] disabled:cursor-not-allowed disabled:opacity-60"
               :disabled="submittingReport"
-              @click="submitDanmuReport"
             >
               {{ submittingReport ? '提交中...' : '提交举报' }}
             </button>
           </div>
-        </div>
+        </form>
       </DialogContent>
     </Dialog>
   </div>
@@ -597,13 +603,12 @@ onBeforeUnmount(() => {
   z-index: 9999;
   padding: 4px 6px;
   border-radius: 999px; /* Pill shape */
-  background: rgba(40, 40, 40, 0.75); /* transparent like Image 2 */
+  background: rgb(40 40 40 / 75%); /* transparent like Image 2 */
   backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  border: 1px solid rgb(255 255 255 / 10%);
   transform: translateX(-50%);
   pointer-events: auto;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+  box-shadow: 0 4px 12px rgb(0 0 0 / 20%);
 }
 
 /* Small triangle arrow pointing up */
@@ -615,17 +620,14 @@ onBeforeUnmount(() => {
   transform: translateX(-50%);
   border-left: 6px solid transparent;
   border-right: 6px solid transparent;
-  border-bottom: 6px solid rgba(40, 40, 40, 0.75);
+  border-bottom: 6px solid rgb(40 40 40 / 75%);
 }
 
 /* Massive invisible bridge/padding around the entire card to completely eliminate twitching */
 .danmu-hover-card::after {
   content: '';
   position: absolute;
-  bottom: 0;
-  top: -30px;
-  left: -40px;
-  right: -40px;
+  inset: -30px -40px 0;
   background: transparent;
   z-index: -1;
 }
@@ -639,7 +641,7 @@ onBeforeUnmount(() => {
 .danmu-hover-divider {
   width: 1px;
   height: 16px;
-  background: rgba(255, 255, 255, 0.2);
+  background: rgb(255 255 255 / 20%);
   margin: 0 2px;
 }
 
@@ -652,7 +654,7 @@ onBeforeUnmount(() => {
   min-width: 32px;
   padding: 0 8px;
   border-radius: 999px;
-  color: rgba(255, 255, 255, 0.8);
+  color: rgb(255 255 255 / 80%);
   background: transparent;
   border: none;
   cursor: pointer;
@@ -663,7 +665,7 @@ onBeforeUnmount(() => {
 
 .danmu-hover-btn:hover {
   color: #fff;
-  background: rgba(255, 255, 255, 0.15);
+  background: rgb(255 255 255 / 15%);
 }
 
 .danmu-hover-btn.is-active {
@@ -671,12 +673,12 @@ onBeforeUnmount(() => {
 }
 
 .danmu-hover-btn.is-danger {
-  color: rgba(255, 255, 255, 0.8);
+  color: rgb(255 255 255 / 80%);
 }
 
 .danmu-hover-btn.is-danger:hover {
   color: #fb7299;
-  background: rgba(251, 114, 153, 0.15);
+  background: rgb(251 114 153 / 15%);
 }
 
 .danmu-hover-btn:active {

@@ -122,7 +122,7 @@ watch(() => props.videoId, fetchRecommend)
 
 <style scoped>
 .recommend-container {
-  contain: content;
+  padding-bottom: 12px;
 }
 
 .skeleton-box {

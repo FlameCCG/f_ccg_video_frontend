@@ -129,19 +129,30 @@ const hideDanmuTooltip = () => {
   }
 }
 
-const syncDanmuTooltipPosition = (el: HTMLElement) => {
+const syncDanmuTooltipPosition = (e: MouseEvent, el: HTMLElement) => {
   const rect = el.getBoundingClientRect()
-  danmuTooltip.value.x = rect.left + rect.width / 2
-  danmuTooltip.value.y = rect.top
+  // Pin tooltip just below the exact mouse cursor X but clamp to the element's width
+  let hoverX = e.clientX
+  if (hoverX < rect.left) hoverX = rect.left + 16
+  if (hoverX > rect.right) hoverX = rect.right - 16
+
+  danmuTooltip.value.x = hoverX
+  danmuTooltip.value.y = rect.bottom
 }
 
-const handleDanmuHover = (payload: DanmuHoverPayload) => {
+const handleDanmuHover = (payload: DanmuHoverPayload & { e?: MouseEvent }) => {
   if (hideTooltipTimer) {
     clearTimeout(hideTooltipTimer)
     hideTooltipTimer = null
   }
 
-  syncDanmuTooltipPosition(payload.el)
+  if (payload.e) {
+    syncDanmuTooltipPosition(payload.e, payload.el)
+  } else {
+    const rect = payload.el.getBoundingClientRect()
+    danmuTooltip.value.x = rect.left + rect.width / 2
+    danmuTooltip.value.y = rect.bottom
+  }
 
   danmuTooltip.value = {
     el: payload.el,
@@ -475,7 +486,7 @@ onBeforeUnmount(() => {
           class="danmu-hover-card"
           :style="{
             left: danmuTooltip.x + 'px',
-            top: danmuTooltip.y + 32 + 'px',
+            top: danmuTooltip.y + 12 + 'px',
           }"
           @mouseenter="handleTooltipEnter"
           @mouseleave="handleTooltipLeave"
@@ -581,15 +592,28 @@ onBeforeUnmount(() => {
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
 }
 
-/* Invisible bridge to prevent hover twitching */
+/* Small triangle arrow pointing up */
+.danmu-hover-card::before {
+  content: '';
+  position: absolute;
+  top: -6px;
+  left: 50%;
+  transform: translateX(-50%);
+  border-left: 6px solid transparent;
+  border-right: 6px solid transparent;
+  border-bottom: 6px solid rgba(40, 40, 40, 0.75);
+}
+
+/* Massive invisible bridge/padding around the entire card to completely eliminate twitching */
 .danmu-hover-card::after {
   content: '';
   position: absolute;
-  bottom: 100%;
-  left: -20px;
-  right: -20px;
-  height: 20px;
+  bottom: 0;
+  top: -30px;
+  left: -40px;
+  right: -40px;
   background: transparent;
+  z-index: -1;
 }
 
 .danmu-hover-actions {

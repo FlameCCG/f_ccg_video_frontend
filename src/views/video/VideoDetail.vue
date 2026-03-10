@@ -112,6 +112,7 @@ const reportDialogOpen = ref(false)
 const reportReason = ref(REPORT_REASONS[0]!)
 const reportDetail = ref('')
 const submittingReport = ref(false)
+const reportingDanmu = ref<{ id: number; text: string } | null>(null)
 
 const hideDanmuTooltip = () => {
   danmuTooltip.value = {
@@ -227,22 +228,25 @@ const openDanmuReportDialog = () => {
 
   reportReason.value = REPORT_REASONS[0]!
   reportDetail.value = ''
+  reportingDanmu.value = {
+    id: danmuTooltip.value.danmuId,
+    text: danmuTooltip.value.text,
+  }
   reportDialogOpen.value = true
 }
 
 const submitDanmuReport = async () => {
-  if (danmuTooltip.value.danmuId === undefined || submittingReport.value) return
+  if (!reportingDanmu.value || submittingReport.value) return
 
   submittingReport.value = true
   try {
     await reportDanmu({
-      danmuId: danmuTooltip.value.danmuId,
+      danmuId: reportingDanmu.value.id,
       reason: reportReason.value,
       detail: reportDetail.value.trim() || undefined,
     })
     reportDialogOpen.value = false
-    playerRef.value?.releaseHeldDanmu('leave')
-    hideDanmuTooltip()
+    reportingDanmu.value = null
     toast.success('举报已提交')
   } catch {
     toast.error('举报弹幕失败')
@@ -516,11 +520,11 @@ onBeforeUnmount(() => {
     </Teleport>
 
     <Dialog :open="reportDialogOpen" @update:open="reportDialogOpen = $event">
-      <DialogContent class="max-w-md border-[#e3e5e7] bg-white p-0">
+      <DialogContent class="max-w-md gap-0 border-[#e3e5e7] bg-white p-0">
         <div class="border-b border-[#f1f2f3] px-5 py-4">
           <DialogTitle class="text-base font-semibold text-[#18191c]">举报弹幕</DialogTitle>
-          <DialogDescription class="mt-1 text-sm text-[#61666d]">
-            {{ danmuTooltip.text }}
+          <DialogDescription class="mt-1 text-sm text-[#61666d] break-all line-clamp-2">
+            {{ reportingDanmu?.text }}
           </DialogDescription>
         </div>
 

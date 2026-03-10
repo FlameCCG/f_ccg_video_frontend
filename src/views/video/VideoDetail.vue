@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onBeforeUnmount, watch } from 'vue'
 import { useRoute } from 'vue-router'
+import { useAuthStore } from '@/stores/auth'
+import { likeDanmu, reportDanmu, type PlayerDanmuPayload } from '@/api/danmu'
 import { useVideoStore } from '@/stores/video'
 import { addVideoView } from '@/api/video'
 import VideoPlayer from '@/components/player/VideoPlayer.vue'
@@ -10,6 +12,7 @@ import AuthorCard from '@/components/user/AuthorCard.vue'
 import VideoRecommend from '@/components/video/VideoRecommend.vue'
 import PartList from '@/components/video/PartList.vue'
 import DanmuList from '@/components/player/DanmuList.vue'
+import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog'
 import { useDanmuWebSocket } from '@/composables/useDanmuWebSocket'
 import { toast } from 'vue-sonner'
 import {
@@ -20,13 +23,34 @@ import {
   ChevronDown,
   ChevronUp,
   ThumbsUp,
-  Flag,
+  TriangleAlert,
   Copyright,
+  Copy,
 } from 'lucide-vue-next'
 
+type DanmuHoverPayload = {
+  el: HTMLElement
+  text: string
+  danmuId?: number
+  likeCount: number
+  isLiked: boolean
+  createdAt?: string
+  mode: 0 | 1 | 2
+}
+
+type DanmuHoverState = Omit<DanmuHoverPayload, 'el'> & {
+  el: HTMLElement | null
+  show: boolean
+  x: number
+  y: number
+  targetEl: HTMLElement | null
+}
+
 const route = useRoute()
+const authStore = useAuthStore()
 const videoStore = useVideoStore()
 const playerRef = ref<InstanceType<typeof VideoPlayer> | null>(null)
+const REPORT_REASONS = ['垃圾广告', '剧透刷屏', '人身攻击', '违法违禁', '色情低俗', '其他']
 
 const videoId = computed(() => {
   const id = route.params.id
@@ -37,7 +61,13 @@ const isLoading = computed(() => videoStore.isLoading)
 const error = computed(() => videoStore.error)
 const video = computed(() => videoStore.currentVideo)
 
-const currentPartId = ref<number | undefined>(undefined)
+const manualPartId = ref<number | undefined>(undefined)
+const currentPartId = computed(() => {
+  if (manualPartId.value !== undefined) return manualPartId.value
+  const parts = video.value?.parts
+  if (parts && parts.length > 0) return parts[0]!.id
+  return undefined
+})
 const descExpanded = ref(false)
 const currentPlayerTime = computed(() => videoStore.playerState.currentTime)
 
@@ -49,53 +79,192 @@ const { newDanmu } = useDanmuWebSocket(
 watch(newDanmu, (danmu) => {
   if (danmu && playerRef.value) {
     playerRef.value.emitDanmu({
+      id: danmu.id,
       text: danmu.content,
       time: danmu.timeOffset / 1000,
       color: danmu.color || '#ffffff',
       mode: (danmu.position ?? 0) as 0 | 1 | 2,
+      likeCount: danmu.likeCount ?? 0,
+      isLiked: danmu.isLiked ?? false,
+      createdAt: danmu.createdAt,
     })
   }
 })
 
-const handleDanmuSent = (danmu: { text: string; time: number; color: string; mode: 0 | 1 | 2 }) => {
+const handleDanmuSent = (danmu: PlayerDanmuPayload) => {
   playerRef.value?.emitDanmu(danmu)
 }
 
-const danmuMenu = ref<{ show: boolean; x: number; y: number; text: string }>({
+const danmuTooltip = ref<DanmuHoverState>({
+  el: null,
   show: false,
   x: 0,
   y: 0,
   text: '',
+  likeCount: 0,
+  isLiked: false,
+  mode: 0,
+  targetEl: null,
 })
 
-const handleDanmuClick = (event: MouseEvent, text: string) => {
-  danmuMenu.value = { show: true, x: event.clientX, y: event.clientY, text }
+let hideTooltipTimer: ReturnType<typeof setTimeout> | null = null
+const reportDialogOpen = ref(false)
+const reportReason = ref(REPORT_REASONS[0]!)
+const reportDetail = ref('')
+const submittingReport = ref(false)
+
+const hideDanmuTooltip = () => {
+  danmuTooltip.value = {
+    el: null,
+    show: false,
+    x: 0,
+    y: 0,
+    text: '',
+    danmuId: undefined,
+    likeCount: 0,
+    isLiked: false,
+    createdAt: undefined,
+    mode: 0,
+    targetEl: null,
+  }
 }
 
-const closeDanmuMenu = () => {
-  danmuMenu.value.show = false
+const syncDanmuTooltipPosition = (el: HTMLElement) => {
+  const rect = el.getBoundingClientRect()
+  danmuTooltip.value.x = rect.left + rect.width / 2
+  danmuTooltip.value.y = rect.top
 }
 
-const handleDanmuLike = () => {
-  toast.info('弹幕点赞需要弹幕ID，当前暂不支持')
-  closeDanmuMenu()
+const handleDanmuHover = (payload: DanmuHoverPayload) => {
+  if (hideTooltipTimer) {
+    clearTimeout(hideTooltipTimer)
+    hideTooltipTimer = null
+  }
+
+  syncDanmuTooltipPosition(payload.el)
+
+  danmuTooltip.value = {
+    el: payload.el,
+    show: true,
+    x: danmuTooltip.value.x,
+    y: danmuTooltip.value.y,
+    text: payload.text,
+    danmuId: payload.danmuId,
+    likeCount: payload.likeCount,
+    isLiked: payload.isLiked,
+    createdAt: payload.createdAt,
+    mode: payload.mode,
+    targetEl: payload.el,
+  }
 }
 
-const handleDanmuReport = () => {
-  toast.info('举报功能即将上线')
-  closeDanmuMenu()
+const handleDanmuLeave = () => {
+  hideTooltipTimer = setTimeout(() => {
+    playerRef.value?.releaseHeldDanmu('leave')
+    hideDanmuTooltip()
+  }, 250)
 }
 
-const handleDanmuLoadHistory = (
-  danmuList: { text: string; time: number; color: string; mode: 0 | 1 | 2 }[]
-) => {
+const handleTooltipEnter = () => {
+  if (hideTooltipTimer) {
+    clearTimeout(hideTooltipTimer)
+    hideTooltipTimer = null
+  }
+}
+
+const handleTooltipLeave = () => {
+  playerRef.value?.releaseHeldDanmu('leave')
+  hideDanmuTooltip()
+}
+
+const handleDanmuHoldEnd = () => {
+  hideDanmuTooltip()
+}
+
+const handleDanmuLike = async () => {
+  if (!authStore.isLoggedIn) {
+    toast.warning('请先登录后点赞弹幕')
+    return
+  }
+
+  if (danmuTooltip.value.danmuId === undefined) {
+    toast.warning('当前弹幕暂不支持点赞')
+    return
+  }
+
+  try {
+    const result = await likeDanmu(danmuTooltip.value.danmuId)
+    danmuTooltip.value.likeCount = result.likeCount
+    danmuTooltip.value.isLiked = result.isLiked
+    playerRef.value?.updateDanmuMeta(danmuTooltip.value.danmuId, result)
+    toast.success(result.isLiked ? '已点赞弹幕' : '已取消点赞')
+  } catch {
+    toast.error('弹幕点赞失败')
+  }
+}
+
+const openDanmuReportDialog = () => {
+  if (!authStore.isLoggedIn) {
+    toast.warning('请先登录后举报弹幕')
+    return
+  }
+
+  if (danmuTooltip.value.danmuId === undefined) {
+    toast.warning('当前弹幕暂不支持举报')
+    return
+  }
+
+  reportReason.value = REPORT_REASONS[0]!
+  reportDetail.value = ''
+  reportDialogOpen.value = true
+}
+
+const submitDanmuReport = async () => {
+  if (danmuTooltip.value.danmuId === undefined || submittingReport.value) return
+
+  submittingReport.value = true
+  try {
+    await reportDanmu({
+      danmuId: danmuTooltip.value.danmuId,
+      reason: reportReason.value,
+      detail: reportDetail.value.trim() || undefined,
+    })
+    reportDialogOpen.value = false
+    playerRef.value?.releaseHeldDanmu('leave')
+    hideDanmuTooltip()
+    toast.success('举报已提交')
+  } catch {
+    toast.error('举报弹幕失败')
+  } finally {
+    submittingReport.value = false
+  }
+}
+
+const handleDanmuCopy = async () => {
+  try {
+    await navigator.clipboard.writeText(danmuTooltip.value.text)
+    toast.success('弹幕已复制')
+  } catch {
+    toast.error('复制失败')
+  }
+  playerRef.value?.releaseHeldDanmu('leave')
+  hideDanmuTooltip()
+}
+
+const handleDanmuLoadHistory = (danmuList: PlayerDanmuPayload[]) => {
   if (!playerRef.value?.artRef) return
   const plugin = playerRef.value.artRef.plugins?.artplayerPluginDanmuku as
     | { load: (data: unknown) => Promise<unknown> }
     | undefined
   if (plugin) {
     void plugin.load(
-      danmuList.map((d) => ({ text: d.text, time: d.time, color: d.color, mode: d.mode }))
+      danmuList.map((d) => ({
+        id: d.id,
+        text: d.text,
+        time: d.time,
+        color: d.color,
+        mode: d.mode,
+      }))
     )
   }
 }
@@ -114,11 +283,6 @@ const loadVideo = async (id: number) => {
   if (!id) return
   const ok = await videoStore.fetchVideoDetail(id)
   if (ok) {
-    if (video.value?.parts && video.value.parts.length > 0) {
-      currentPartId.value = video.value.parts[0]!.id
-    } else {
-      currentPartId.value = undefined
-    }
     try {
       await addVideoView(id)
       videoStore.updateStats({ views: (video.value?.views ?? 0) + 1 })
@@ -129,7 +293,7 @@ const loadVideo = async (id: number) => {
 }
 
 const handlePartSelect = (partId: number) => {
-  currentPartId.value = partId
+  manualPartId.value = partId
 }
 
 const handleSeek = (time: number) => {
@@ -149,13 +313,14 @@ watch(videoId, (id) => {
   if (id) {
     videoStore.clearVideo()
     descExpanded.value = false
-    currentPartId.value = undefined
+    manualPartId.value = undefined
     void loadVideo(id)
   }
 })
 
 onBeforeUnmount(() => {
   videoStore.clearVideo()
+  if (hideTooltipTimer) clearTimeout(hideTooltipTimer)
 })
 </script>
 
@@ -179,30 +344,28 @@ onBeforeUnmount(() => {
     <!-- Video Detail Content (Bilibili Layout) -->
     <div v-else-if="video">
       <!-- Title (above player, bilibili style) -->
-      <h1 class="text-xl font-bold leading-snug text-foreground">
+      <h1 class="text-xl font-bold leading-snug text-[#18191c]">
         {{ video.title }}
       </h1>
 
       <!-- Stats Row (below title, above player) -->
-      <div
-        class="mt-2 mb-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-[13px] text-muted-foreground"
-      >
+      <div class="mt-2 mb-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-[13px] text-[#9499a0]">
         <span class="flex items-center gap-1">
           <Eye :size="14" />
           {{ formatCount(video.views) }}
         </span>
-        <span class="text-muted-foreground/40">·</span>
+        <span class="text-[#9499a0]/40">·</span>
         <span class="flex items-center gap-1">
           <MessageSquare :size="14" />
           {{ formatCount(video.danmuCount) }}弹幕
         </span>
-        <span class="text-muted-foreground/40">·</span>
+        <span class="text-[#9499a0]/40">·</span>
         <span class="flex items-center gap-1">
           <Clock :size="14" />
           {{ formatDate(video.createdAt) }}
         </span>
-        <span v-if="video.isOriginal" class="flex items-center gap-1 text-muted-foreground/60">
-          <span class="text-muted-foreground/40">·</span>
+        <span v-if="video.isOriginal" class="flex items-center gap-1 text-[#9499a0]/60">
+          <span class="text-[#9499a0]/40">·</span>
           <Copyright :size="12" />
           未经作者授权，禁止转载
         </span>
@@ -217,7 +380,9 @@ onBeforeUnmount(() => {
             ref="playerRef"
             :part-id="currentPartId"
             class="overflow-hidden rounded-lg bg-black"
-            @danmu-click="handleDanmuClick"
+            @danmu-hover="handleDanmuHover"
+            @danmu-leave="handleDanmuLeave"
+            @danmu-hold-end="handleDanmuHoldEnd"
           />
 
           <!-- Danmu Input Bar (directly below player, bilibili style) -->
@@ -230,13 +395,13 @@ onBeforeUnmount(() => {
           />
 
           <!-- Interaction Buttons (like bilibili: 点赞 投 收藏 分享) -->
-          <div class="mt-3 border-b border-border/60 pb-3">
+          <div class="mt-3 border-b border-[#e3e5e7] pb-3">
             <VideoActions />
           </div>
 
           <!-- Tags -->
           <div v-if="video.tags?.length" class="mt-3 flex flex-wrap items-center gap-1.5">
-            <TagIcon :size="14" class="text-muted-foreground/50" />
+            <TagIcon :size="14" class="text-[#9499a0]/50" />
             <span
               v-for="tag in video.tags"
               :key="tag.id"
@@ -256,7 +421,7 @@ onBeforeUnmount(() => {
             </p>
             <button
               v-if="video.description.length > 80"
-              class="mt-1 flex items-center gap-0.5 text-xs text-primary hover:underline"
+              class="mt-1 flex items-center gap-0.5 text-xs text-[#00a1d6] hover:underline"
               @click="descExpanded = !descExpanded"
             >
               {{ descExpanded ? '收起' : '展开' }}
@@ -298,55 +463,203 @@ onBeforeUnmount(() => {
     <div v-else class="flex min-h-[400px] items-center justify-center">
       <div class="text-center">
         <div class="text-5xl">🎬</div>
-        <p class="mt-3 text-muted-foreground">视频不存在或已删除</p>
+        <p class="mt-3 text-[#9499a0]">视频不存在或已删除</p>
       </div>
     </div>
 
-    <!-- Danmu Context Menu -->
+    <!-- Danmu Hover Tooltip (bilibili style: floating icon bar above danmu) -->
     <Teleport to="body">
-      <Transition name="fade">
-        <div v-if="danmuMenu.show" class="fixed inset-0 z-[9999]" @click="closeDanmuMenu">
-          <div
-            class="absolute min-w-[140px] rounded-lg border border-border bg-popover p-1 shadow-lg"
-            :style="{
-              left: danmuMenu.x + 'px',
-              top: danmuMenu.y + 'px',
-              transform: 'translate(-50%, 8px)',
-            }"
-            @click.stop
-          >
-            <p class="mb-1 truncate px-2 py-1 text-xs text-muted-foreground">
-              {{ danmuMenu.text }}
-            </p>
+      <Transition name="danmu-tooltip">
+        <div
+          v-if="danmuTooltip.show"
+          class="danmu-hover-card"
+          :style="{
+            left: danmuTooltip.x + 'px',
+            top: danmuTooltip.y - 8 + 'px',
+          }"
+          @mouseenter="handleTooltipEnter"
+          @mouseleave="handleTooltipLeave"
+        >
+          <div class="danmu-hover-actions">
             <button
-              class="flex w-full items-center gap-2 rounded px-2 py-1.5 text-sm hover:bg-muted"
+              class="danmu-hover-btn"
+              :class="{ 'is-active': danmuTooltip.isLiked }"
+              title="点赞"
               @click="handleDanmuLike"
             >
-              <ThumbsUp :size="14" />
-              <span>点赞弹幕</span>
+              <ThumbsUp :size="16" />
+              <span v-if="danmuTooltip.likeCount > 0" class="count">{{
+                danmuTooltip.likeCount
+              }}</span>
             </button>
-            <button
-              class="flex w-full items-center gap-2 rounded px-2 py-1.5 text-sm text-destructive hover:bg-destructive/10"
-              @click="handleDanmuReport"
-            >
-              <Flag :size="14" />
-              <span>举报弹幕</span>
+            <div class="danmu-hover-divider"></div>
+            <button class="danmu-hover-btn" title="复制" @click="handleDanmuCopy">
+              <Copy :size="16" />
+            </button>
+            <button class="danmu-hover-btn is-danger" title="举报" @click="openDanmuReportDialog">
+              <TriangleAlert :size="16" />
             </button>
           </div>
         </div>
       </Transition>
     </Teleport>
+
+    <Dialog :open="reportDialogOpen" @update:open="reportDialogOpen = $event">
+      <DialogContent class="max-w-md border-[#e3e5e7] bg-white p-0">
+        <div class="border-b border-[#f1f2f3] px-5 py-4">
+          <DialogTitle class="text-base font-semibold text-[#18191c]">举报弹幕</DialogTitle>
+          <DialogDescription class="mt-1 text-sm text-[#61666d]">
+            {{ danmuTooltip.text }}
+          </DialogDescription>
+        </div>
+
+        <div class="space-y-4 px-5 py-4">
+          <div>
+            <p class="mb-2 text-sm font-medium text-[#18191c]">举报原因</p>
+            <div class="flex flex-wrap gap-2">
+              <button
+                v-for="reason in REPORT_REASONS"
+                :key="reason"
+                class="rounded-full border px-3 py-1 text-xs transition-colors"
+                :class="
+                  reportReason === reason
+                    ? 'border-[#00a1d6] bg-[#e6f7fc] text-[#00a1d6]'
+                    : 'border-[#e3e5e7] bg-white text-[#61666d] hover:border-[#c9ccd0] hover:text-[#18191c]'
+                "
+                @click="reportReason = reason"
+              >
+                {{ reason }}
+              </button>
+            </div>
+          </div>
+
+          <div>
+            <p class="mb-2 text-sm font-medium text-[#18191c]">补充说明</p>
+            <textarea
+              v-model="reportDetail"
+              rows="4"
+              maxlength="200"
+              class="w-full resize-none rounded-xl border border-[#e3e5e7] bg-[#fafafa] px-3 py-2 text-sm text-[#18191c] outline-none transition-colors focus:border-[#00a1d6] focus:bg-white"
+              placeholder="选填，补充举报说明"
+            />
+          </div>
+        </div>
+
+        <div class="flex items-center justify-end gap-3 border-t border-[#f1f2f3] px-5 py-4">
+          <button
+            class="rounded-full border border-[#e3e5e7] px-4 py-2 text-sm text-[#61666d] transition-colors hover:border-[#c9ccd0] hover:text-[#18191c]"
+            @click="reportDialogOpen = false"
+          >
+            取消
+          </button>
+          <button
+            class="rounded-full bg-[#fb7299] px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-[#fc8bab] disabled:cursor-not-allowed disabled:opacity-60"
+            :disabled="submittingReport"
+            @click="submitDanmuReport"
+          >
+            {{ submittingReport ? '提交中...' : '提交举报' }}
+          </button>
+        </div>
+      </DialogContent>
+    </Dialog>
   </div>
 </template>
 
 <style scoped>
-.fade-enter-active,
-.fade-leave-active {
-  transition: opacity 0.15s ease;
+/* Danmu hover card */
+.danmu-hover-card {
+  position: fixed;
+  z-index: 9999;
+  padding: 4px 6px;
+  border-radius: 999px; /* Pill shape */
+  background: rgba(40, 40, 40, 0.75); /* transparent like Image 2 */
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  transform: translateX(-50%) translateY(-100%);
+  pointer-events: auto;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
 }
 
-.fade-enter-from,
-.fade-leave-to {
+/* Invisible bridge to prevent hover twitching */
+.danmu-hover-card::after {
+  content: '';
+  position: absolute;
+  top: 100%;
+  left: -20px;
+  right: -20px;
+  height: 20px;
+  background: transparent;
+}
+
+.danmu-hover-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.danmu-hover-divider {
+  width: 1px;
+  height: 16px;
+  background: rgba(255, 255, 255, 0.2);
+  margin: 0 2px;
+}
+
+.danmu-hover-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 32px;
+  min-width: 32px;
+  padding: 0 8px;
+  border-radius: 999px;
+  color: rgba(255, 255, 255, 0.8);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.danmu-hover-btn:hover {
+  color: #fff;
+  background: rgba(255, 255, 255, 0.15);
+}
+
+.danmu-hover-btn.is-active {
+  color: #00a1d6; /* Active color */
+}
+
+.danmu-hover-btn.is-danger {
+  color: rgba(255, 255, 255, 0.8);
+}
+
+.danmu-hover-btn.is-danger:hover {
+  color: #fb7299;
+  background: rgba(251, 114, 153, 0.15);
+}
+
+.danmu-hover-btn:active {
+  transform: translateY(1px);
+}
+
+/* Tooltip animation */
+.danmu-tooltip-enter-active,
+.danmu-tooltip-leave-active {
+  transition:
+    opacity 0.15s ease,
+    transform 0.15s ease;
+}
+
+.danmu-tooltip-enter-from {
   opacity: 0;
+  transform: translateX(-50%) translateY(-80%);
+}
+
+.danmu-tooltip-leave-to {
+  opacity: 0;
+  transform: translateX(-50%) translateY(-100%);
 }
 </style>

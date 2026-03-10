@@ -6,6 +6,7 @@ import { useVideoStore } from '@/stores/video'
 import { useAuthStore } from '@/stores/auth'
 import { getDanmuList, type DanmuItem, type PlayerDanmuPayload } from '@/api/danmu'
 import type { VideoResourceItem } from '@/api/video'
+import { toast } from 'vue-sonner'
 
 const props = defineProps<{
   partId?: number
@@ -24,7 +25,7 @@ const emit = defineEmits<{
       isLiked: boolean
       createdAt?: string
       mode: 0 | 1 | 2
-    }
+    },
   ]
   danmuLeave: []
   danmuHoldEnd: []
@@ -69,6 +70,8 @@ let progressSaveTimer: ReturnType<typeof setInterval> | null = null
 const PROGRESS_SAVE_INTERVAL = 10000
 
 let qualitySwitchTime = 0
+const isSwitchingQuality = ref(false)
+const switchingQualityLabel = ref('')
 
 const danmuVisible = ref(true)
 const danmuOpacity = ref(1)
@@ -491,6 +494,9 @@ const initPlayer = () => {
         const html = (item as { html?: string }).html ?? ''
         if (url) {
           qualitySwitchTime = this.currentTime
+          isSwitchingQuality.value = true
+          switchingQualityLabel.value = html
+          toast.info(`正在切换至 ${html}`)
           void this.switchQuality(url)
         }
         return html
@@ -573,6 +579,11 @@ const initPlayer = () => {
     if (qualitySwitchTime > 0) {
       art.currentTime = qualitySwitchTime
       qualitySwitchTime = 0
+    }
+    if (isSwitchingQuality.value) {
+      isSwitchingQuality.value = false
+      toast.success(`已切换至 ${switchingQualityLabel.value}`)
+      switchingQualityLabel.value = ''
     }
   })
 
@@ -668,6 +679,16 @@ onBeforeUnmount(() => {
 <template>
   <div class="video-player-container relative w-full overflow-hidden rounded-lg bg-black">
     <div ref="containerRef" class="artplayer-app aspect-video w-full" />
+
+    <!-- Quality switch loading overlay -->
+    <Transition name="quality-overlay">
+      <div v-if="isSwitchingQuality" class="quality-switch-overlay">
+        <div class="quality-switch-indicator">
+          <div class="quality-spinner" />
+          <span class="quality-switch-text">正在切换至 {{ switchingQualityLabel }}</span>
+        </div>
+      </div>
+    </Transition>
   </div>
 </template>
 
@@ -740,5 +761,62 @@ onBeforeUnmount(() => {
 :deep(.art-danmuku > *) {
   pointer-events: auto !important;
   cursor: pointer;
+}
+
+/* Quality switch overlay */
+.quality-switch-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgb(0 0 0 / 0.55);
+  backdrop-filter: blur(6px);
+  pointer-events: none;
+}
+
+.quality-switch-indicator {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+}
+
+.quality-spinner {
+  width: 36px;
+  height: 36px;
+  border: 3px solid rgb(255 255 255 / 0.2);
+  border-top-color: #00a1d6;
+  border-radius: 50%;
+  animation: quality-spin 0.8s cubic-bezier(0.37, 0, 0.63, 1) infinite;
+}
+
+@keyframes quality-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.quality-switch-text {
+  color: rgb(255 255 255 / 0.9);
+  font-size: 14px;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  text-shadow: 0 1px 4px rgb(0 0 0 / 0.5);
+}
+
+/* Overlay transition */
+.quality-overlay-enter-active {
+  transition: opacity 0.25s ease;
+}
+
+.quality-overlay-leave-active {
+  transition: opacity 0.4s ease;
+}
+
+.quality-overlay-enter-from,
+.quality-overlay-leave-to {
+  opacity: 0;
 }
 </style>

@@ -1,7 +1,13 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
 import { useAuthStore } from '@/stores/auth'
-import { sendDanmu, getDanmuHistory, type DanmuPositionType, DanmuPosition } from '@/api/danmu'
+import {
+  sendDanmu,
+  getDanmuHistory,
+  type DanmuPositionType,
+  DanmuPosition,
+  type PlayerDanmuPayload,
+} from '@/api/danmu'
 import { toast } from 'vue-sonner'
 import {
   Send,
@@ -19,9 +25,9 @@ const props = defineProps<{
 }>()
 
 const emit = defineEmits<{
-  sent: [danmu: { text: string; time: number; color: string; mode: 0 | 1 | 2 }]
+  sent: [danmu: PlayerDanmuPayload]
   toggleVisible: [visible: boolean]
-  loadHistory: [danmuList: { text: string; time: number; color: string; mode: 0 | 1 | 2 }[]]
+  loadHistory: [danmuList: PlayerDanmuPayload[]]
 }>()
 
 const authStore = useAuthStore()
@@ -55,6 +61,8 @@ const canSend = computed(
   () => authStore.isLoggedIn && inputText.value.trim().length > 0 && !sending.value
 )
 
+const sendSuccess = ref(false)
+
 const handleSend = async () => {
   if (!canSend.value) {
     if (!authStore.isLoggedIn) {
@@ -76,16 +84,23 @@ const handleSend = async () => {
       position: selectedPosition.value,
     }
     if (props.partId) sendParams.partId = props.partId
-    await sendDanmu(sendParams)
+    const result = await sendDanmu(sendParams)
 
     emit('sent', {
+      id: result.id,
       text,
       time: props.currentTime,
       color: selectedColor.value,
       mode: selectedPosition.value as 0 | 1 | 2,
+      isSelf: true,
     })
 
     inputText.value = ''
+    sendSuccess.value = true
+    setTimeout(() => {
+      sendSuccess.value = false
+    }, 1500)
+    toast.success('弹幕发送成功')
   } catch {
     toast.error('弹幕发送失败')
   } finally {
@@ -155,9 +170,14 @@ const handleKeydown = (e: KeyboardEvent) => {
     </button>
 
     <!-- Send Button -->
-    <button class="send-btn shrink-0" :disabled="!canSend" @click="handleSend">
-      <Send :size="14" class="send-icon" />
-      <span>发送</span>
+    <button
+      class="send-btn shrink-0"
+      :class="{ 'is-success': sendSuccess }"
+      :disabled="!canSend && !sendSuccess"
+      @click="handleSend"
+    >
+      <Send v-if="!sendSuccess" :size="14" class="send-icon" />
+      <span>{{ sendSuccess ? '已发送 ✓' : '发送' }}</span>
     </button>
 
     <!-- Settings Panel -->
@@ -376,6 +396,12 @@ const handleKeydown = (e: KeyboardEvent) => {
   color: #9499a0;
   box-shadow: none;
   cursor: not-allowed;
+}
+
+.send-btn.is-success {
+  background: #00b578;
+  box-shadow: 0 2px 6px rgb(0 181 120 / 0.3);
+  cursor: default;
 }
 
 :deep(.dark) .send-btn:disabled,

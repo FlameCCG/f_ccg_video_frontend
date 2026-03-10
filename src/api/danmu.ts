@@ -73,6 +73,18 @@ export interface PaginatedResult<T> {
   total: number
 }
 
+export interface PlayerDanmuPayload {
+  id?: number
+  text: string
+  time: number
+  color: string
+  mode: 0 | 1 | 2
+  likeCount?: number
+  isLiked?: boolean
+  createdAt?: string
+  isSelf?: boolean
+}
+
 // ============================================================================
 // 5.8 弹幕 API
 // ============================================================================

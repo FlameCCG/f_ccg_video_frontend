@@ -121,7 +121,7 @@ request.interceptors.response.use(
           // Refresh failed - clear tokens and redirect to login
           isRefreshing = false
           clearTokens()
-          window.location.href = '/login'
+          window.dispatchEvent(new CustomEvent('auth:login-required'))
           return Promise.reject(new Error(msg))
         }
       } else {

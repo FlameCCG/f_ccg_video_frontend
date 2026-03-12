@@ -1,12 +1,12 @@
 <script setup lang="ts">
-import { ref, computed, watch, onMounted } from 'vue'
+import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { Eye, EyeOff, Loader2, User, Lock, Mail, Send, ArrowLeft } from 'lucide-vue-next'
 import { toast } from 'vue-sonner'
 import { useAuthStore } from '@/stores/auth'
 import { useSiteStore } from '@/stores/site'
 import { getQQLoginUrl } from '@/api/site'
 import { sendEmailCaptcha } from '@/api/captcha'
-import { registerByEmail } from '@/api/user'
+import { registerByEmail, resetPassword } from '@/api/user'
 import type { ClickCaptchaPoint } from '@/api/user'
 import { Dialog, DialogContent } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
@@ -45,6 +45,16 @@ const registerEmail = ref('')
 const registerEmailCode = ref('')
 const showRegisterPassword = ref(false)
 const showRegisterConfirmPassword = ref(false)
+
+// Form state - Forgot Password
+const forgotEmail = ref('')
+const forgotPassword = ref('')
+const forgotConfirmPassword = ref('')
+const forgotEmailCode = ref('')
+const showForgotPassword = ref(false)
+const showForgotConfirmPassword = ref(false)
+
+// Shared email state
 const emailID = ref('')
 
 // Captcha refs
@@ -67,6 +77,8 @@ const slideCaptchaVerified = ref(false)
 // Loading state
 const isSubmitting = ref(false)
 const isSendingEmail = ref(false)
+const emailCountdown = ref(0)
+let countdownTimer: ReturnType<typeof setInterval> | null = null
 
 // Computed
 const isLoginFormValid = computed(() => {
@@ -84,13 +96,31 @@ const isRegisterFormValid = computed(() => {
   )
 })
 
+const isForgotFormValid = computed(() => {
+  return (
+    forgotEmail.value.trim() !== '' &&
+    forgotPassword.value.trim() !== '' &&
+    forgotConfirmPassword.value.trim() !== '' &&
+    forgotEmailCode.value.trim() !== '' &&
+    forgotPassword.value === forgotConfirmPassword.value
+  )
+})
+
 const passwordsMatch = computed(() => {
-  if (!registerConfirmPassword.value) return true
-  return registerPassword.value === registerConfirmPassword.value
+  if (mode.value === 'register') {
+    if (!registerConfirmPassword.value) return true
+    return registerPassword.value === registerConfirmPassword.value
+  } else if (mode.value === 'forgot') {
+    if (!forgotConfirmPassword.value) return true
+    return forgotPassword.value === forgotConfirmPassword.value
+  }
+  return true
 })
 
 const canSendEmail = computed(() => {
-  if (!registerEmail.value.trim()) return false
+  if (emailCountdown.value > 0) return false
+  const email = mode.value === 'register' ? registerEmail.value : forgotEmail.value
+  if (!email.trim()) return false
   if (siteStore.isRegisterGraphicsCaptchaEnabled && !graphicsCaptchaValue.value.captchaCode)
     return false
   if (siteStore.isRegisterSlideCaptchaEnabled && !slideCaptchaVerified.value) return false
@@ -114,6 +144,12 @@ const resetForms = () => {
   registerEmailCode.value = ''
   showRegisterPassword.value = false
   showRegisterConfirmPassword.value = false
+  forgotEmail.value = ''
+  forgotPassword.value = ''
+  forgotConfirmPassword.value = ''
+  forgotEmailCode.value = ''
+  showForgotPassword.value = false
+  showForgotConfirmPassword.value = false
   emailID.value = ''
   graphicsCaptchaValue.value = { captchaID: '', captchaCode: '' }
   slideCaptchaValue.value = { token: '', x: 0, y: 0 }
@@ -166,9 +202,11 @@ const handleSendEmailCode = async () => {
   if (!canSendEmail.value) return
   isSendingEmail.value = true
   try {
+    const type = mode.value === 'register' ? 1 : 2
+    const email = mode.value === 'register' ? registerEmail.value : forgotEmail.value
     const result = await sendEmailCaptcha({
-      type: 1,
-      email: registerEmail.value.trim(),
+      type,
+      email: email.trim(),
       captchaID: graphicsCaptchaValue.value.captchaID,
       captchaCode: graphicsCaptchaValue.value.captchaCode,
       slideCaptchaToken: slideCaptchaValue.value.token,
@@ -177,6 +215,16 @@ const handleSendEmailCode = async () => {
     })
     emailID.value = result.emailID
     toast.success('验证码已发送到您的邮箱')
+
+    emailCountdown.value = 60
+    if (countdownTimer) clearInterval(countdownTimer)
+    countdownTimer = setInterval(() => {
+      emailCountdown.value--
+      if (emailCountdown.value <= 0) {
+        if (countdownTimer) clearInterval(countdownTimer)
+        countdownTimer = null
+      }
+    }, 1000)
   } catch {
     if (graphicsCaptchaRef.value) {
       void graphicsCaptchaRef.value.loadCaptcha()
@@ -206,6 +254,32 @@ const handleRegister = async () => {
       slideCaptchaY: slideCaptchaValue.value.y,
     })
     toast.success('注册成功，请登录')
+    switchMode('login')
+  } catch {
+    if (graphicsCaptchaRef.value) {
+      void graphicsCaptchaRef.value.loadCaptcha()
+    }
+    slideCaptchaVerified.value = false
+  } finally {
+    isSubmitting.value = false
+  }
+}
+
+const handleResetPassword = async () => {
+  if (!isForgotFormValid.value) return
+  if (!passwordsMatch.value) {
+    toast.error('两次输入的密码不一致')
+    return
+  }
+  isSubmitting.value = true
+  try {
+    await resetPassword({
+      email: forgotEmail.value.trim(),
+      emailID: emailID.value,
+      emailCode: forgotEmailCode.value.trim(),
+      newPassword: forgotPassword.value,
+    })
+    toast.success('密码重置成功，请使用新密码登录')
     switchMode('login')
   } catch {
     if (graphicsCaptchaRef.value) {
@@ -253,6 +327,10 @@ watch(
 
 onMounted(() => {
   void siteStore.fetchConfig()
+})
+
+onUnmounted(() => {
+  if (countdownTimer) clearInterval(countdownTimer)
 })
 </script>
 
@@ -549,13 +627,15 @@ onMounted(() => {
             <Button
               type="button"
               variant="outline"
-              class="h-10 shrink-0 rounded-xl px-3"
-              :disabled="!canSendEmail"
+              class="h-10 w-[88px] shrink-0 rounded-xl px-3"
+              :disabled="!canSendEmail || emailCountdown > 0"
               @click="handleSendEmailCode"
             >
               <Loader2 v-if="isSendingEmail" class="mr-1 h-4 w-4 animate-spin" />
-              <Send v-else class="mr-1 h-4 w-4" />
-              {{ isSendingEmail ? '发送中' : '发送' }}
+              <Send v-else-if="emailCountdown <= 0" class="mr-1 h-4 w-4" />
+              <span>
+                {{ isSendingEmail ? '发送中' : emailCountdown > 0 ? `${emailCountdown}s` : '发送' }}
+              </span>
             </Button>
           </div>
 
@@ -581,19 +661,124 @@ onMounted(() => {
         </form>
 
         <!-- Forgot Password Form -->
-        <div v-else-if="mode === 'forgot'" class="space-y-4 py-4">
-          <p class="text-center text-sm text-muted-foreground">
-            忘记密码功能暂未开放，请联系管理员
-          </p>
+        <form v-else-if="mode === 'forgot'" class="space-y-3" @submit.prevent="handleResetPassword">
+          <div class="relative">
+            <Mail class="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              type="email"
+              placeholder="注册邮箱"
+              class="h-10 rounded-xl border-muted-foreground/20 bg-muted/50 pl-10 transition-colors focus:bg-background"
+              autocomplete="email"
+              :model-value="forgotEmail"
+              @update:model-value="(v) => (forgotEmail = String(v))"
+            />
+          </div>
+
+          <!-- Graphics Captcha -->
+          <div v-if="siteStore.isRegisterGraphicsCaptchaEnabled">
+            <GraphicsCaptcha ref="graphicsCaptchaRef" v-model="graphicsCaptchaValue" />
+          </div>
+
+          <!-- Slide Captcha Trigger -->
+          <div v-if="siteStore.isRegisterSlideCaptchaEnabled">
+            <Button
+              type="button"
+              variant="outline"
+              class="h-10 w-full justify-start rounded-xl"
+              :class="{ 'border-green-500 text-green-600': slideCaptchaVerified }"
+              @click="handleSlideCaptchaClick"
+            >
+              {{ slideCaptchaVerified ? '验证已完成' : '点击进行滑块验证' }}
+            </Button>
+          </div>
+
+          <!-- Email Code -->
+          <div class="flex gap-2">
+            <Input
+              type="text"
+              placeholder="邮箱验证码"
+              class="h-10 flex-1 rounded-xl border-muted-foreground/20 bg-muted/50 transition-colors focus:bg-background"
+              :model-value="forgotEmailCode"
+              @update:model-value="(v) => (forgotEmailCode = String(v))"
+            />
+            <Button
+              type="button"
+              variant="outline"
+              class="h-10 w-[88px] shrink-0 rounded-xl px-3"
+              :disabled="!canSendEmail || emailCountdown > 0"
+              @click="handleSendEmailCode"
+            >
+              <Loader2 v-if="isSendingEmail" class="mr-1 h-4 w-4 animate-spin" />
+              <Send v-else-if="emailCountdown <= 0" class="mr-1 h-4 w-4" />
+              <span>
+                {{ isSendingEmail ? '发送中' : emailCountdown > 0 ? `${emailCountdown}s` : '发送' }}
+              </span>
+            </Button>
+          </div>
+
+          <div class="relative">
+            <Lock class="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              :type="showForgotPassword ? 'text' : 'password'"
+              placeholder="新密码"
+              class="h-10 rounded-xl border-muted-foreground/20 bg-muted/50 pl-10 pr-10 transition-colors focus:bg-background"
+              autocomplete="new-password"
+              :model-value="forgotPassword"
+              @update:model-value="(v) => (forgotPassword = String(v))"
+            />
+            <button
+              type="button"
+              class="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground transition-colors hover:text-foreground"
+              @click="showForgotPassword = !showForgotPassword"
+            >
+              <Eye v-if="!showForgotPassword" class="h-4 w-4" />
+              <EyeOff v-else class="h-4 w-4" />
+            </button>
+          </div>
+
+          <div class="space-y-1">
+            <div class="relative">
+              <Lock
+                class="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground"
+              />
+              <Input
+                :type="showForgotConfirmPassword ? 'text' : 'password'"
+                placeholder="确认新密码"
+                class="h-10 rounded-xl border-muted-foreground/20 bg-muted/50 pl-10 pr-10 transition-colors focus:bg-background"
+                :class="{ 'ring-2 ring-destructive': !passwordsMatch }"
+                autocomplete="new-password"
+                :model-value="forgotConfirmPassword"
+                @update:model-value="(v) => (forgotConfirmPassword = String(v))"
+              />
+              <button
+                type="button"
+                class="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground transition-colors hover:text-foreground"
+                @click="showForgotConfirmPassword = !showForgotConfirmPassword"
+              >
+                <Eye v-if="!showForgotConfirmPassword" class="h-4 w-4" />
+                <EyeOff v-else class="h-4 w-4" />
+              </button>
+            </div>
+            <p v-if="!passwordsMatch" class="text-xs text-destructive">两次输入的密码不一致</p>
+          </div>
+
+          <Button
+            type="submit"
+            class="h-10 w-full rounded-xl font-medium mt-2"
+            :disabled="!isForgotFormValid || isSubmitting"
+          >
+            <Loader2 v-if="isSubmitting" class="mr-2 h-4 w-4 animate-spin" />
+            {{ isSubmitting ? '重置中...' : '重置密码' }}
+          </Button>
           <Button
             type="button"
-            variant="outline"
-            class="h-10 w-full rounded-xl"
+            variant="ghost"
+            class="h-10 w-full rounded-xl text-muted-foreground mt-2"
             @click="switchMode('login')"
           >
             返回登录
           </Button>
-        </div>
+        </form>
       </div>
     </DialogContent>
   </Dialog>

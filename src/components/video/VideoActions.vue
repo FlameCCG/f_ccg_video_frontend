@@ -4,6 +4,7 @@ import { useVideoStore } from '@/stores/video'
 import { useAuthStore } from '@/stores/auth'
 import { toast } from 'vue-sonner'
 import { ThumbsUp, Coins, Star, Zap, Share2, Flag, ChevronDown } from 'lucide-vue-next'
+import FolderPicker from './FolderPicker.vue'
 
 const videoStore = useVideoStore()
 const authStore = useAuthStore()
@@ -19,6 +20,7 @@ const favoriteCount = computed(() => videoStore.favoriteCount)
 const likeAnimating = ref(false)
 const tripleAnimating = ref(false)
 const showCoinPicker = ref(false)
+const showFolderPicker = ref(false)
 
 const formatCount = (count: number): string => {
   if (count >= 10000) return `${(count / 10000).toFixed(1)}万`
@@ -51,9 +53,13 @@ const handleCoin = async (coins: number) => {
   }
 }
 
-const handleFavorite = async () => {
+/**
+ * 收藏按钮点击：
+ * 始终弹出收藏夹选择器，允许用户将视频添加到多个收藏夹
+ */
+const handleFavoriteClick = () => {
   if (!requireLogin()) return
-  await videoStore.toggleFavorite()
+  showFolderPicker.value = !showFolderPicker.value
 }
 
 const handleTriple = async () => {
@@ -122,10 +128,23 @@ const handleReport = () => {
     </div>
 
     <!-- Favorite -->
-    <button class="action-btn group" :class="{ 'is-active': isFavorited }" @click="handleFavorite">
-      <Star class="action-icon" :class="{ 'fill-current': isFavorited }" :size="20" />
-      <span class="action-text">{{ formatCount(favoriteCount) || '收藏' }}</span>
-    </button>
+    <div class="relative">
+      <button
+        class="action-btn group"
+        :class="{ 'is-active': isFavorited }"
+        @click="handleFavoriteClick"
+      >
+        <Star class="action-icon" :class="{ 'fill-current': isFavorited }" :size="20" />
+        <span class="action-text">{{ formatCount(favoriteCount) || '收藏' }}</span>
+        <ChevronDown
+          class="ml-0.5 h-3 w-3 text-muted-foreground transition-transform"
+          :class="{ 'rotate-180': showFolderPicker }"
+        />
+      </button>
+
+      <!-- 收藏夹选择器（Dialog） -->
+      <FolderPicker v-model:open="showFolderPicker" :video-id="videoStore.currentVideo?.id ?? 0" />
+    </div>
 
     <!-- Triple -->
     <button

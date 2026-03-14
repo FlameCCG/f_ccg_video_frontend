@@ -328,14 +328,23 @@ Base URL：/v1
 响应字段:
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
-| data | array<string> | 搜索建议列表 |
+| data | array<SuggestionItem> | 搜索建议列表 |
+| data[].value | string | 建议文本 |
+| data[].highlight | string | 高亮文本（使用 <em> 包裹匹配前缀） |
+| data[].docType | string | 类型标签（videos/users/tags） |
 
 响应示例:
 
 ```json
 {
   "code": 0,
-  "data": ["视频剪辑"],
+  "data": [
+    {
+      "value": "视频剪辑",
+      "highlight": "<em>视频</em>剪辑",
+      "docType": "videos"
+    }
+  ],
   "msg": "获取成功"
 }
 ```
@@ -717,7 +726,7 @@ Base URL：/v1
 - 接口路径: POST /common/video/favorite
 - 认证: 需要登录（客户端全局自动携带 Token）
 - 依赖接口: 无
-- 接口说明: 切换视频收藏状态（需登录）
+- 接口说明: 切换视频在指定收藏夹内的收藏状态（需登录）；同一视频可同时存在于多个收藏夹中，再次传入同一 `folderId` 则取消该收藏夹内的收藏
 - HTTP 状态码: 200（业务码 code 判断成功/失败）
 - 响应结构: code=0 成功，code=1 失败；msg 为提示信息
 
@@ -1301,13 +1310,14 @@ Base URL：/v1
 - 接口路径: GET /common/video/folder
 - 认证: 需要登录（客户端全局自动携带 Token）
 - 依赖接口: 无
-- 接口说明: 获取用户收藏夹列表（需登录）
+- 接口说明: 获取用户收藏夹列表（需登录）；传入 `videoId` 时可同时返回该视频在每个收藏夹中的收藏状态
 - HTTP 状态码: 200（业务码 code 判断成功/失败）
 - 响应结构: code=0 成功，code=1 失败；msg 为提示信息
 
 请求参数:
-
-- 无
+| 名称 | 位置 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- | --- |
+| videoId | query | integer | 否 | 视频 ID（传入后返回各收藏夹是否已收藏该视频） |
 
 响应字段:
 | 字段 | 类型 | 说明 |
@@ -1318,6 +1328,7 @@ Base URL：/v1
 | data.list[].name | string | 收藏夹名称 |
 | data.list[].isDefault | boolean | 是否为默认收藏夹 |
 | data.list[].videoCount | integer(int64) | 视频数量 |
+| data.list[].isFavorited | boolean | 当前 `videoId` 是否已收藏到该收藏夹；未传 `videoId` 时固定为 false |
 
 响应示例:
 
@@ -1330,7 +1341,8 @@ Base URL：/v1
         "id": 1,
         "name": "示例名称",
         "isDefault": true,
-        "videoCount": 1
+        "videoCount": 1,
+        "isFavorited": true
       }
     ],
     "total": 1

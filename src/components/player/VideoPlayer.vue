@@ -607,6 +607,10 @@ const initPlayer = () => {
   })
 
   artRef.value = art
+  // 唯一进度保存注册点：等 ready 后调，保证 art 已可播放
+  art.on('ready', () => {
+    if (artRef.value) setupProgressSave(artRef.value)
+  })
   emit('ready', art)
 
   const danmuPlugin = art.plugins?.artplayerPluginDanmuku as
@@ -626,7 +630,11 @@ const initPlayer = () => {
 
 const setupProgressSave = (art: Artplayer) => {
   if (!authStore.isLoggedIn) return
-
+  // 幂等：先清旧 timer，避免重复创建
+  if (progressSaveTimer) {
+    clearInterval(progressSaveTimer)
+    progressSaveTimer = null
+  }
   progressSaveTimer = setInterval(() => {
     if (videoStore.videoId && art.playing) {
       videoStore.updatePlayerState({
@@ -668,12 +676,6 @@ watch(
     destroyPlayer()
     if (primaryUrl.value) {
       initPlayer()
-      if (artRef.value) {
-        setupProgressSave(artRef.value)
-        artRef.value.on('ready', () => {
-          if (artRef.value) setupProgressSave(artRef.value)
-        })
-      }
     }
   }
 )
@@ -681,12 +683,6 @@ watch(
 onMounted(() => {
   if (primaryUrl.value) {
     initPlayer()
-    if (artRef.value) {
-      setupProgressSave(artRef.value)
-      artRef.value.on('ready', () => {
-        if (artRef.value) setupProgressSave(artRef.value)
-      })
-    }
   }
 })
 

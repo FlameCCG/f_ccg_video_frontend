@@ -35,7 +35,8 @@ const handleQQCallback = async () => {
 }
 
 const goToLogin = () => {
-  void router.push('/login')
+  void router.replace('/')
+  setTimeout(() => window.dispatchEvent(new CustomEvent('auth:login-required')), 100)
 }
 
 onMounted(() => {

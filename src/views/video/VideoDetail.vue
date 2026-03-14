@@ -12,6 +12,7 @@ import AuthorCard from '@/components/user/AuthorCard.vue'
 import VideoRecommend from '@/components/video/VideoRecommend.vue'
 import PartList from '@/components/video/PartList.vue'
 import DanmuList from '@/components/player/DanmuList.vue'
+import CommentSection from '@/components/comment/CommentSection.vue'
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog'
 import { useDanmuWebSocket } from '@/composables/useDanmuWebSocket'
 import { toast } from 'vue-sonner'
@@ -19,9 +20,6 @@ import {
   Eye,
   MessageSquare,
   Clock,
-  Tag as TagIcon,
-  ChevronDown,
-  ChevronUp,
   ThumbsUp,
   TriangleAlert,
   Copyright,
@@ -352,7 +350,7 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div class="mx-auto mt-4 mb-10 max-w-[1400px] px-4 sm:px-5 lg:px-6">
+  <div class="mx-auto mt-4 pb-10 max-w-[1400px] px-4 sm:px-5 lg:px-6">
     <!-- Loading -->
     <div v-if="isLoading" class="flex min-h-[500px] items-center justify-center">
       <div
@@ -426,42 +424,39 @@ onBeforeUnmount(() => {
             <VideoActions />
           </div>
 
-          <!-- Tags -->
-          <div v-if="video.tags?.length" class="mt-3 flex flex-wrap items-center gap-1.5">
-            <TagIcon :size="14" class="text-[#9499a0]/50" />
-            <span
-              v-for="tag in video.tags"
-              :key="tag.id"
-              class="cursor-pointer rounded bg-[#f1f2f3] px-2 py-0.5 text-xs text-[#9499a0] transition-colors hover:bg-[#e3e5e7] hover:text-[#18191c]"
-            >
-              {{ tag.name }}
-            </span>
+          <!-- Description & Tags -->
+          <div class="mt-4 border-b border-[#e3e5e7] pb-4">
+            <!-- Description -->
+            <div v-if="video.description">
+              <p
+                class="whitespace-pre-wrap text-[15px] leading-relaxed text-[#18191c]"
+                :class="{ 'line-clamp-3': !descExpanded }"
+              >
+                {{ video.description }}
+              </p>
+              <button
+                v-if="video.description.length > 120"
+                class="mt-1 flex items-center gap-0.5 text-sm text-[#61666d] hover:text-[#00a1d6] transition-colors"
+                @click="descExpanded = !descExpanded"
+              >
+                {{ descExpanded ? '收起' : '展开更多' }}
+              </button>
+            </div>
+
+            <!-- Tags -->
+            <div v-if="video.tags?.length" class="mt-4 flex flex-wrap items-center gap-2">
+              <span
+                v-for="tag in video.tags"
+                :key="tag.id"
+                class="cursor-pointer rounded-full bg-[#f1f2f3] px-3 py-1.5 text-[13px] text-[#61666d] transition-colors hover:bg-[#e3e5e7]"
+              >
+                {{ tag.name }}
+              </span>
+            </div>
           </div>
 
-          <!-- Description -->
-          <div v-if="video.description" class="mt-3 rounded-lg bg-[#f1f2f3] p-3">
-            <p
-              class="whitespace-pre-wrap text-[13px] leading-relaxed text-[#61666d]"
-              :class="{ 'line-clamp-2': !descExpanded }"
-            >
-              {{ video.description }}
-            </p>
-            <button
-              v-if="video.description.length > 80"
-              class="mt-1 flex items-center gap-0.5 text-xs text-[#00a1d6] hover:underline"
-              @click="descExpanded = !descExpanded"
-            >
-              {{ descExpanded ? '收起' : '展开' }}
-              <component :is="descExpanded ? ChevronUp : ChevronDown" :size="14" />
-            </button>
-          </div>
-
-          <!-- Partition Badge -->
-          <div v-if="video.partition" class="mt-3">
-            <span class="rounded bg-[#f1f2f3] px-2 py-1 text-xs text-[#9499a0]">
-              {{ video.partition.name }}
-            </span>
-          </div>
+          <!-- Comment Section -->
+          <CommentSection v-if="video.id" :video-id="video.id" :author-id="video.author?.id" />
         </div>
 
         <!-- Right Column: Author + DanmuList + PartList + Recommend -->

@@ -116,11 +116,20 @@ export interface UserSearchResult {
   users: SearchUserHit[]
 }
 
+export const UserSortType = {
+  Relevance: 0,
+  FollowerCount: 1,
+  Level: 2,
+  CreatedAt: 3,
+} as const
+
+export type UserSortValue = (typeof UserSortType)[keyof typeof UserSortType]
+
 export interface SearchUserParams {
   keyword: string
   page?: number
   pageSize?: number
-  userSort?: number
+  userSort?: UserSortValue
   userOrder?: number
 }
 

@@ -99,11 +99,20 @@ export interface VideoSearchResult {
   videos: SearchVideoHit[]
 }
 
+export const VideoSortType = {
+  Relevance: 0,
+  ViewCount: 1,
+  DanmakuCount: 2,
+  Duration: 3,
+} as const
+
+export type VideoSortValue = (typeof VideoSortType)[keyof typeof VideoSortType]
+
 export interface SearchVideoParams {
   keyword: string
   page?: number
   pageSize?: number
-  videoSort?: number // 0 相关性 1 播放量 2 弹幕数 3 时长
+  videoSort?: VideoSortValue
   videoOrder?: number // 0 降序 1 升序
 }
 
@@ -282,6 +291,7 @@ export interface FolderItem {
   name: string
   isDefault: boolean
   videoCount: number
+  isFavorited?: boolean
   createdAt?: string
 }
 
@@ -511,8 +521,8 @@ export const createFolder = (params: CreateFolderParams): Promise<FolderItem> =>
  * 收藏夹列表
  * GET /common/video/folder
  */
-export const getFolderList = (): Promise<PaginatedResult<FolderItem>> => {
-  return request.get('/common/video/folder')
+export const getFolderList = (videoId?: number): Promise<PaginatedResult<FolderItem>> => {
+  return request.get('/common/video/folder', { params: videoId ? { videoId } : undefined })
 }
 
 /**

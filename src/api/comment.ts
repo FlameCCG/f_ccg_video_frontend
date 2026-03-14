@@ -33,6 +33,13 @@ export interface CommentItem {
   pinnedAt: string | null
   isLiked: boolean
   createdAt: string
+  atUserIds?: number[]
+  parentId?: number
+  rootId?: number
+  replyTo?: {
+    userId: number
+    username: string
+  }
 }
 
 /**

@@ -39,13 +39,13 @@ const request: AxiosInstance = axios.create({
 
 // Flag to prevent multiple refresh token requests
 let isRefreshing = false
-let refreshSubscribers: Array<(token: string) => void> = []
+let refreshSubscribers: Array<(token: string | null) => void> = []
 
-const subscribeTokenRefresh = (callback: (token: string) => void): void => {
+const subscribeTokenRefresh = (callback: (token: string | null) => void): void => {
   refreshSubscribers.push(callback)
 }
 
-const onTokenRefreshed = (token: string): void => {
+const onTokenRefreshed = (token: string | null): void => {
   refreshSubscribers.forEach((callback) => callback(token))
   refreshSubscribers = []
 }
@@ -88,6 +88,32 @@ request.interceptors.request.use(
   }
 )
 
+// Helper to recursively fix broken localhost URLs in response data from the backend
+const fixLocalhostUrls = (obj: any): any => {
+  if (typeof obj === 'string') {
+    if (obj.startsWith('http:/localhost:')) {
+      return obj.replace('http:/localhost:', 'http://localhost:')
+    }
+    if (obj.startsWith('https:/localhost:')) {
+      return obj.replace('https:/localhost:', 'https://localhost:')
+    }
+    return obj
+  }
+  if (Array.isArray(obj)) {
+    return obj.map(fixLocalhostUrls)
+  }
+  if (obj !== null && typeof obj === 'object') {
+    const newObj: any = {}
+    for (const key in obj) {
+      if (Object.prototype.hasOwnProperty.call(obj, key)) {
+        newObj[key] = fixLocalhostUrls(obj[key])
+      }
+    }
+    return newObj
+  }
+  return obj
+}
+
 // Response interceptor - handle business code
 request.interceptors.response.use(
   async (response: AxiosResponse<ApiResponse>) => {
@@ -95,7 +121,7 @@ request.interceptors.response.use(
 
     // Success
     if (code === 0) {
-      return data as AxiosResponse
+      return fixLocalhostUrls(data) as AxiosResponse
     }
 
     // Token expired - check if msg contains token-related keywords
@@ -120,16 +146,21 @@ request.interceptors.response.use(
         } else {
           // Refresh failed - clear tokens and redirect to login
           isRefreshing = false
+          onTokenRefreshed(null) // Reject pending requests
           clearTokens()
           window.dispatchEvent(new CustomEvent('auth:login-required'))
           return Promise.reject(new Error(msg))
         }
       } else {
         // Wait for token refresh
-        return new Promise((resolve) => {
-          subscribeTokenRefresh((token: string) => {
-            originalRequest.headers.Authorization = `Bearer ${token}`
-            resolve(request(originalRequest))
+        return new Promise((resolve, reject) => {
+          subscribeTokenRefresh((token: string | null) => {
+            if (token) {
+              originalRequest.headers.Authorization = `Bearer ${token}`
+              resolve(request(originalRequest))
+            } else {
+              reject(new Error('登录已过期，请重新登录'))
+            }
           })
         })
       }

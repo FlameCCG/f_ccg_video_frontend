@@ -1,0 +1,233 @@
+<script setup lang="ts">
+import { ref, nextTick, onMounted } from 'vue'
+import { useAuthStore } from '@/stores/auth'
+import { getMentionSuggest, type MentionUser } from '@/api/user'
+import EmojiPicker from '@/components/common/EmojiPicker.vue'
+import { Smile, AtSign } from 'lucide-vue-next'
+import { useDebounceFn, onClickOutside } from '@vueuse/core'
+
+const props = defineProps<{
+  placeholder?: string
+  autoFocus?: boolean
+  replyTo?: string
+}>()
+
+const emit = defineEmits<{
+  (e: 'submit', content: string, atUserIds: number[]): void
+}>()
+
+const authStore = useAuthStore()
+const content = ref('')
+const textareaRef = ref<HTMLTextAreaElement | null>(null)
+
+// Mentions
+const showMention = ref(false)
+const mentionKeyword = ref('')
+const mentionUsers = ref<MentionUser[]>([])
+const atUserIds = ref<Set<number>>(new Set())
+const mentionCursorPos = ref(0)
+
+// Emoji
+const showEmoji = ref(false)
+const emojiPickerRef = ref<HTMLElement | null>(null)
+
+onClickOutside(emojiPickerRef, () => {
+  showEmoji.value = false
+})
+
+const fetchMentions = useDebounceFn(async (keyword: string) => {
+  try {
+    const res = await getMentionSuggest({ keyword, page: 1, pageSize: 10 })
+    mentionUsers.value = res.list
+  } catch (error) {
+    console.error('Failed to fetch mentions', error)
+  }
+}, 300)
+
+const handleInput = (e: Event) => {
+  const target = e.target as HTMLTextAreaElement
+  const val = target.value
+  const pos = target.selectionStart
+
+  if (showMention.value) {
+    // Check if the '@' is still there
+    if (pos < mentionCursorPos.value || val[mentionCursorPos.value - 1] !== '@') {
+      showMention.value = false
+    } else {
+      const textAfterAt = val.slice(mentionCursorPos.value, pos)
+      if (textAfterAt.includes(' ') || textAfterAt.includes('\n')) {
+        showMention.value = false
+      } else {
+        mentionKeyword.value = textAfterAt
+        void fetchMentions(textAfterAt)
+      }
+    }
+  }
+
+  // We might have just typed '@'
+  if (!showMention.value) {
+    const lastChar = val.slice(pos - 1, pos)
+    if (lastChar === '@') {
+      showMention.value = true
+      mentionKeyword.value = ''
+      mentionCursorPos.value = pos
+      void fetchMentions('')
+    }
+  }
+}
+
+const selectMention = (user: MentionUser) => {
+  const before = content.value.slice(0, mentionCursorPos.value)
+  const after = content.value.slice(textareaRef.value?.selectionStart || content.value.length)
+  content.value = `${before}${user.username} ${after}`
+  atUserIds.value.add(user.id)
+  showMention.value = false
+
+  void nextTick(() => {
+    if (textareaRef.value) {
+      const newPos = mentionCursorPos.value + user.username.length + 1
+      textareaRef.value.focus()
+      textareaRef.value.setSelectionRange(newPos, newPos)
+    }
+  })
+}
+
+const handleEmojiSelect = (emoji: string) => {
+  const pos = textareaRef.value?.selectionStart || content.value.length
+  const before = content.value.slice(0, pos)
+  const after = content.value.slice(pos)
+  content.value = `${before}${emoji}${after}`
+  showEmoji.value = false
+
+  void nextTick(() => {
+    if (textareaRef.value) {
+      const newPos = pos + emoji.length
+      textareaRef.value.focus()
+      textareaRef.value.setSelectionRange(newPos, newPos)
+    }
+  })
+}
+
+const handleSubmit = () => {
+  if (!content.value.trim() || !authStore.isLoggedIn) return
+  emit('submit', content.value, Array.from(atUserIds.value))
+  content.value = ''
+  atUserIds.value.clear()
+}
+
+const handleAtClick = () => {
+  const pos = textareaRef.value?.selectionStart || content.value.length
+  const before = content.value.slice(0, pos)
+  const after = content.value.slice(pos)
+  content.value = `${before}@${after}`
+
+  void nextTick(() => {
+    if (textareaRef.value) {
+      textareaRef.value.focus()
+      textareaRef.value.setSelectionRange(pos + 1, pos + 1)
+      showMention.value = true
+      mentionKeyword.value = ''
+      mentionCursorPos.value = pos + 1
+      void fetchMentions('')
+    }
+  })
+}
+
+onMounted(() => {
+  if (props.autoFocus && textareaRef.value) {
+    textareaRef.value.focus()
+  }
+})
+</script>
+
+<template>
+  <div class="flex gap-4">
+    <div class="shrink-0">
+      <img
+        v-if="authStore.isLoggedIn && authStore.user?.avatar"
+        :src="authStore.user.avatar"
+        class="h-10 w-10 rounded-full object-cover"
+        alt="avatar"
+      />
+      <div
+        v-else
+        class="flex h-10 w-10 items-center justify-center rounded-full bg-[#f1f2f3] text-xs text-[#9499a0]"
+      >
+        登录
+      </div>
+    </div>
+
+    <div class="relative flex-1">
+      <textarea
+        ref="textareaRef"
+        v-model="content"
+        class="min-h-[64px] w-full resize-none rounded-md border border-[#e3e5e7] bg-[#f1f2f3] px-3 py-2 text-sm transition-colors focus:border-[#00aeec] focus:bg-white focus:outline-none"
+        :placeholder="
+          placeholder || (authStore.isLoggedIn ? '发一条友善的评论' : '请先登录后发表评论')
+        "
+        :disabled="!authStore.isLoggedIn"
+        @input="handleInput"
+        @keydown.enter.prevent="handleSubmit"
+      ></textarea>
+
+      <!-- Mention Dropdown -->
+      <div
+        v-if="showMention && mentionUsers.length > 0"
+        class="absolute left-0 top-full z-50 mt-1 w-[240px] rounded-lg border border-[#e3e5e7] bg-white shadow-[0_4px_12px_rgba(0,0,0,0.1)] overflow-hidden"
+      >
+        <div class="px-4 py-2 text-xs text-[#9499a0] border-b border-[#f1f2f3] bg-white">
+          选择或输入你想@的人
+        </div>
+        <div class="max-h-[240px] overflow-y-auto py-1">
+          <button
+            v-for="user in mentionUsers"
+            :key="user.id"
+            class="flex w-full items-center gap-3 px-4 py-2 text-left hover:bg-[#f1f2f3] transition-colors"
+            @click="selectMention(user)"
+          >
+            <img :src="user.avatar" class="h-8 w-8 rounded-full object-cover shrink-0" />
+            <div class="flex flex-col overflow-hidden">
+              <span class="truncate text-sm text-[#18191c]">{{ user.username }}</span>
+              <span class="truncate text-xs text-[#9499a0]">{{ user.followerCount }}粉丝</span>
+            </div>
+          </button>
+        </div>
+      </div>
+
+      <div class="mt-2 flex items-center justify-between">
+        <div class="flex items-center gap-2 relative">
+          <div ref="emojiPickerRef">
+            <button
+              class="flex items-center gap-1 rounded px-2 py-1 text-sm text-[#61666d] transition-colors hover:text-[#00aeec]"
+              :disabled="!authStore.isLoggedIn"
+              @click="showEmoji = !showEmoji"
+            >
+              <Smile :size="16" />
+              <span>表情</span>
+            </button>
+            <div v-if="showEmoji" class="absolute left-0 top-full z-50 mt-1">
+              <EmojiPicker @select="handleEmojiSelect" />
+            </div>
+          </div>
+
+          <button
+            class="flex items-center gap-1 rounded px-2 py-1 text-sm text-[#61666d] transition-colors hover:text-[#00aeec]"
+            :disabled="!authStore.isLoggedIn"
+            @click="handleAtClick"
+          >
+            <AtSign :size="16" />
+            <span>@</span>
+          </button>
+        </div>
+
+        <button
+          class="rounded-md bg-[#00aeec] px-4 py-1.5 text-sm text-white transition-colors hover:bg-[#00b5e5] disabled:cursor-not-allowed disabled:opacity-50"
+          :disabled="!authStore.isLoggedIn || !content.trim()"
+          @click="handleSubmit"
+        >
+          发布
+        </button>
+      </div>
+    </div>
+  </div>
+</template>

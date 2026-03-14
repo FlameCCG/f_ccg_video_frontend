@@ -18,15 +18,14 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div class="video-layout relative min-h-screen" style="background: #f5f5f5">
+  <div class="video-layout relative min-h-screen bg-white">
     <div
-      class="video-layout-header sticky top-0 z-50 w-full shadow-sm"
-      style="background: #fff; border-bottom: 1px solid #e3e5e7"
+      class="video-layout-header sticky top-0 z-50 w-full shadow-sm bg-white border-b border-[#e3e5e7]"
     >
       <Navbar />
     </div>
 
-    <main style="background: #f5f5f5">
+    <main class="bg-white">
       <RouterView />
     </main>
   </div>

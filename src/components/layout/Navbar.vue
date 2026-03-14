@@ -13,6 +13,8 @@ import {
   Star,
   History,
   Lightbulb,
+  X,
+  Trash2,
 } from 'lucide-vue-next'
 import { Button } from '@/components/ui/button'
 import {
@@ -26,10 +28,12 @@ import {
 import { getSearchSuggest, type SearchSuggestItem } from '@/api/video'
 import { getNotificationCounts } from '@/api/notification'
 import { useAuthStore } from '@/stores/auth'
+import { useSearchHistory } from '@/composables/useSearchHistory'
 import AuthDialog from '@/components/auth/AuthDialog.vue'
 
 const router = useRouter()
 const authStore = useAuthStore()
+const { history, addHistory, removeHistoryItem, clearHistory } = useSearchHistory()
 
 // Auth dialog state
 const authDialogOpen = ref(false)
@@ -70,6 +74,7 @@ onMounted(async () => {
 const handleSearchInput = async () => {
   if (!searchQuery.value.trim()) {
     searchSuggestions.value = []
+    showSuggestions.value = true
     return
   }
   try {
@@ -83,6 +88,7 @@ const handleSearchInput = async () => {
 
 const handleSearch = (query: string) => {
   if (!query.trim()) return
+  addHistory(query)
   showSuggestions.value = false
   searchQuery.value = query
   void router.push({ name: 'search', query: { keyword: query } })
@@ -107,9 +113,9 @@ const totalUnread = computed(() => {
 // Nav action items
 const navActions = [
   { name: '大会员', icon: Crown, path: '/vip' },
-  { name: '消息', icon: Mail, path: '/message', badge: 'message' },
+  { name: '消息', icon: Mail, path: '/chat', badge: 'message' },
   { name: '动态', icon: Zap, path: '/dynamic', badge: 'total' },
-  { name: '收藏', icon: Star, path: '/favorite' },
+  { name: '收藏', icon: Star, path: '/favorites' },
   { name: '历史', icon: History, path: '/history' },
   { name: '创作中心', icon: Lightbulb, path: '/creator' },
 ]
@@ -140,19 +146,54 @@ const navActions = [
           @blur="handleBlur"
           @focus="handleSearchInput"
         />
-        <!-- Suggestions -->
+        <!-- Suggestions or History -->
         <div
-          v-if="showSuggestions && searchSuggestions.length > 0"
+          v-if="
+            showSuggestions &&
+            (searchSuggestions.length > 0 || (!searchQuery.trim() && history.length > 0))
+          "
           class="absolute left-0 right-0 top-full z-[100] mt-1 max-h-80 overflow-y-auto overflow-x-hidden rounded-lg border bg-popover text-popover-foreground shadow-lg"
         >
-          <div
-            v-for="(item, index) in searchSuggestions"
-            :key="index"
-            class="search-suggestion-item cursor-pointer px-4 py-2.5 text-sm hover:bg-accent hover:text-accent-foreground flex items-center gap-2"
-            @mousedown="handleSearch(item.value)"
-          >
-            <span class="truncate" v-html="item.highlight"></span>
-          </div>
+          <!-- Suggestions -->
+          <template v-if="searchQuery.trim() && searchSuggestions.length > 0">
+            <div
+              v-for="(item, index) in searchSuggestions"
+              :key="index"
+              class="search-suggestion-item cursor-pointer px-4 py-2.5 text-sm hover:bg-accent hover:text-accent-foreground flex items-center gap-2"
+              @mousedown.prevent="handleSearch(item.value)"
+            >
+              <span class="truncate" v-html="item.highlight"></span>
+            </div>
+          </template>
+
+          <!-- History -->
+          <template v-else-if="!searchQuery.trim() && history.length > 0">
+            <div
+              class="flex items-center justify-between px-4 pt-3 pb-2 text-sm text-muted-foreground"
+            >
+              <span class="font-medium">搜索历史</span>
+              <button
+                class="hover:text-primary flex items-center gap-1 transition-colors"
+                @mousedown.prevent="clearHistory"
+              >
+                <Trash2 class="h-3.5 w-3.5" />清空
+              </button>
+            </div>
+            <div class="flex flex-wrap gap-2 px-4 pb-3">
+              <div
+                v-for="item in history"
+                :key="item"
+                class="group flex items-center gap-1 rounded-sm bg-accent/50 px-2.5 py-1.5 text-xs cursor-pointer hover:bg-accent hover:text-primary transition-colors"
+                @mousedown.prevent="handleSearch(item)"
+              >
+                <span class="truncate max-w-[140px]">{{ item }}</span>
+                <X
+                  class="h-3.5 w-3.5 rounded-full p-0.5 text-muted-foreground opacity-0 transition-all hover:bg-black/10 group-hover:opacity-100"
+                  @mousedown.prevent.stop="removeHistoryItem(item)"
+                />
+              </div>
+            </div>
+          </template>
         </div>
       </div>
     </div>
@@ -188,7 +229,7 @@ const navActions = [
             </DropdownMenuLabel>
             <DropdownMenuSeparator />
             <DropdownMenuItem as-child>
-              <router-link to="/space">
+              <router-link :to="`/user/${authStore.userId}`">
                 <User class="mr-2 h-4 w-4" />
                 <span>个人中心</span>
               </router-link>

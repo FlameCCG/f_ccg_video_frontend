@@ -15,6 +15,11 @@ const routes: RouteRecordRaw[] = [
         name: 'video-detail',
         component: () => import('@/views/video/VideoDetail.vue'),
       },
+      {
+        path: '/search',
+        name: 'search',
+        component: () => import('@/views/search/SearchResult.vue'),
+      },
     ],
   },
   // Routes with MainLayout (homepage, hot, rank, etc.)
@@ -40,70 +45,65 @@ const routes: RouteRecordRaw[] = [
       {
         path: 'dynamic',
         name: 'dynamic',
-        component: () => import('@/views/Home.vue'),
+        component: () => import('@/views/dynamic/Dynamic.vue'),
         meta: { requiresAuth: true },
       },
       {
-        path: 'search',
-        name: 'search',
-        component: () => import('@/views/Home.vue'),
-      },
-      {
-        path: 'partition',
+        path: 'partition/:id?',
         name: 'partition',
-        component: () => import('@/views/Home.vue'),
+        component: () => import('@/views/partition/Partition.vue'),
       },
       {
         path: 'upload',
         name: 'upload',
-        component: () => import('@/views/Home.vue'), // Placeholder - will be replaced
+        component: () => import('@/views/upload/Upload.vue'),
         meta: { requiresAuth: true },
       },
       {
         path: 'user/:id',
         name: 'user-home',
-        component: () => import('@/views/Home.vue'), // Placeholder - will be replaced
+        component: () => import('@/views/user/User.vue'),
       },
       {
         path: 'settings',
         name: 'settings',
-        component: () => import('@/views/Home.vue'), // Placeholder - will be replaced
+        component: () => import('@/views/settings/Settings.vue'),
         meta: { requiresAuth: true },
       },
       {
         path: 'history',
         name: 'history',
-        component: () => import('@/views/Home.vue'), // Placeholder - will be replaced
+        component: () => import('@/views/history/History.vue'),
         meta: { requiresAuth: true },
       },
       {
         path: 'favorites',
         name: 'favorites',
-        component: () => import('@/views/Home.vue'), // Placeholder - will be replaced
+        component: () => import('@/views/favorites/Favorites.vue'),
         meta: { requiresAuth: true },
       },
       {
         path: 'notifications',
         name: 'notifications',
-        component: () => import('@/views/Home.vue'), // Placeholder - will be replaced
+        component: () => import('@/views/notifications/Notifications.vue'),
         meta: { requiresAuth: true },
       },
       {
         path: 'chat',
         name: 'chat',
-        component: () => import('@/views/Home.vue'), // Placeholder - will be replaced
+        component: () => import('@/views/chat/Chat.vue'),
         meta: { requiresAuth: true },
       },
       {
         path: 'chat/:peerId',
         name: 'chat-room',
-        component: () => import('@/views/Home.vue'), // Placeholder - will be replaced
+        component: () => import('@/views/chat/Chat.vue'),
         meta: { requiresAuth: true },
       },
       {
         path: 'creator',
         name: 'creator',
-        component: () => import('@/views/Home.vue'), // Placeholder - will be replaced
+        component: () => import('@/views/creator/Creator.vue'),
         meta: { requiresAuth: true },
       },
     ],

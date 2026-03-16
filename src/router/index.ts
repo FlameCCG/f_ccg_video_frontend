@@ -3,6 +3,7 @@ import { createRouter, createWebHistory, type RouteRecordRaw } from 'vue-router'
 // Layout components
 const MainLayout = () => import('@/layouts/MainLayout.vue')
 const VideoLayout = () => import('@/layouts/VideoLayout.vue')
+const CreatorLayout = () => import('@/layouts/CreatorLayout.vue')
 
 const routes: RouteRecordRaw[] = [
   // Video detail uses its own layout (no banner, no channel nav)
@@ -54,12 +55,6 @@ const routes: RouteRecordRaw[] = [
         component: () => import('@/views/partition/Partition.vue'),
       },
       {
-        path: 'upload',
-        name: 'upload',
-        component: () => import('@/views/upload/Upload.vue'),
-        meta: { requiresAuth: true },
-      },
-      {
         path: 'user/:id',
         name: 'user-home',
         component: () => import('@/views/user/User.vue'),
@@ -100,13 +95,44 @@ const routes: RouteRecordRaw[] = [
         component: () => import('@/views/chat/Chat.vue'),
         meta: { requiresAuth: true },
       },
+    ],
+  },
+  // Creator Center Layout
+  {
+    path: '/creator',
+    component: CreatorLayout,
+    meta: { requiresAuth: true },
+    children: [
       {
-        path: 'creator',
-        name: 'creator',
-        component: () => import('@/views/creator/Creator.vue'),
-        meta: { requiresAuth: true },
+        path: '',
+        redirect: '/creator/home',
+      },
+      {
+        path: 'home',
+        name: 'creator-home',
+        component: () => import('@/views/creator/Home.vue'),
+      },
+      {
+        path: 'upload',
+        name: 'creator-upload',
+        component: () => import('@/views/creator/Upload.vue'),
+      },
+      {
+        path: 'content',
+        name: 'creator-content',
+        component: () => import('@/views/creator/Content.vue'),
+      },
+      {
+        path: 'interaction',
+        name: 'creator-interaction',
+        component: () => import('@/views/creator/Interaction.vue'),
       },
     ],
+  },
+  // Redirect old upload route
+  {
+    path: '/upload',
+    redirect: '/creator/upload',
   },
   // OAuth callback route
   {

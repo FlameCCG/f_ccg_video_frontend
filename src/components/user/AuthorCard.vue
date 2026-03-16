@@ -17,6 +17,7 @@ const authStore = useAuthStore()
 const relation = ref<RelationInfo | null>(null)
 const followLoading = ref(false)
 
+const isSelf = computed(() => authStore.isLoggedIn && authStore.userId === props.author.id)
 const isFollowed = computed(() => relation.value?.isFocus ?? false)
 const isMutual = computed(() => relation.value?.isMutualFollow ?? false)
 
@@ -27,7 +28,7 @@ const followBtnText = computed(() => {
 })
 
 const fetchRelation = async () => {
-  if (!authStore.isLoggedIn || !props.author.id) return
+  if (!authStore.isLoggedIn || !props.author.id || isSelf.value) return
   try {
     relation.value = await getRelation(props.author.id)
   } catch {
@@ -113,8 +114,9 @@ watch(() => props.author.id, fetchRelation)
       </p>
     </div>
 
-    <!-- Follow Button -->
+    <!-- Follow Button (hidden for self) -->
     <button
+      v-if="!isSelf"
       class="follow-btn shrink-0"
       :class="{
         'is-followed': isFollowed,

@@ -171,6 +171,9 @@ export interface MarkDynamicReadResult {
 /**
  * 发布动态
  * POST /common/dynamic/create
+ * 认证: 需要登录（客户端全局自动携带 Token）
+ * 依赖接口: 无
+ * 接口说明: 发布新动态（需登录）
  */
 export const createDynamic = (params: CreateDynamicParams): Promise<DynamicItem> => {
   return request.post('/common/dynamic/create', params)
@@ -179,6 +182,9 @@ export const createDynamic = (params: CreateDynamicParams): Promise<DynamicItem>
 /**
  * 删除动态
  * DELETE /common/dynamic/delete
+ * 认证: 需要登录（客户端全局自动携带 Token）
+ * 依赖接口: 无
+ * 接口说明: 删除自己的动态（需登录）
  */
 export const deleteDynamic = (params: DeleteDynamicParams): Promise<void> => {
   return request.delete('/common/dynamic/delete', { data: params })
@@ -187,6 +193,10 @@ export const deleteDynamic = (params: DeleteDynamicParams): Promise<void> => {
 /**
  * 置顶/取消置顶动态
  * PUT /common/dynamic/pin
+ * 认证: 需要登录（客户端全局自动携带 Token）
+ * 依赖接口: 无
+ * 接口说明: 置顶/取消置顶动态或视频（需登录）
+ * 重要说明: dynamicId 与 videoId 至少传一个，由后端决定置顶的作品类型
  */
 export const pinDynamic = (params: PinDynamicParams): Promise<void> => {
   return request.put('/common/dynamic/pin', params)
@@ -195,6 +205,9 @@ export const pinDynamic = (params: PinDynamicParams): Promise<void> => {
 /**
  * 获取动态列表
  * GET /common/dynamic/list
+ * 认证: 需要登录（客户端全局自动携带 Token）
+ * 依赖接口: 无
+ * 接口说明: 获取动态列表（需登录）
  */
 export const getDynamicList = (params?: DynamicListParams): Promise<DynamicListResult> => {
   return request.get('/common/dynamic/list', { params })
@@ -203,6 +216,9 @@ export const getDynamicList = (params?: DynamicListParams): Promise<DynamicListR
 /**
  * 获取关注用户动态
  * GET /common/dynamic/follows
+ * 认证: 需要登录（客户端全局自动携带 Token）
+ * 依赖接口: 无
+ * 接口说明: 获取关注用户的动态列表（需登录）
  */
 export const getFollowsDynamic = (params?: FollowsDynamicParams): Promise<FollowsDynamicResult> => {
   return request.get('/common/dynamic/follows', { params })
@@ -211,6 +227,9 @@ export const getFollowsDynamic = (params?: FollowsDynamicParams): Promise<Follow
 /**
  * 获取未读动态数量
  * GET /common/dynamic/counts
+ * 认证: 需要登录（客户端全局自动携带 Token）
+ * 依赖接口: 无
+ * 接口说明: 获取关注用户的未读动态数量（需登录）
  */
 export const getDynamicCounts = (): Promise<DynamicCountsResult> => {
   return request.get('/common/dynamic/counts')
@@ -219,6 +238,9 @@ export const getDynamicCounts = (): Promise<DynamicCountsResult> => {
 /**
  * 标记动态已读
  * POST /common/dynamic/read
+ * 认证: 需要登录（客户端全局自动携带 Token）
+ * 依赖接口: 无
+ * 接口说明: 标记指定作者的动态为已读（需登录）
  */
 export const markDynamicRead = (params: MarkDynamicReadParams): Promise<MarkDynamicReadResult> => {
   return request.post('/common/dynamic/read', params)

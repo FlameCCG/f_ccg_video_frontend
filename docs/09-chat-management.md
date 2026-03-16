@@ -9,20 +9,17 @@ Base URL：/v1
 - 接口路径: GET /common/chat/ws
 - 认证: 需要登录（客户端全局自动携带 Token）
 - 依赖接口: 无
-- 接口说明: 私信实时推送WebSocket连接（需登录；仅支持 Authorization header 传递 token）
+- 接口说明: 私信实时推送WebSocket连接（需登录；支持 Authorization header 传递 token或者 query 传递 token）
 - HTTP 状态码: 200（业务码 code 判断成功/失败）
 - 响应结构: code=0 成功，code=1 失败；msg 为提示信息
 
 请求参数:
-
 - 无
 
 响应字段:
-
 - 无
 
 响应示例:
-
 - 无
 
 ## [GET] 私信会话列表
@@ -58,7 +55,6 @@ Base URL：/v1
 | data.total | integer(int64) | - |
 
 响应示例:
-
 ```json
 {
   "code": 0,
@@ -114,7 +110,6 @@ Base URL：/v1
 | data.updatedAt | integer(int64) | 更新时间（Unix秒） |
 
 响应示例:
-
 ```json
 {
   "code": 0,
@@ -155,7 +150,6 @@ Base URL：/v1
 | data | object | 响应数据 |
 
 响应示例:
-
 ```json
 {
   "code": 0,
@@ -202,7 +196,6 @@ Base URL：/v1
 | data.hasMore | boolean | 是否还有更多 |
 
 响应示例:
-
 ```json
 {
   "code": 0,
@@ -254,7 +247,6 @@ Base URL：/v1
 | data | object | 响应数据 |
 
 响应示例:
-
 ```json
 {
   "code": 0,

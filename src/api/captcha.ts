@@ -33,11 +33,11 @@ export interface SlideCaptcha {
 export interface SendEmailCaptchaParams {
   type: 1 | 2 | 3 // 1=注册 2=重置密码 3=绑定邮箱
   email: string
-  captchaID: string
-  captchaCode: string
-  slideCaptchaToken: string
-  slideCaptchaX: number
-  slideCaptchaY: number
+  captchaID?: string
+  captchaCode?: string
+  slideCaptchaToken?: string
+  slideCaptchaX?: number
+  slideCaptchaY?: number
 }
 
 export interface EmailCaptchaResult {
@@ -51,6 +51,9 @@ export interface EmailCaptchaResult {
 /**
  * 获取图形验证码
  * GET /common/captcha/graphics-text
+ * 认证: 无需登录
+ * 依赖接口: 无
+ * 接口说明: 获取图形文字验证码
  */
 export const getGraphicsTextCaptcha = (
   params?: GetGraphicsTextCaptchaParams
@@ -61,6 +64,9 @@ export const getGraphicsTextCaptcha = (
 /**
  * 获取点击验证码
  * GET /common/captcha/click
+ * 认证: 无需登录
+ * 依赖接口: 无
+ * 接口说明: 获取点击式验证码（用于登录）
  */
 export const getClickCaptcha = (): Promise<ClickCaptcha> => {
   return request.get('/common/captcha/click')
@@ -69,6 +75,9 @@ export const getClickCaptcha = (): Promise<ClickCaptcha> => {
 /**
  * 获取滑块验证码
  * GET /common/captcha/slide
+ * 认证: 无需登录
+ * 依赖接口: 无
+ * 接口说明: 获取滑块式验证码（用于注册）
  */
 export const getSlideCaptcha = (): Promise<SlideCaptcha> => {
   return request.get('/common/captcha/slide')
@@ -77,6 +86,12 @@ export const getSlideCaptcha = (): Promise<SlideCaptcha> => {
 /**
  * 发送邮箱验证码
  * POST /common/captcha/email
+ * 认证: 无需登录
+ * 依赖接口: 图形验证码接口、滑块验证码接口（启用时）
+ * 接口说明: 发送邮箱验证码，用于注册、重置密码、绑定邮箱
+ * 重要说明:
+ * - 是否需要提交 captchaID/captchaCode，应根据 GET /common/site/config 返回的 data.site.register.textGraphicCaptcha 判断
+ * - 是否需要提交 slideCaptchaToken/slideCaptchaX/slideCaptchaY，应根据 GET /common/site/config 返回的 data.site.register.slideCaptcha 判断
  */
 export const sendEmailCaptcha = (params: SendEmailCaptchaParams): Promise<EmailCaptchaResult> => {
   return request.post('/common/captcha/email', params)

@@ -155,7 +155,7 @@ export const useVideoStore = defineStore(
     /**
      * 投币
      */
-    const addCoin = async (coins: number = 1): Promise<boolean> => {
+    const addCoin = async (coins: 1 | 2 = 1): Promise<boolean> => {
       const authStore = useAuthStore()
       if (!authStore.isLoggedIn || !currentVideo.value) {
         return false
@@ -186,7 +186,7 @@ export const useVideoStore = defineStore(
     /**
      * 一键三连
      */
-    const triple = async (folderId?: number, coins: number = 2): Promise<boolean> => {
+    const triple = async (folderId?: number, coins: 1 | 2 = 2): Promise<boolean> => {
       const authStore = useAuthStore()
       if (!authStore.isLoggedIn || !currentVideo.value) {
         return false

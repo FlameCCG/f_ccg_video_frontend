@@ -31,7 +31,6 @@ Base URL：/v1
 | data.createdAt | string(date-time) | 创建时间 |
 
 响应示例:
-
 ```json
 {
   "code": 0,
@@ -67,7 +66,6 @@ Base URL：/v1
 | data | object | 响应数据 |
 
 响应示例:
-
 ```json
 {
   "code": 0,
@@ -98,7 +96,6 @@ Base URL：/v1
 | data | object | 响应数据 |
 
 响应示例:
-
 ```json
 {
   "code": 0,
@@ -150,7 +147,6 @@ Base URL：/v1
 | data.list[].workId | integer(uint) | 作品ID |
 
 响应示例:
-
 ```json
 {
   "code": 0,
@@ -217,7 +213,6 @@ Base URL：/v1
 | data.list[].isUnread | boolean | 是否有未读新动态 |
 
 响应示例:
-
 ```json
 {
   "code": 0,
@@ -249,7 +244,6 @@ Base URL：/v1
 - 响应结构: code=0 成功，code=1 失败；msg 为提示信息
 
 请求参数:
-
 - 无
 
 响应字段:
@@ -259,7 +253,6 @@ Base URL：/v1
 | data.unreadCount | integer(int64) | 未读动态数量 |
 
 响应示例:
-
 ```json
 {
   "code": 0,
@@ -313,7 +306,6 @@ Base URL：/v1
 | data.list[].workId | integer(uint) | 作品ID |
 
 响应示例:
-
 ```json
 {
   "code": 0,

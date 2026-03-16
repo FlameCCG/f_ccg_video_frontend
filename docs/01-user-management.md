@@ -8,7 +8,7 @@ Base URL：/v1
 
 - 接口路径: POST /common/user/register/email
 - 认证: 可选登录（客户端可携带 Token）
-- 依赖接口: 邮箱验证码接口、滑块验证码接口
+- 依赖接口: 邮箱验证码接口、滑块验证码接口（启用时）
 - 接口说明: 通过邮箱注册新用户，需要先通过滑块验证码和邮箱验证码
 - HTTP 状态码: 200（业务码 code 判断成功/失败）
 - 响应结构: code=0 成功，code=1 失败；msg 为提示信息
@@ -19,11 +19,15 @@ Base URL：/v1
 | username | body | string | 是 | 用户名 |
 | password | body | string | 是 | 密码 |
 | email | body | string | 是 | 邮箱地址（需与邮箱验证码一致） |
-| emailID | body | string | 是 | 邮箱验证码ID（来自 /common/captcha/email） |
-| emailCode | body | string | 是 | 邮箱验证码 |
-| slideCaptchaToken | body | string | 是 | 滑块验证码Token（来自 /common/captcha/slide） |
-| slideCaptchaX | body | integer | 是 | 滑块验证码X坐标 |
-| slideCaptchaY | body | integer | 是 | 滑块验证码Y坐标 |
+| emailID | body | string | 否 | 邮箱验证码ID（启用邮箱验证码时必填，来自 /common/captcha/email） |
+| emailCode | body | string | 否 | 邮箱验证码（启用邮箱验证码时必填） |
+| slideCaptchaToken | body | string | 否 | 滑块验证码Token（启用滑块验证码时必填，来自 /common/captcha/slide） |
+| slideCaptchaX | body | integer | 否 | 滑块验证码X坐标（启用滑块验证码时必填） |
+| slideCaptchaY | body | integer | 否 | 滑块验证码Y坐标（启用滑块验证码时必填） |
+
+说明:
+- 是否需要邮箱验证码字段，应根据 `GET /common/site/config` 返回的 `data.site.register.emailCaptcha` 判断
+- 是否需要滑块验证码字段，应根据 `GET /common/site/config` 返回的 `data.site.register.slideCaptcha` 判断
 
 响应字段:
 | 字段 | 类型 | 说明 |
@@ -31,7 +35,6 @@ Base URL：/v1
 | data | object | 响应数据 |
 
 响应示例:
-
 ```json
 {
   "code": 0,
@@ -44,7 +47,7 @@ Base URL：/v1
 
 - 接口路径: POST /common/user/login/pwd
 - 认证: 可选登录（客户端可携带 Token）
-- 依赖接口: 点击验证码接口
+- 依赖接口: 点击验证码接口（启用时）
 - 接口说明: 使用用户名/邮箱和密码登录，需要先通过点击验证码
 - HTTP 状态码: 200（业务码 code 判断成功/失败）
 - 响应结构: code=0 成功，code=1 失败；msg 为提示信息
@@ -54,11 +57,14 @@ Base URL：/v1
 | --- | --- | --- | --- | --- |
 | username | body | string | 是 | 用户名或邮箱 |
 | password | body | string | 是 | 密码 |
-| captchaToken | body | string | 是 | 点击验证码token（来自 /common/captcha/click） |
-| captchaDots | body | array<ClickCaptchaPoint> | 是 | 点击点位列表（按顺序） |
-| captchaDots[].index | body | integer | 是 | 点击顺序索引（从0开始） |
-| captchaDots[].x | body | integer | 是 | 点击的X坐标 |
-| captchaDots[].y | body | integer | 是 | 点击的Y坐标 |
+| captchaToken | body | string | 否 | 点击验证码token（启用点击验证码时必填，来自 /common/captcha/click） |
+| captchaDots | body | array<ClickCaptchaPoint> | 否 | 点击点位列表（启用点击验证码时必填，按顺序） |
+| captchaDots[].index | body | integer | 否 | 点击顺序索引（从0开始） |
+| captchaDots[].x | body | integer | 否 | 点击的X坐标 |
+| captchaDots[].y | body | integer | 否 | 点击的Y坐标 |
+
+说明:
+- 是否需要点击验证码字段，应根据 `GET /common/site/config` 返回的 `data.site.login.textClickCaptcha` 判断
 
 响应字段:
 | 字段 | 类型 | 说明 |
@@ -68,7 +74,6 @@ Base URL：/v1
 | data.refreshToken | string | 刷新令牌 |
 
 响应示例:
-
 ```json
 {
   "code": 0,
@@ -102,7 +107,6 @@ Base URL：/v1
 | data.refreshToken | string | 刷新令牌 |
 
 响应示例:
-
 ```json
 {
   "code": 0,
@@ -117,8 +121,8 @@ Base URL：/v1
 ## [POST] 刷新访问令牌
 
 - 接口路径: POST /common/user/login/refresh
-- 认证: 无需登录
-- 依赖接口: 无
+- 认证: 可选登录（客户端可携带 Token）
+- 依赖接口: 登录接口获取 refreshToken
 - 接口说明: 使用 refreshToken 刷新访问令牌
 - HTTP 状态码: 200（业务码 code 判断成功/失败）
 - 响应结构: code=0 成功，code=1 失败；msg 为提示信息
@@ -136,7 +140,6 @@ Base URL：/v1
 | data.refreshToken | string | 刷新令牌 |
 
 响应示例:
-
 ```json
 {
   "code": 0,
@@ -180,7 +183,6 @@ Base URL：/v1
 | data.users[].followerCount | integer(int64) | - |
 
 响应示例:
-
 ```json
 {
   "code": 0,
@@ -192,7 +194,9 @@ Base URL：/v1
         "username": "alice",
         "avatar": "https://cdn.example.com/avatar/1001.png",
         "highlight": {
-          "key": ["value"]
+          "key": [
+            "value"
+          ]
         },
         "level": 3,
         "followerCount": 1
@@ -236,7 +240,6 @@ Base URL：/v1
 | data.totalViews | integer(int64) | 播放总数 |
 
 响应示例:
-
 ```json
 {
   "code": 0,
@@ -244,7 +247,7 @@ Base URL：/v1
     "id": 1001,
     "username": "alice",
     "avatar": "https://cdn.example.com/avatar/1001.png",
-    "bannerUrl": "https://cdn.example.com/banner/1001.jpg",
+    "bannerUrl": "https://example.com/page",
     "description": "示例说明",
     "gender": 1,
     "birthday": "2024-06-01",
@@ -269,7 +272,6 @@ Base URL：/v1
 - 响应结构: code=0 成功，code=1 失败；msg 为提示信息
 
 请求参数:
-
 - 无
 
 响应字段:
@@ -293,7 +295,6 @@ Base URL：/v1
 | data.registerSource | string | 注册来源 |
 
 响应示例:
-
 ```json
 {
   "code": 0,
@@ -302,7 +303,7 @@ Base URL：/v1
     "username": "alice",
     "email": "alice@example.com",
     "avatar": "https://cdn.example.com/avatar/1001.png",
-    "bannerUrl": "https://cdn.example.com/banner/1001.jpg",
+    "bannerUrl": "https://example.com/page",
     "description": "示例说明",
     "gender": 1,
     "birthday": "2024-06-01",
@@ -342,7 +343,6 @@ Base URL：/v1
 | data | object | 响应数据 |
 
 响应示例:
-
 ```json
 {
   "code": 0,
@@ -367,13 +367,15 @@ Base URL：/v1
 | emailCode | body | string | 是 | 邮箱验证码 |
 | email | body | string | 是 | 邮箱 |
 
+说明:
+- 当前实现始终校验邮箱验证码，不受 `GET /common/site/config` 返回的 `data.site.register.emailCaptcha` 影响
+
 响应字段:
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
 | data | object | 响应数据 |
 
 响应示例:
-
 ```json
 {
   "code": 0,
@@ -399,13 +401,15 @@ Base URL：/v1
 | email | body | string | 是 | 邮箱 |
 | newPassword | body | string | 是 | 新密码 |
 
+说明:
+- 当前实现始终校验邮箱验证码，不受 `GET /common/site/config` 返回的 `data.site.register.emailCaptcha` 影响
+
 响应字段:
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
 | data | object | 响应数据 |
 
 响应示例:
-
 ```json
 {
   "code": 0,
@@ -435,7 +439,6 @@ Base URL：/v1
 | data | object | 响应数据 |
 
 响应示例:
-
 ```json
 {
   "code": 0,
@@ -454,44 +457,44 @@ Base URL：/v1
 - 响应结构: code=0 成功，code=1 失败；msg 为提示信息
 
 请求参数:
-
 - 无
 
 响应字段:
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
-| data | object | - |
+| data | UserConf | - |
+| data.likeTags | array<string> | 喜欢的标签列表 |
+| data.bannerId | integer(uint) | 预制横幅ID |
+| data.bannerUrl | string | 自定义横幅URL |
 | data.openCollect | boolean | 是否公开收藏 |
 | data.openFans | boolean | 是否公开粉丝 |
 | data.openFollow | boolean | 是否公开关注 |
-| data.openLikeVideo | boolean | 是否公开点赞视频 |
+| data.openLike | boolean | 是否公开最近点赞的视频 |
 | data.openLikeArticle | boolean | 是否公开点赞文章 |
 | data.openCoinVideo | boolean | 是否公开投币视频 |
 | data.openCoinArticle | boolean | 是否公开投币文章 |
 | data.openFollowAnime | boolean | 是否公开追番 |
-| data.homeStyleID | integer | 首页风格ID |
-| data.bannerId | integer | 预制横幅ID |
-| data.bannerUrl | string | 自定义横幅URL |
-| data.likeTags | array<string> | 喜欢的标签列表 |
+| data.homeStyleID | integer(uint) | 首页风格ID |
 
 响应示例:
-
 ```json
 {
   "code": 0,
   "data": {
+    "likeTags": [
+      "示例标签"
+    ],
+    "bannerId": 0,
+    "bannerUrl": "https://example.com/page",
     "openCollect": true,
     "openFans": true,
     "openFollow": true,
-    "openLikeVideo": true,
+    "openLike": true,
     "openLikeArticle": true,
     "openCoinVideo": true,
     "openCoinArticle": true,
     "openFollowAnime": true,
-    "homeStyleID": 1001,
-    "bannerId": 0,
-    "bannerUrl": "https://cdn.example.com/banner/1001.jpg",
-    "likeTags": ["示例标签"]
+    "homeStyleID": 1
   },
   "msg": "获取成功"
 }
@@ -522,13 +525,15 @@ Base URL：/v1
 | bannerUrl | body | string | 否 | 自定义横幅URL（可选） |
 | likeTags | body | array<string> | 否 | 喜欢的标签列表（可选） |
 
+说明:
+- `bannerId` 与 `bannerUrl` 不能同时传
+
 响应字段:
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
 | data | object | 响应数据 |
 
 响应示例:
-
 ```json
 {
   "code": 0,
@@ -550,21 +555,20 @@ Base URL：/v1
 | 名称 | 位置 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- | --- |
 | fileHash | form | string | 是 | 文件哈希值 |
-| banner | form | file | 是 | 横幅图片文件 |
+| banner | form | string(binary) | 是 | 横幅图片文件 |
 
 响应字段:
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
-| data | object | 响应数据 |
+| data | object | - |
 | data.bannerUrl | string | 横幅图片URL |
 
 响应示例:
-
 ```json
 {
   "code": 0,
   "data": {
-    "bannerUrl": "https://cdn.example.com/banner/1001.jpg"
+    "bannerUrl": "https://example.com/page"
   },
   "msg": "上传成功"
 }
@@ -585,7 +589,6 @@ Base URL：/v1
 | keyword | query | string | 否 | 搜索关键词（可选） |
 | page | query | integer | 否 | 页码 |
 | pageSize | query | integer | 否 | 每页数量 |
-| partitionId | query | integer | 否 | 分区ID（可选） |
 
 响应字段:
 | 字段 | 类型 | 说明 |
@@ -599,7 +602,6 @@ Base URL：/v1
 | data.list[].isFriend | boolean | 是否互相关注 |
 
 响应示例:
-
 ```json
 {
   "code": 0,
@@ -648,7 +650,6 @@ Base URL：/v1
 | data.total | integer(int64) | - |
 
 响应示例:
-
 ```json
 {
   "code": 0,
@@ -696,7 +697,6 @@ Base URL：/v1
 | data.total | integer(int64) | - |
 
 响应示例:
-
 ```json
 {
   "code": 0,
@@ -742,7 +742,6 @@ Base URL：/v1
 | data.total | integer(int64) | - |
 
 响应示例:
-
 ```json
 {
   "code": 0,
@@ -796,19 +795,32 @@ Base URL：/v1
 | data.total.favorites | integer(int64) | 收藏增量 |
 
 响应示例:
-
 ```json
 {
   "code": 0,
   "data": {
     "range": "2024-06-01T12:00:00Z",
-    "x": ["2024-06-01"],
-    "fans": [1],
-    "views": [1],
-    "comments": [1],
-    "coins": [5],
-    "danmu": [1],
-    "favorites": [1],
+    "x": [
+      "2024-06-01"
+    ],
+    "fans": [
+      1
+    ],
+    "views": [
+      1
+    ],
+    "comments": [
+      1
+    ],
+    "coins": [
+      5
+    ],
+    "danmu": [
+      1
+    ],
+    "favorites": [
+      1
+    ],
     "total": {
       "fans": 1,
       "views": 1,
@@ -856,7 +868,6 @@ Base URL：/v1
 | data.list[].authorName | string | 作者名称 |
 
 响应示例:
-
 ```json
 {
   "code": 0,
@@ -912,7 +923,6 @@ Base URL：/v1
 | data.list[].authorName | string | 作者名称 |
 
 响应示例:
-
 ```json
 {
   "code": 0,
@@ -968,7 +978,6 @@ Base URL：/v1
 | data.list[].authorName | string | 作者名称 |
 
 响应示例:
-
 ```json
 {
   "code": 0,
@@ -1013,7 +1022,6 @@ Base URL：/v1
 | data | object | 响应数据 |
 
 响应示例:
-
 ```json
 {
   "code": 0,
@@ -1044,7 +1052,6 @@ Base URL：/v1
 | data.name | string | 标签名称 |
 
 响应示例:
-
 ```json
 {
   "code": 0,

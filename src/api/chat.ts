@@ -1,4 +1,4 @@
-import request, { getAccessToken } from './request'
+import request from './request'
 
 // ============================================================================
 // Type Definitions
@@ -62,7 +62,7 @@ export interface ChatMessage {
  */
 export interface ConversationListParams {
   page?: number
-  pageSize?: number
+  pageSize?: number // 文档说明：不设最大值
 }
 
 /**
@@ -102,7 +102,7 @@ export interface MessageListResult {
   list: ChatMessage[]
   nextBefore: string // 下一页游标
   hasMore: boolean // 是否还有更多
-  total?: number
+  total: number
 }
 
 /**
@@ -119,18 +119,22 @@ export interface MarkChatReadParams {
 /**
  * 获取私信WebSocket URL
  * GET /common/chat/ws
- * 返回 WebSocket 连接 URL（需要在 URL 中携带 token）
+ * 认证: 需要登录（客户端全局自动携带 Token）
+ * 依赖接口: 无
+ * 接口说明: 私信实时推送 WebSocket 连接（支持 Authorization header 传递 token或者 query 传递 token）
  */
 export const getChatWebSocketUrl = (): string => {
-  const token = getAccessToken()
   const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
   const host = window.location.host
-  return `${protocol}//${host}/v1/common/chat/ws?token=${token}`
+  return `${protocol}//${host}/v1/common/chat/ws`
 }
 
 /**
  * 获取私信会话列表
  * GET /common/chat/conversations
+ * 认证: 需要登录（客户端全局自动携带 Token）
+ * 依赖接口: 无
+ * 接口说明: 获取当前用户私信会话列表（需登录，pageSize 不限制上限）
  */
 export const getConversationList = (
   params?: ConversationListParams
@@ -141,6 +145,10 @@ export const getConversationList = (
 /**
  * 创建会话
  * POST /common/chat/conversations
+ * 认证: 需要登录（客户端全局自动携带 Token）
+ * 依赖接口: 无
+ * 接口说明: 创建与指定用户的私信会话（需登录，幂等）
+ * 重要说明: 对方不会看到空会话，直到有人发送消息
  */
 export const createConversation = (
   params: CreateConversationParams
@@ -151,6 +159,10 @@ export const createConversation = (
 /**
  * 删除会话
  * DELETE /common/chat/conversations
+ * 认证: 需要登录（客户端全局自动携带 Token）
+ * 依赖接口: 无
+ * 接口说明: 删除与指定用户的会话（需登录）
+ * 重要说明: 会硬删除该会话及其消息记录
  */
 export const deleteConversation = (params: DeleteConversationParams): Promise<void> => {
   return request.delete('/common/chat/conversations', { data: params })
@@ -159,6 +171,10 @@ export const deleteConversation = (params: DeleteConversationParams): Promise<vo
 /**
  * 获取私信消息列表
  * GET /common/chat/messages
+ * 认证: 需要登录（客户端全局自动携带 Token）
+ * 依赖接口: 无
+ * 接口说明: 获取与指定用户的私信消息（需登录）
+ * 重要说明: 固定返回 10 条，按 before 游标向前翻页
  */
 export const getMessageList = (params: MessageListParams): Promise<MessageListResult> => {
   return request.get('/common/chat/messages', { params })
@@ -167,6 +183,9 @@ export const getMessageList = (params: MessageListParams): Promise<MessageListRe
 /**
  * 标记私信已读
  * PUT /common/chat/read
+ * 认证: 需要登录（客户端全局自动携带 Token）
+ * 依赖接口: 无
+ * 接口说明: 标记与指定用户的私信为已读（需登录，红点清零）
  */
 export const markChatRead = (params: MarkChatReadParams): Promise<void> => {
   return request.put('/common/chat/read', params)

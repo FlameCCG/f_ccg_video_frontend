@@ -69,7 +69,9 @@ export interface SiteHeartbeatResult {
 /**
  * 获取QQ登录URL
  * GET /common/site/qq-url
- * 无需登录
+ * 认证: 无需登录
+ * 依赖接口: 无
+ * 接口说明: 获取 QQ OAuth 登录跳转 URL
  */
 export const getQQLoginUrl = (): Promise<string> => {
   return request.get('/common/site/qq-url')
@@ -78,7 +80,13 @@ export const getQQLoginUrl = (): Promise<string> => {
 /**
  * 获取站点配置
  * GET /common/site/config
- * 无需登录
+ * 认证: 无需登录
+ * 依赖接口: 无
+ * 接口说明: 获取站点公开配置（不返回存储敏感信息）
+ * 重要说明:
+ * - 前端应以本接口返回的配置决定是否展示验证码组件，以及后续请求是否需要提交验证码字段
+ * - 注册相关开关查看 data.site.register.*
+ * - 登录相关开关查看 data.site.login.*
  */
 export const getSiteConfig = (): Promise<SiteConfigResult> => {
   return request.get('/common/site/config')
@@ -87,9 +95,9 @@ export const getSiteConfig = (): Promise<SiteConfigResult> => {
 /**
  * 站点打点
  * POST /common/site/stat/touch
- * 可选登录（客户端可携带 Token）
- * 增加站点流量（PV）并统计今日 UV（含游客）
- * 若已登录则当日首次打点时发放登录经验
+ * 认证: 可选登录（客户端可携带 Token）
+ * 依赖接口: 无
+ * 接口说明: 增加站点流量（PV）并统计今日 UV（含游客）；若已登录则当日首次打点时发放登录经验
  */
 export const touchSiteStat = (): Promise<SiteTouchResult> => {
   return request.post('/common/site/stat/touch')
@@ -98,8 +106,9 @@ export const touchSiteStat = (): Promise<SiteTouchResult> => {
 /**
  * 在线心跳
  * POST /common/site/stat/heartbeat
- * 可选登录（客户端可携带 Token）
- * 维护 UV 与在线人数，不增加 PV（支持游客）
+ * 认证: 可选登录（客户端可携带 Token）
+ * 依赖接口: 无
+ * 接口说明: 维护 UV 与在线人数，不增加 PV（支持游客）
  */
 export const sendHeartbeat = (): Promise<SiteHeartbeatResult> => {
   return request.post('/common/site/stat/heartbeat')

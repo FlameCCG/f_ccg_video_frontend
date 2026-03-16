@@ -14,8 +14,8 @@ export interface ClickCaptchaPoint {
 export interface LoginPwdParams {
   username: string
   password: string
-  captchaToken: string
-  captchaDots: ClickCaptchaPoint[]
+  captchaToken?: string
+  captchaDots?: ClickCaptchaPoint[]
 }
 
 export interface LoginQQParams {
@@ -30,11 +30,11 @@ export interface RegisterEmailParams {
   username: string
   password: string
   email: string
-  emailID: string
-  emailCode: string
-  slideCaptchaToken: string
-  slideCaptchaX: number
-  slideCaptchaY: number
+  emailID?: string
+  emailCode?: string
+  slideCaptchaToken?: string
+  slideCaptchaX?: number
+  slideCaptchaY?: number
 }
 
 export interface ResetPasswordParams {
@@ -159,6 +159,7 @@ export interface UserConfig {
   openCollect: boolean
   openFans: boolean
   openFollow: boolean
+  openLike?: boolean // 文档响应示例保留该字段，作为 openLikeVideo 的兼容读字段
   openLikeVideo: boolean
   openLikeArticle: boolean
   openCoinVideo: boolean
@@ -269,7 +270,7 @@ export interface UserVideoListParams {
   userId: number
   page?: number
   pageSize?: number
-  sort?: number
+  sort?: 0 | 1 | 2
 }
 
 export interface DeleteVideoParams {
@@ -292,6 +293,10 @@ export interface Tag {
 /**
  * 用户名密码登录
  * POST /common/user/login/pwd
+ * 认证: 可选登录（客户端可携带 Token）
+ * 依赖接口: 点击验证码接口（启用时）
+ * 接口说明: 使用用户名/邮箱和密码登录，需要先通过点击验证码
+ * 重要说明: 是否需要提交 captchaToken/captchaDots，应根据 GET /common/site/config 返回的 data.site.login.textClickCaptcha 判断
  */
 export const loginByPassword = (params: LoginPwdParams): Promise<JwtToken> => {
   return request.post('/common/user/login/pwd', params)
@@ -300,6 +305,9 @@ export const loginByPassword = (params: LoginPwdParams): Promise<JwtToken> => {
 /**
  * QQ登录
  * POST /common/user/login/qq
+ * 认证: 可选登录（客户端可携带 Token）
+ * 依赖接口: 无
+ * 接口说明: 使用 QQ 授权码登录，未注册用户会自动注册
  */
 export const loginByQQ = (params: LoginQQParams): Promise<JwtToken> => {
   return request.post('/common/user/login/qq', params)
@@ -308,6 +316,9 @@ export const loginByQQ = (params: LoginQQParams): Promise<JwtToken> => {
 /**
  * 刷新Token
  * POST /common/user/login/refresh
+ * 认证: 可选登录（客户端可携带 Token）
+ * 依赖接口: 登录接口获取 refreshToken
+ * 接口说明: 使用 refreshToken 刷新访问令牌
  */
 export const refreshToken = (params: RefreshTokenParams): Promise<JwtToken> => {
   return request.post('/common/user/login/refresh', params)
@@ -316,6 +327,12 @@ export const refreshToken = (params: RefreshTokenParams): Promise<JwtToken> => {
 /**
  * 邮箱注册
  * POST /common/user/register/email
+ * 认证: 可选登录（客户端可携带 Token）
+ * 依赖接口: 邮箱验证码接口、滑块验证码接口（启用时）
+ * 接口说明: 通过邮箱注册新用户，需要先通过滑块验证码和邮箱验证码
+ * 重要说明:
+ * - 是否需要提交 emailID/emailCode，应根据 GET /common/site/config 返回的 data.site.register.emailCaptcha 判断
+ * - 是否需要提交 slideCaptchaToken/slideCaptchaX/slideCaptchaY，应根据 GET /common/site/config 返回的 data.site.register.slideCaptcha 判断
  */
 export const registerByEmail = (params: RegisterEmailParams): Promise<void> => {
   return request.post('/common/user/register/email', params)
@@ -324,6 +341,10 @@ export const registerByEmail = (params: RegisterEmailParams): Promise<void> => {
 /**
  * 忘记密码重置
  * POST /common/user/password/reset
+ * 认证: 可选登录（客户端可携带 Token）
+ * 依赖接口: 邮箱验证码接口
+ * 接口说明: 通过邮箱验证码重置密码（验证码类型 2）
+ * 重要说明: 当前实现始终校验邮箱验证码，不受 GET /common/site/config 返回的 data.site.register.emailCaptcha 影响
  */
 export const resetPassword = (params: ResetPasswordParams): Promise<void> => {
   return request.post('/common/user/password/reset', params)
@@ -332,6 +353,9 @@ export const resetPassword = (params: ResetPasswordParams): Promise<void> => {
 /**
  * 修改密码
  * PUT /common/user/password/change
+ * 认证: 需要登录（客户端全局自动携带 Token）
+ * 依赖接口: 无
+ * 接口说明: 修改当前用户密码（需登录）
  */
 export const changePassword = (params: ChangePasswordParams): Promise<void> => {
   return request.put('/common/user/password/change', params)
@@ -344,6 +368,9 @@ export const changePassword = (params: ChangePasswordParams): Promise<void> => {
 /**
  * 获取当前用户信息
  * GET /common/user/info
+ * 认证: 需要登录（客户端全局自动携带 Token）
+ * 依赖接口: 无
+ * 接口说明: 获取当前登录用户的详细信息（需登录）
  */
 export const getCurrentUserInfo = (): Promise<UserInfo> => {
   return request.get('/common/user/info')
@@ -352,6 +379,9 @@ export const getCurrentUserInfo = (): Promise<UserInfo> => {
 /**
  * 更新用户信息
  * PUT /common/user/info
+ * 认证: 需要登录（客户端全局自动携带 Token）
+ * 依赖接口: 无
+ * 接口说明: 更新当前登录用户的信息（需登录）
  */
 export const updateUserInfo = (params: UpdateUserInfoParams): Promise<void> => {
   return request.put('/common/user/info', params)
@@ -360,6 +390,9 @@ export const updateUserInfo = (params: UpdateUserInfoParams): Promise<void> => {
 /**
  * 获取用户详情
  * GET /common/user/{id}
+ * 认证: 可选登录（客户端可携带 Token）
+ * 依赖接口: 无
+ * 接口说明: 根据用户 ID 获取用户公开信息
  */
 export const getUserDetail = (id: number): Promise<UserDetail> => {
   return request.get(`/common/user/${id}`)
@@ -368,6 +401,9 @@ export const getUserDetail = (id: number): Promise<UserDetail> => {
 /**
  * 搜索用户
  * GET /common/user/search
+ * 认证: 可选登录（客户端可携带 Token）
+ * 依赖接口: 无
+ * 接口说明: 根据关键词搜索用户
  */
 export const searchUsers = (params: SearchUserParams): Promise<UserSearchResult> => {
   return request.get('/common/user/search', { params })
@@ -376,6 +412,9 @@ export const searchUsers = (params: SearchUserParams): Promise<UserSearchResult>
 /**
  * @联想用户
  * GET /common/user/mention/suggest
+ * 认证: 需要登录（客户端全局自动携带 Token）
+ * 依赖接口: 无
+ * 接口说明: 提供评论 @ 联想功能，按好友优先返回关注列表（需登录）
  */
 export const getMentionSuggest = (params?: MentionSuggestParams): Promise<MentionSuggestResult> => {
   return request.get('/common/user/mention/suggest', { params })
@@ -388,6 +427,9 @@ export const getMentionSuggest = (params?: MentionSuggestParams): Promise<Mentio
 /**
  * 获取用户配置
  * GET /common/user/info/conf
+ * 认证: 需要登录（客户端全局自动携带 Token）
+ * 依赖接口: 无
+ * 接口说明: 获取当前登录用户的隐私配置（需登录）
  */
 export const getUserConfig = (): Promise<UserConfig> => {
   return request.get('/common/user/info/conf')
@@ -396,6 +438,10 @@ export const getUserConfig = (): Promise<UserConfig> => {
 /**
  * 更新用户配置
  * PUT /common/user/info/conf
+ * 认证: 需要登录（客户端全局自动携带 Token）
+ * 依赖接口: 无
+ * 接口说明: 更新当前登录用户的隐私配置（需登录）
+ * 重要说明: bannerId 与 bannerUrl 不能同时传
  */
 export const updateUserConfig = (params: UpdateUserConfigParams): Promise<void> => {
   return request.put('/common/user/info/conf', params)
@@ -404,6 +450,10 @@ export const updateUserConfig = (params: UpdateUserConfigParams): Promise<void> 
 /**
  * 绑定邮箱
  * POST /common/user/email/bind
+ * 认证: 需要登录（客户端全局自动携带 Token）
+ * 依赖接口: 邮箱验证码接口
+ * 接口说明: 绑定邮箱（需登录，邮箱验证码类型 3）
+ * 重要说明: 当前实现始终校验邮箱验证码，不受 GET /common/site/config 返回的 data.site.register.emailCaptcha 影响
  */
 export const bindEmail = (params: BindEmailParams): Promise<void> => {
   return request.post('/common/user/email/bind', params)
@@ -412,6 +462,9 @@ export const bindEmail = (params: BindEmailParams): Promise<void> => {
 /**
  * 上传用户主页横幅
  * POST /common/user/banner/upload
+ * 认证: 需要登录（客户端全局自动携带 Token）
+ * 依赖接口: 无
+ * 接口说明: 上传用户主页横幅图片（需登录）
  */
 export const uploadUserBanner = (fileHash: string, banner: File): Promise<BannerUploadResult> => {
   const formData = new FormData()
@@ -431,6 +484,9 @@ export const uploadUserBanner = (fileHash: string, banner: File): Promise<Banner
 /**
  * 登录IP记录
  * GET /common/user/record/login-ip
+ * 认证: 需要登录（客户端全局自动携带 Token）
+ * 依赖接口: 无
+ * 接口说明: 获取当前用户登录 IP 记录（需登录）
  */
 export const getLoginIpRecords = (
   params?: PaginationParams
@@ -441,6 +497,9 @@ export const getLoginIpRecords = (
 /**
  * 经验记录
  * GET /common/user/record/exp
+ * 认证: 需要登录（客户端全局自动携带 Token）
+ * 依赖接口: 无
+ * 接口说明: 获取当前用户经验记录（需登录）
  */
 export const getExpRecords = (
   params?: PaginationParams
@@ -451,6 +510,9 @@ export const getExpRecords = (
 /**
  * 硬币记录
  * GET /common/user/record/coin
+ * 认证: 需要登录（客户端全局自动携带 Token）
+ * 依赖接口: 无
+ * 接口说明: 获取当前用户硬币记录（需登录）
  */
 export const getCoinRecords = (
   params?: PaginationParams
@@ -461,6 +523,9 @@ export const getCoinRecords = (
 /**
  * 创作者数据分析
  * GET /common/user/creator/analytics
+ * 认证: 需要登录（客户端全局自动携带 Token）
+ * 依赖接口: 无
+ * 接口说明: 返回粉丝/播放/评论/硬币/弹幕/收藏按天统计，支持近 7 天 / 近 30 天 / 自然月（需登录）
  */
 export const getCreatorAnalytics = (
   range?: '7d' | '30d' | 'month'
@@ -475,6 +540,10 @@ export const getCreatorAnalytics = (
 /**
  * 用户视频列表
  * GET /common/user/video/list
+ * 认证: 可选登录（客户端可携带 Token）
+ * 依赖接口: 无
+ * 接口说明: 获取指定用户的视频列表
+ * 重要说明: sort 可选 0=最新、1=最多播放、2=最多收藏
  */
 export const getUserVideoList = (
   params: UserVideoListParams
@@ -485,6 +554,9 @@ export const getUserVideoList = (
 /**
  * 最近点赞的视频
  * GET /common/user/video/recent/liked
+ * 认证: 可选登录（客户端可携带 Token）
+ * 依赖接口: 无
+ * 接口说明: 获取指定用户最近点赞的 10 条视频
  */
 export const getRecentLikedVideos = (userID: number): Promise<PaginatedResult<UserVideoItem>> => {
   return request.get('/common/user/video/recent/liked', { params: { userID } })
@@ -493,6 +565,9 @@ export const getRecentLikedVideos = (userID: number): Promise<PaginatedResult<Us
 /**
  * 最近投币的视频
  * GET /common/user/video/recent/coined
+ * 认证: 可选登录（客户端可携带 Token）
+ * 依赖接口: 无
+ * 接口说明: 获取指定用户最近投币的 10 条视频
  */
 export const getRecentCoinedVideos = (userID: number): Promise<PaginatedResult<UserVideoItem>> => {
   return request.get('/common/user/video/recent/coined', { params: { userID } })
@@ -501,6 +576,9 @@ export const getRecentCoinedVideos = (userID: number): Promise<PaginatedResult<U
 /**
  * 删除视频
  * DELETE /common/user/video/delete
+ * 认证: 需要登录（客户端全局自动携带 Token）
+ * 依赖接口: 无
+ * 接口说明: 用户删除自己的视频（逻辑删除，需登录）
  */
 export const deleteVideo = (params: DeleteVideoParams): Promise<void> => {
   return request.delete('/common/user/video/delete', { data: params })
@@ -509,6 +587,9 @@ export const deleteVideo = (params: DeleteVideoParams): Promise<void> => {
 /**
  * 创建标签
  * POST /common/user/video/tag
+ * 认证: 需要登录（客户端全局自动携带 Token）
+ * 依赖接口: 无
+ * 接口说明: 用户创建视频标签（需登录）
  */
 export const createTag = (params: CreateTagParams): Promise<Tag> => {
   return request.post('/common/user/video/tag', params)

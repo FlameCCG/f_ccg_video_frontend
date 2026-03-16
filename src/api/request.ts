@@ -6,6 +6,7 @@ import axios, {
 import { toast } from 'vue-sonner'
 
 // API response structure
+// 文档约定：所有接口都可能返回 HTTP 200，业务是否成功必须以 code 判断。
 export interface ApiResponse<T = unknown> {
   code: number
   msg: string
@@ -89,7 +90,7 @@ request.interceptors.request.use(
 )
 
 // Helper to recursively fix broken localhost URLs in response data from the backend
-const fixLocalhostUrls = (obj: any): any => {
+const fixLocalhostUrls = (obj: unknown): unknown => {
   if (typeof obj === 'string') {
     if (obj.startsWith('http:/localhost:')) {
       return obj.replace('http:/localhost:', 'http://localhost:')
@@ -103,10 +104,10 @@ const fixLocalhostUrls = (obj: any): any => {
     return obj.map(fixLocalhostUrls)
   }
   if (obj !== null && typeof obj === 'object') {
-    const newObj: any = {}
+    const newObj: Record<string, unknown> = {}
     for (const key in obj) {
       if (Object.prototype.hasOwnProperty.call(obj, key)) {
-        newObj[key] = fixLocalhostUrls(obj[key])
+        newObj[key] = fixLocalhostUrls((obj as Record<string, unknown>)[key])
       }
     }
     return newObj
@@ -115,6 +116,7 @@ const fixLocalhostUrls = (obj: any): any => {
 }
 
 // Response interceptor - handle business code
+// 统一按文档规则处理：code === 0 为成功，code === 1 为业务失败，错误文案在 msg。
 request.interceptors.response.use(
   async (response: AxiosResponse<ApiResponse>) => {
     const { code, msg, data } = response.data

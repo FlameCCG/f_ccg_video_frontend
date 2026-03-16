@@ -44,7 +44,7 @@ const handleLike = async () => {
   }, 600)
 }
 
-const handleCoin = async (coins: number) => {
+const handleCoin = async (coins: 1 | 2) => {
   if (!requireLogin()) return
   showCoinPicker.value = false
   const ok = await videoStore.addCoin(coins)

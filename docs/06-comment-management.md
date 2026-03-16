@@ -52,10 +52,13 @@ Base URL：/v1
         "username": "alice",
         "avatar": "https://cdn.example.com/avatar/1001.png",
         "content": "示例内容",
-        "atUserIds": [1002, 1003],
+        "atUserIds": [
+          1002,
+          1003
+        ],
         "likeCount": 1,
         "replyCount": 1,
-        "isPinned": false,
+        "isPinned": true,
         "pinnedAt": "2024-06-01T12:00:00Z",
         "isLiked": true,
         "createdAt": "2024-06-01T12:00:00Z"
@@ -113,10 +116,12 @@ Base URL：/v1
         "username": "alice",
         "avatar": "https://cdn.example.com/avatar/1001.png",
         "content": "示例内容",
-        "atUserIds": [1002],
+        "atUserIds": [
+          1002
+        ],
         "likeCount": 1,
         "replyCount": 1,
-        "isPinned": false,
+        "isPinned": true,
         "pinnedAt": "2024-06-01T12:00:00Z",
         "isLiked": true,
         "createdAt": "2024-06-01T12:00:00Z"
@@ -155,14 +160,13 @@ Base URL：/v1
 | data.username | string | 用户名 |
 | data.avatar | string | 用户头像 |
 | data.content | string | 评论内容 |
+| data.atUserIds | array<integer(uint)> | 评论中@的用户ID列表 |
 | data.likeCount | integer(int64) | 点赞数 |
 | data.replyCount | integer(int64) | 回复数 |
 | data.isPinned | boolean | 是否置顶 |
 | data.pinnedAt | string(date-time) | 置顶时间 |
 | data.isLiked | boolean | 当前用户是否已点赞 |
-| data.atUserIds| number | @的用户列表
 | data.createdAt | string(date-time) | 创建时间 |
-
 
 响应示例:
 ```json
@@ -174,12 +178,14 @@ Base URL：/v1
     "username": "alice",
     "avatar": "https://cdn.example.com/avatar/1001.png",
     "content": "示例内容",
+    "atUserIds": [
+      1002
+    ],
     "likeCount": 1,
     "replyCount": 1,
-    "isPinned": false,
+    "isPinned": true,
     "pinnedAt": "2024-06-01T12:00:00Z",
     "isLiked": true,
-    "atUserIds": [1001,1002],
     "createdAt": "2024-06-01T12:00:00Z"
   },
   "msg": "发表成功"
@@ -265,7 +271,7 @@ Base URL：/v1
 响应字段:
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
-| data | object | - |
+| data | object | 响应数据 |
 
 响应示例:
 ```json
@@ -302,6 +308,7 @@ Base URL：/v1
 | data.list[].username | string | 用户名 |
 | data.list[].avatar | string | 用户头像 |
 | data.list[].content | string | 评论内容 |
+| data.list[].atUserIds | array<integer(uint)> | 评论中@的用户ID列表 |
 | data.list[].likeCount | integer(int64) | 点赞数 |
 | data.list[].replyCount | integer(int64) | 回复数 |
 | data.list[].isPinned | boolean | 是否置顶 |
@@ -321,8 +328,13 @@ Base URL：/v1
         "username": "alice",
         "avatar": "https://cdn.example.com/avatar/1001.png",
         "content": "示例内容",
+        "atUserIds": [
+          1002
+        ],
         "likeCount": 1,
         "replyCount": 1,
+        "isPinned": true,
+        "pinnedAt": "2024-06-01T12:00:00Z",
         "isLiked": true,
         "createdAt": "2024-06-01T12:00:00Z"
       }

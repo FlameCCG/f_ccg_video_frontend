@@ -92,6 +92,9 @@ export interface PlayerDanmuPayload {
 /**
  * 发送弹幕
  * POST /common/video/danmu/send
+ * 认证: 需要登录（客户端全局自动携带 Token）
+ * 依赖接口: 无
+ * 接口说明: 发送弹幕（需登录）
  */
 export const sendDanmu = (params: SendDanmuParams): Promise<DanmuItem> => {
   return request.post('/common/video/danmu/send', params)
@@ -100,6 +103,9 @@ export const sendDanmu = (params: SendDanmuParams): Promise<DanmuItem> => {
 /**
  * 点赞弹幕
  * POST /common/video/danmu/like
+ * 认证: 需要登录（客户端全局自动携带 Token）
+ * 依赖接口: 无
+ * 接口说明: 点赞/取消点赞弹幕（需登录）
  */
 export const likeDanmu = (danmuId: number): Promise<LikeDanmuResult> => {
   return request.post('/common/video/danmu/like', { danmuId })
@@ -108,6 +114,9 @@ export const likeDanmu = (danmuId: number): Promise<LikeDanmuResult> => {
 /**
  * 删除弹幕
  * DELETE /common/video/danmu
+ * 认证: 需要登录（客户端全局自动携带 Token）
+ * 依赖接口: 无
+ * 接口说明: 用户删除自己的弹幕（需登录）
  */
 export const deleteDanmu = (params: DeleteDanmuParams): Promise<void> => {
   return request.delete('/common/video/danmu', { data: params })
@@ -116,6 +125,9 @@ export const deleteDanmu = (params: DeleteDanmuParams): Promise<void> => {
 /**
  * 历史弹幕
  * GET /common/video/danmu/history
+ * 认证: 可选登录（客户端可携带 Token）
+ * 依赖接口: 无
+ * 接口说明: 获取指定时间段的历史弹幕
  */
 export const getDanmuHistory = (
   params: DanmuHistoryParams
@@ -126,6 +138,9 @@ export const getDanmuHistory = (
 /**
  * 弹幕列表
  * GET /common/video/danmu/room/list
+ * 认证: 可选登录（客户端可携带 Token）
+ * 依赖接口: 无
+ * 接口说明: 获取房间弹幕列表（按发送时间升序）
  */
 export const getDanmuList = (params: DanmuListParams): Promise<PaginatedResult<DanmuItem>> => {
   return request.get('/common/video/danmu/room/list', { params })
@@ -134,7 +149,12 @@ export const getDanmuList = (params: DanmuListParams): Promise<PaginatedResult<D
 /**
  * 弹幕WebSocket URL
  * GET /common/video/danmu/ws
- * Note: This returns the WebSocket URL for connection, not an actual API call
+ * 认证: 无需登录
+ * 依赖接口: 无
+ * 接口说明: 弹幕实时推送 WebSocket 连接
+ * 重要说明:
+ * - 该 helper 返回连接地址，不会发起 HTTP 请求
+ * - videoId 为必填；分 P 视频应传 partId；token 为可选登录态透传
  */
 export const getDanmuWebSocketUrl = (videoId: number, partId?: number, token?: string): string => {
   const baseUrl = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
@@ -152,6 +172,9 @@ export const getDanmuWebSocketUrl = (videoId: number, partId?: number, token?: s
 /**
  * 举报弹幕
  * POST /common/video/danmu/report
+ * 认证: 需要登录（客户端全局自动携带 Token）
+ * 依赖接口: 无
+ * 接口说明: 举报弹幕（需登录）
  */
 export const reportDanmu = (params: ReportDanmuParams): Promise<void> => {
   return request.post('/common/video/danmu/report', params)

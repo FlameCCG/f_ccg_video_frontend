@@ -8,7 +8,7 @@ Base URL：/v1
 
 - 接口路径: POST /common/captcha/email
 - 认证: 无需登录
-- 依赖接口: 图形验证码接口、滑块验证码接口
+- 依赖接口: 图形验证码接口、滑块验证码接口（启用时）
 - 接口说明: 发送邮箱验证码，用于注册、重置密码、绑定邮箱
 - HTTP 状态码: 200（业务码 code 判断成功/失败）
 - 响应结构: code=0 成功，code=1 失败；msg 为提示信息
@@ -18,11 +18,15 @@ Base URL：/v1
 | --- | --- | --- | --- | --- |
 | type | body | integer | 是 | 验证码类型（1注册 2重置密码 3绑定邮箱） |
 | email | body | string | 是 | 邮箱地址 |
-| captchaID | body | string | 是 | 图形验证码ID |
-| captchaCode | body | string | 是 | 图形验证码 |
-| slideCaptchaToken | body | string | 是 | 滑块验证码Token |
-| slideCaptchaX | body | integer | 是 | 滑块验证码X坐标 |
-| slideCaptchaY | body | integer | 是 | 滑块验证码Y坐标 |
+| captchaID | body | string | 否 | 图形验证码ID（启用图形验证码时必填） |
+| captchaCode | body | string | 否 | 图形验证码（启用图形验证码时必填） |
+| slideCaptchaToken | body | string | 否 | 滑块验证码Token（启用滑块验证码时必填） |
+| slideCaptchaX | body | integer | 否 | 滑块验证码X坐标（启用滑块验证码时必填） |
+| slideCaptchaY | body | integer | 否 | 滑块验证码Y坐标（启用滑块验证码时必填） |
+
+说明:
+- 是否需要提交图形验证码字段，应根据 `GET /common/site/config` 返回的 `data.site.register.textGraphicCaptcha` 判断
+- 是否需要提交滑块验证码字段，应根据 `GET /common/site/config` 返回的 `data.site.register.slideCaptcha` 判断
 
 响应字段:
 | 字段 | 类型 | 说明 |
@@ -31,7 +35,6 @@ Base URL：/v1
 | data.emailID | string | 邮箱验证码ID，后续验证时需要 |
 
 响应示例:
-
 ```json
 {
   "code": 0,
@@ -64,7 +67,6 @@ Base URL：/v1
 | data.captchaB64 | string | Base64编码的验证码图片 |
 
 响应示例:
-
 ```json
 {
   "code": 0,
@@ -86,7 +88,6 @@ Base URL：/v1
 - 响应结构: code=0 成功，code=1 失败；msg 为提示信息
 
 请求参数:
-
 - 无
 
 响应字段:
@@ -98,7 +99,6 @@ Base URL：/v1
 | data.token | string | 验证token |
 
 响应示例:
-
 ```json
 {
   "code": 0,
@@ -121,7 +121,6 @@ Base URL：/v1
 - 响应结构: code=0 成功，code=1 失败；msg 为提示信息
 
 请求参数:
-
 - 无
 
 响应字段:
@@ -134,7 +133,6 @@ Base URL：/v1
 | data.thumbY | integer | 滑块Y坐标 |
 
 响应示例:
-
 ```json
 {
   "code": 0,

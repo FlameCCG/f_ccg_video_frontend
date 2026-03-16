@@ -24,20 +24,19 @@ Base URL：/v1
 | --- | --- | --- |
 | data | object | - |
 | data.list | array<FeedItem> | - |
-| data.list[].id | integer(uint) | 视频 ID |
+| data.list[].id | integer(uint) | 视频ID |
 | data.list[].title | string | 标题 |
 | data.list[].cover | string | 封面 |
 | data.list[].duration | integer | 时长（秒） |
 | data.list[].views | integer(int64) | 播放数 |
 | data.list[].danmuCount | integer(int64) | 弹幕数 |
 | data.list[].author | AuthorBrief | - |
-| data.list[].author.id | integer(uint) | 用户 ID |
+| data.list[].author.id | integer(uint) | 用户ID |
 | data.list[].author.username | string | 用户名 |
-| data.list[].author.avatar | string | 头像 URL |
+| data.list[].author.avatar | string | 头像URL |
 | data.list[].createdAt | string(date-time) | 创建时间 |
 
 响应示例:
-
 ```json
 {
   "code": 0,
@@ -69,7 +68,7 @@ Base URL：/v1
 - 接口路径: GET /common/video/hot
 - 认证: 无需登录
 - 依赖接口: 无
-- 接口说明: 获取综合热门视频列表（时间衰减热度，最多保留 Top200）
+- 接口说明: 获取综合热门视频列表（时间衰减热度，最多保留Top200）
 - HTTP 状态码: 200（业务码 code 判断成功/失败）
 - 响应结构: code=0 成功，code=1 失败；msg 为提示信息
 
@@ -84,20 +83,19 @@ Base URL：/v1
 | --- | --- | --- |
 | data | object | - |
 | data.list | array<FeedItem> | - |
-| data.list[].id | integer(uint) | 视频 ID |
+| data.list[].id | integer(uint) | 视频ID |
 | data.list[].title | string | 标题 |
 | data.list[].cover | string | 封面 |
 | data.list[].duration | integer | 时长（秒） |
 | data.list[].views | integer(int64) | 播放数 |
 | data.list[].danmuCount | integer(int64) | 弹幕数 |
 | data.list[].author | AuthorBrief | - |
-| data.list[].author.id | integer(uint) | 用户 ID |
+| data.list[].author.id | integer(uint) | 用户ID |
 | data.list[].author.username | string | 用户名 |
-| data.list[].author.avatar | string | 头像 URL |
+| data.list[].author.avatar | string | 头像URL |
 | data.list[].createdAt | string(date-time) | 创建时间 |
 
 响应示例:
-
 ```json
 {
   "code": 0,
@@ -129,7 +127,7 @@ Base URL：/v1
 - 接口路径: GET /common/video/rank
 - 认证: 无需登录
 - 依赖接口: 无
-- 接口说明: 获取综合排行榜视频列表（仅 Top100）
+- 接口说明: 获取综合排行榜视频列表（仅Top100）
 - HTTP 状态码: 200（业务码 code 判断成功/失败）
 - 响应结构: code=0 成功，code=1 失败；msg 为提示信息
 
@@ -144,20 +142,19 @@ Base URL：/v1
 | --- | --- | --- |
 | data | object | - |
 | data.list | array<FeedItem> | - |
-| data.list[].id | integer(uint) | 视频 ID |
+| data.list[].id | integer(uint) | 视频ID |
 | data.list[].title | string | 标题 |
 | data.list[].cover | string | 封面 |
 | data.list[].duration | integer | 时长（秒） |
 | data.list[].views | integer(int64) | 播放数 |
 | data.list[].danmuCount | integer(int64) | 弹幕数 |
 | data.list[].author | AuthorBrief | - |
-| data.list[].author.id | integer(uint) | 用户 ID |
+| data.list[].author.id | integer(uint) | 用户ID |
 | data.list[].author.username | string | 用户名 |
-| data.list[].author.avatar | string | 头像 URL |
+| data.list[].author.avatar | string | 头像URL |
 | data.list[].createdAt | string(date-time) | 创建时间 |
 
 响应示例:
-
 ```json
 {
   "code": 0,
@@ -189,17 +186,17 @@ Base URL：/v1
 - 接口路径: POST /common/video/report
 - 认证: 需要登录（客户端全局自动携带 Token）
 - 依赖接口: 无
-- 接口说明: 举报视频（需登录；最多上传 5 张图片）
+- 接口说明: 举报视频（需登录；最多上传5张图片）
 - HTTP 状态码: 200（业务码 code 判断成功/失败）
 - 响应结构: code=0 成功，code=1 失败；msg 为提示信息
 
 请求参数:
 | 名称 | 位置 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- | --- |
-| videoId | body | integer | 是 | 视频 ID |
+| videoId | body | integer | 是 | 视频ID |
 | reason | body | string | 是 | 举报原因 |
 | detail | body | string | 否 | 详情描述（可选） |
-| images | body | array<string(binary)> | 否 | 证据图片（可选，最多 5 张） |
+| images | body | array<string(binary)> | 否 | 证据图片（可选，最多5张） |
 
 响应字段:
 | 字段 | 类型 | 说明 |
@@ -207,7 +204,6 @@ Base URL：/v1
 | data | object | 响应数据 |
 
 响应示例:
-
 ```json
 {
   "code": 0,
@@ -228,7 +224,7 @@ Base URL：/v1
 请求参数:
 | 名称 | 位置 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- | --- |
-| danmuId | body | integer | 是 | 弹幕 ID |
+| danmuId | body | integer | 是 | 弹幕ID |
 | reason | body | string | 是 | 举报原因 |
 | detail | body | string | 否 | 详情描述（可选） |
 
@@ -238,7 +234,6 @@ Base URL：/v1
 | data | object | 响应数据 |
 
 响应示例:
-
 ```json
 {
   "code": 0,
@@ -262,8 +257,8 @@ Base URL：/v1
 | keyword | query | string | 是 | 搜索关键词 |
 | page | query | integer | 否 | 页码 |
 | pageSize | query | integer | 否 | 每页数量 |
-| videoSort | query | integer | 否 | 排序方式（0 相关性 1 播放量 2 弹幕数 3 时长） 可选: 0/1/2/3 |
-| videoOrder | query | integer | 否 | 排序顺序（0 降序 1 升序） 可选: 0/1 |
+| videoSort | query | integer | 否 | 排序方式（0相关性 1播放量 2弹幕数 3时长） 可选: 0/1/2/3 |
+| videoOrder | query | integer | 否 | 排序顺序（0降序 1升序） 可选: 0/1 |
 
 响应字段:
 | 字段 | 类型 | 说明 |
@@ -283,7 +278,6 @@ Base URL：/v1
 | data.videos[].tags | array<string> | - |
 
 响应示例:
-
 ```json
 {
   "code": 0,
@@ -297,12 +291,16 @@ Base URL：/v1
         "cover": "https://cdn.example.com/cover/2001.jpg",
         "authorUsername": "alice",
         "highlight": {
-          "key": ["value"]
+          "key": [
+            "value"
+          ]
         },
         "views": 2001,
         "danmuCount": 1,
         "duration": 60,
-        "tags": ["id_1001"]
+        "tags": [
+          "id_1001"
+        ]
       }
     ]
   },
@@ -331,17 +329,16 @@ Base URL：/v1
 | data | array<SuggestionItem> | 搜索建议列表 |
 | data[].value | string | 建议文本 |
 | data[].highlight | string | 高亮文本（使用 <em> 包裹匹配前缀） |
-| data[].docType | string | 类型标签（videos/users/tags） |
+| data[].docType | string | 类型标签 |
 
 响应示例:
-
 ```json
 {
   "code": 0,
   "data": [
     {
       "value": "视频剪辑",
-      "highlight": "<em>视频</em>剪辑",
+      "highlight": "视频剪辑",
       "docType": "videos"
     }
   ],
@@ -361,24 +358,24 @@ Base URL：/v1
 请求参数:
 | 名称 | 位置 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- | --- |
-| videoId | query | integer | 是 | 视频 ID |
+| videoId | query | integer | 是 | 视频ID |
 
 响应字段:
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
 | data | object | - |
-| data.id | integer(uint) | 视频 ID |
+| data.id | integer(uint) | 视频ID |
 | data.title | string | 视频标题 |
 | data.description | string | 视频描述 |
-| data.cover | string | 封面 URL |
+| data.cover | string | 封面URL |
 | data.authorUsername | string | 作者用户名 |
 | data.author | VideoAuthorBrief | - |
-| data.author.id | integer(uint) | 用户 ID |
+| data.author.id | integer(uint) | 用户ID |
 | data.author.username | string | 用户名 |
-| data.author.avatar | string | 头像 URL |
+| data.author.avatar | string | 头像URL |
 | data.author.level | integer | 用户等级 |
 | data.author.description | string | 个人简介 |
-| data.duration | number(float) | 视频时长（秒；转码消费者探测后更新，分 P 为合计） |
+| data.duration | number(float) | 视频时长（秒；转码消费者探测后更新，分P为合计） |
 | data.views | integer(int64) | 播放量 |
 | data.likes | integer(int64) | 点赞数 |
 | data.commentCount | integer(int64) | 评论数 |
@@ -390,37 +387,37 @@ Base URL：/v1
 | data.status | integer | 视频状态 |
 | data.createdAt | string(date-time) | 创建时间 |
 | data.partition | Partition | - |
-| data.partition.id | integer(uint) | 分区 ID |
+| data.partition.id | integer(uint) | 分区ID |
 | data.partition.name | string | 分区名称 |
 | data.partition.icon | string | 分区图标SVG字符串 |
 | data.partition.sortOrder | integer | 排序顺序 |
 | data.partition.isActive | boolean | 是否启用 |
 | data.partition.isSubmittable | boolean | 是否允许投稿 |
 | data.tags | array<Tag> | - |
-| data.tags[].id | integer(uint) | 标签 ID |
+| data.tags[].id | integer(uint) | 标签ID |
 | data.tags[].name | string | 标签名称 |
 | data.resources | array<VideoResourceItem> | 视频资源列表（转码任务开始后先写入源资源，转码完成后补齐清晰度） |
-| data.resources[].id | integer(uint) | 资源 ID |
+| data.resources[].id | integer(uint) | 资源ID |
 | data.resources[].resolution | string | 清晰度标识（如 1080p 高清） |
 | data.resources[].sourceFileName | string | 源文件名 |
-| data.resources[].fileUrl | string | 资源 URL |
+| data.resources[].fileUrl | string | 资源URL |
 | data.resources[].fileSize | integer(int64) | 文件大小 |
 | data.resources[].bitrate | integer | 码率 |
 | data.resources[].format | string | 容器格式 |
 | data.resources[].codec | string | 视频编码 |
 | data.resources[].isVip | boolean | 是否会员资源 |
 | data.resources[].isSource | boolean | 是否源文件 |
-| data.parts | array<VideoPartItem> | 分 P 列表（转码任务开始后回填时长与资源） |
-| data.parts[].id | integer(uint) | 分 P ID |
-| data.parts[].title | string | 分 P 标题 |
-| data.parts[].sortOrder | integer | 分 P 排序 |
-| data.parts[].duration | integer | 分 P 时长（秒，转码消费者探测后更新） |
-| data.parts[].danmuCount | integer(int64) | 分 P 弹幕数 |
+| data.parts | array<VideoPartItem> | 分P列表（转码任务开始后回填时长与资源） |
+| data.parts[].id | integer(uint) | 分P ID |
+| data.parts[].title | string | 分P标题 |
+| data.parts[].sortOrder | integer | 分P排序 |
+| data.parts[].duration | integer | 分P时长（秒，转码消费者探测后更新） |
+| data.parts[].danmuCount | integer(int64) | 分P弹幕数 |
 | data.parts[].resources | array<VideoResourceItem> | - |
-| data.parts[].resources[].id | integer(uint) | 资源 ID |
+| data.parts[].resources[].id | integer(uint) | 资源ID |
 | data.parts[].resources[].resolution | string | 清晰度标识（如 1080p 高清） |
 | data.parts[].resources[].sourceFileName | string | 源文件名 |
-| data.parts[].resources[].fileUrl | string | 资源 URL |
+| data.parts[].resources[].fileUrl | string | 资源URL |
 | data.parts[].resources[].fileSize | integer(int64) | 文件大小 |
 | data.parts[].resources[].bitrate | integer | 码率 |
 | data.parts[].resources[].format | string | 容器格式 |
@@ -433,7 +430,6 @@ Base URL：/v1
 | data.watchProgress | integer | 播放进度（秒） |
 
 响应示例:
-
 ```json
 {
   "code": 0,
@@ -464,7 +460,7 @@ Base URL：/v1
     "partition": {
       "id": 2001,
       "name": "示例名称",
-      "icon": "<svg>...</svg>",
+      "icon": "user",
       "sortOrder": 1,
       "isActive": true,
       "isSubmittable": true
@@ -533,7 +529,7 @@ Base URL：/v1
 请求参数:
 | 名称 | 位置 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- | --- |
-| videoId | query | integer | 是 | 视频 ID |
+| videoId | query | integer | 是 | 视频ID |
 | size | query | integer | 否 | 推荐数量 |
 
 响应字段:
@@ -541,20 +537,19 @@ Base URL：/v1
 | --- | --- | --- |
 | data | object | - |
 | data.list | array<FeedItem> | - |
-| data.list[].id | integer(uint) | 视频 ID |
+| data.list[].id | integer(uint) | 视频ID |
 | data.list[].title | string | 标题 |
 | data.list[].cover | string | 封面 |
 | data.list[].duration | integer | 时长（秒） |
 | data.list[].views | integer(int64) | 播放数 |
 | data.list[].danmuCount | integer(int64) | 弹幕数 |
 | data.list[].author | AuthorBrief | - |
-| data.list[].author.id | integer(uint) | 用户 ID |
+| data.list[].author.id | integer(uint) | 用户ID |
 | data.list[].author.username | string | 用户名 |
-| data.list[].author.avatar | string | 头像 URL |
+| data.list[].author.avatar | string | 头像URL |
 | data.list[].createdAt | string(date-time) | 创建时间 |
 
 响应示例:
-
 ```json
 {
   "code": 0,
@@ -591,14 +586,13 @@ Base URL：/v1
 - 响应结构: code=0 成功，code=1 失败；msg 为提示信息
 
 请求参数:
-
 - 无
 
 响应字段:
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
 | data | array<Partition> | - |
-| data[].id | integer(uint) | 分区 ID |
+| data[].id | integer(uint) | 分区ID |
 | data[].name | string | 分区名称 |
 | data[].icon | string | 分区图标SVG字符串 |
 | data[].sortOrder | integer | 排序顺序 |
@@ -606,7 +600,6 @@ Base URL：/v1
 | data[].isSubmittable | boolean | 是否允许投稿 |
 
 响应示例:
-
 ```json
 {
   "code": 0,
@@ -614,7 +607,7 @@ Base URL：/v1
     {
       "id": 2,
       "name": "示例名称",
-      "icon": "<svg>...</svg>",
+      "icon": "user",
       "sortOrder": 1,
       "isActive": true,
       "isSubmittable": true
@@ -636,7 +629,7 @@ Base URL：/v1
 请求参数:
 | 名称 | 位置 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- | --- |
-| videoId | body | integer | 是 | 视频 ID |
+| videoId | body | integer | 是 | 视频ID |
 
 响应字段:
 | 字段 | 类型 | 说明 |
@@ -645,7 +638,6 @@ Base URL：/v1
 | data.views | integer(int64) | 当前播放量 |
 
 响应示例:
-
 ```json
 {
   "code": 0,
@@ -668,7 +660,7 @@ Base URL：/v1
 请求参数:
 | 名称 | 位置 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- | --- |
-| videoId | body | integer | 是 | 视频 ID |
+| videoId | body | integer | 是 | 视频ID |
 
 响应字段:
 | 字段 | 类型 | 说明 |
@@ -677,7 +669,6 @@ Base URL：/v1
 | data.likes | integer(int64) | 当前点赞数 |
 
 响应示例:
-
 ```json
 {
   "code": 0,
@@ -693,14 +684,14 @@ Base URL：/v1
 - 接口路径: POST /common/video/coin
 - 认证: 需要登录（客户端全局自动携带 Token）
 - 依赖接口: 无
-- 接口说明: 给视频投币（需登录，每个视频最多投 2 个币）
+- 接口说明: 给视频投币（需登录，每个视频最多投2个币）
 - HTTP 状态码: 200（业务码 code 判断成功/失败）
 - 响应结构: code=0 成功，code=1 失败；msg 为提示信息
 
 请求参数:
 | 名称 | 位置 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- | --- |
-| videoId | body | integer | 是 | 视频 ID |
+| videoId | body | integer | 是 | 视频ID |
 | coins | body | integer | 否 | 投币数量（1-2） |
 
 响应字段:
@@ -710,7 +701,6 @@ Base URL：/v1
 | data.coinCount | integer(int64) | 当前投币数 |
 
 响应示例:
-
 ```json
 {
   "code": 0,
@@ -733,8 +723,8 @@ Base URL：/v1
 请求参数:
 | 名称 | 位置 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- | --- |
-| videoId | body | integer | 是 | 视频 ID |
-| folderId | body | integer | 否 | 收藏夹 ID（可选，不填使用默认收藏夹） |
+| videoId | body | integer | 是 | 视频ID |
+| folderId | body | integer | 否 | 收藏夹ID（可选，不填使用默认收藏夹） |
 
 响应字段:
 | 字段 | 类型 | 说明 |
@@ -743,7 +733,6 @@ Base URL：/v1
 | data.favoriteCount | integer(int64) | 当前收藏数 |
 
 响应示例:
-
 ```json
 {
   "code": 0,
@@ -759,15 +748,15 @@ Base URL：/v1
 - 接口路径: POST /common/video/triple
 - 认证: 需要登录（客户端全局自动携带 Token）
 - 依赖接口: 无
-- 接口说明: 同时点赞/投币/收藏（需登录；已点赞/已收藏/已投币不会被取消，仅补齐缺失项）
+- 接口说明: 同时点赞/投币/收藏（需登录）
 - HTTP 状态码: 200（业务码 code 判断成功/失败）
 - 响应结构: code=0 成功，code=1 失败；msg 为提示信息
 
 请求参数:
 | 名称 | 位置 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- | --- |
-| videoId | body | integer | 是 | 视频 ID |
-| folderId | body | integer | 否 | 收藏夹 ID（可选，不填使用默认收藏夹） |
+| videoId | body | integer | 是 | 视频ID |
+| folderId | body | integer | 否 | 收藏夹ID（可选，默认使用默认收藏夹） |
 | coins | body | integer | 否 | 投币数量（1-2，可选） |
 
 响应字段:
@@ -782,7 +771,6 @@ Base URL：/v1
 | data.isCoined | boolean | 是否已投币 |
 
 响应示例:
-
 ```json
 {
   "code": 0,
@@ -803,35 +791,48 @@ Base URL：/v1
 - 接口路径: POST /common/video/publish
 - 认证: 需要登录（客户端全局自动携带 Token）
 - 依赖接口: 无
-- 接口说明: 发布新视频（需登录；支持单文件与分 P 投稿）
+- 接口说明: 发布新视频（需登录；支持单文件与分P投稿）
 - HTTP 状态码: 200（业务码 code 判断成功/失败）
 - 响应结构: code=0 成功，code=1 失败；msg 为提示信息
 
 请求参数:
+通用字段:
 | 名称 | 位置 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- | --- |
 | title | body | string | 是 | 视频标题 |
 | description | body | string | 否 | 视频描述（可选） |
-| partitionId | body | integer | 是 | 分区 ID |
-| tags | body | array<integer> | 否 | 标签 ID 列表（可选，最多 10 个） |
+| partitionId | body | integer | 是 | 分区ID |
+| tags | body | array<integer> | 否 | 标签ID列表（可选，最多10个） |
 | isOriginal | body | boolean | 否 | 是否原创（可选） |
-| coverUrl | body | string | 是 | 封面图片 URL |
+| coverUrl | body | string | 是 | 封面图片URL |
+| publishTime | body | string(date-time) | 否 | 定时发布时间（可选） |
+
+单文件投稿:
+| 名称 | 位置 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- | --- |
 | filePath | body | string | 是 | 视频文件路径 |
 | fileName | body | string | 是 | 视频文件名 |
 | fileHash | body | string | 是 | 文件哈希值 |
-| publishTime | body | string(date-time) | 否 | 定时发布时间（可选） |
+
+分P投稿:
+| 名称 | 位置 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- | --- |
+| parts | body | array<object> | 是 | 分P列表 |
+| parts[].title | body | string | 否 | 分P标题；不传时以后端默认规则生成 |
+| parts[].filePath | body | string | 是 | 当前分P视频文件路径 |
+| parts[].fileName | body | string | 是 | 当前分P视频文件名 |
+| parts[].fileHash | body | string | 是 | 当前分P视频文件哈希值 |
 
 响应字段:
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
 | data | object | - |
-| data.videoId | integer | 视频 ID |
+| data.videoId | integer | 视频ID |
 | data.status | integer | 视频状态 |
 | data.publishTime | string(date-time) | 发布时间 |
-| data.cover | string | 封面 URL |
+| data.cover | string | 封面URL |
 
 响应示例:
-
 ```json
 {
   "code": 0,
@@ -857,31 +858,31 @@ Base URL：/v1
 请求参数:
 | 名称 | 位置 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- | --- |
-| videoId | body | integer | 是 | 视频 ID |
+| videoId | body | integer | 是 | 视频ID |
 | title | body | string | 否 | 视频标题（可选） |
 | description | body | string | 否 | 视频描述（可选） |
-| partitionId | body | integer | 否 | 分区 ID（可选） |
-| tags | body | array<integer> | 否 | 标签 ID 列表（可选） |
+| partitionId | body | integer | 否 | 分区ID（可选） |
+| tags | body | array<integer> | 否 | 标签ID列表（可选） |
 | isOriginal | body | boolean | 否 | 是否原创（可选） |
-| coverUrl | body | string | 否 | 封面图片 URL（可选） |
+| coverUrl | body | string | 否 | 封面图片URL（可选） |
 | publishTime | body | string(date-time) | 否 | 发布时间（可选） |
 
 响应字段:
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
 | data | VideoItem | - |
-| data.id | integer(uint) | 视频 ID |
+| data.id | integer(uint) | 视频ID |
 | data.title | string | 视频标题 |
 | data.description | string | 视频描述 |
-| data.cover | string | 封面 URL |
+| data.cover | string | 封面URL |
 | data.authorUsername | string | 作者用户名 |
 | data.author | VideoAuthorBrief | - |
-| data.author.id | integer(uint) | 用户 ID |
+| data.author.id | integer(uint) | 用户ID |
 | data.author.username | string | 用户名 |
-| data.author.avatar | string | 头像 URL |
+| data.author.avatar | string | 头像URL |
 | data.author.level | integer | 用户等级 |
 | data.author.description | string | 个人简介 |
-| data.duration | number(float) | 视频时长（秒；转码消费者探测后更新，分 P 为合计） |
+| data.duration | number(float) | 视频时长（秒；转码消费者探测后更新，分P为合计） |
 | data.views | integer(int64) | 播放量 |
 | data.likes | integer(int64) | 点赞数 |
 | data.commentCount | integer(int64) | 评论数 |
@@ -893,37 +894,37 @@ Base URL：/v1
 | data.status | integer | 视频状态 |
 | data.createdAt | string(date-time) | 创建时间 |
 | data.partition | Partition | - |
-| data.partition.id | integer(uint) | 分区 ID |
+| data.partition.id | integer(uint) | 分区ID |
 | data.partition.name | string | 分区名称 |
 | data.partition.icon | string | 分区图标SVG字符串 |
 | data.partition.sortOrder | integer | 排序顺序 |
 | data.partition.isActive | boolean | 是否启用 |
 | data.partition.isSubmittable | boolean | 是否允许投稿 |
 | data.tags | array<Tag> | - |
-| data.tags[].id | integer(uint) | 标签 ID |
+| data.tags[].id | integer(uint) | 标签ID |
 | data.tags[].name | string | 标签名称 |
 | data.resources | array<VideoResourceItem> | 视频资源列表（转码任务开始后先写入源资源，转码完成后补齐清晰度） |
-| data.resources[].id | integer(uint) | 资源 ID |
+| data.resources[].id | integer(uint) | 资源ID |
 | data.resources[].resolution | string | 清晰度标识（如 1080p 高清） |
 | data.resources[].sourceFileName | string | 源文件名 |
-| data.resources[].fileUrl | string | 资源 URL |
+| data.resources[].fileUrl | string | 资源URL |
 | data.resources[].fileSize | integer(int64) | 文件大小 |
 | data.resources[].bitrate | integer | 码率 |
 | data.resources[].format | string | 容器格式 |
 | data.resources[].codec | string | 视频编码 |
 | data.resources[].isVip | boolean | 是否会员资源 |
 | data.resources[].isSource | boolean | 是否源文件 |
-| data.parts | array<VideoPartItem> | 分 P 列表（转码任务开始后回填时长与资源） |
-| data.parts[].id | integer(uint) | 分 P ID |
-| data.parts[].title | string | 分 P 标题 |
-| data.parts[].sortOrder | integer | 分 P 排序 |
-| data.parts[].duration | integer | 分 P 时长（秒，转码消费者探测后更新） |
-| data.parts[].danmuCount | integer(int64) | 分 P 弹幕数 |
+| data.parts | array<VideoPartItem> | 分P列表（转码任务开始后回填时长与资源） |
+| data.parts[].id | integer(uint) | 分P ID |
+| data.parts[].title | string | 分P标题 |
+| data.parts[].sortOrder | integer | 分P排序 |
+| data.parts[].duration | integer | 分P时长（秒，转码消费者探测后更新） |
+| data.parts[].danmuCount | integer(int64) | 分P弹幕数 |
 | data.parts[].resources | array<VideoResourceItem> | - |
-| data.parts[].resources[].id | integer(uint) | 资源 ID |
+| data.parts[].resources[].id | integer(uint) | 资源ID |
 | data.parts[].resources[].resolution | string | 清晰度标识（如 1080p 高清） |
 | data.parts[].resources[].sourceFileName | string | 源文件名 |
-| data.parts[].resources[].fileUrl | string | 资源 URL |
+| data.parts[].resources[].fileUrl | string | 资源URL |
 | data.parts[].resources[].fileSize | integer(int64) | 文件大小 |
 | data.parts[].resources[].bitrate | integer | 码率 |
 | data.parts[].resources[].format | string | 容器格式 |
@@ -935,7 +936,6 @@ Base URL：/v1
 | data.isCoined | boolean | 是否已投币 |
 
 响应示例:
-
 ```json
 {
   "code": 0,
@@ -966,7 +966,7 @@ Base URL：/v1
     "partition": {
       "id": 2001,
       "name": "示例名称",
-      "icon": "<svg>...</svg>",
+      "icon": "user",
       "sortOrder": 1,
       "isActive": true,
       "isSubmittable": true
@@ -1035,7 +1035,7 @@ Base URL：/v1
 | 名称 | 位置 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- | --- |
 | fileHash | body | string | 是 | 整个文件内容哈希（用于断点续传） |
-| index | body | string | 是 | 当前分片索引（从 0 开始） |
+| index | body | string | 是 | 当前分片索引（从0开始） |
 | chunk | body | string(binary) | 是 | 分片文件内容 |
 
 响应字段:
@@ -1044,7 +1044,6 @@ Base URL：/v1
 | data | object | 响应数据 |
 
 响应示例:
-
 ```json
 {
   "code": 0,
@@ -1058,7 +1057,7 @@ Base URL：/v1
 - 接口路径: GET /common/video/upload/status
 - 认证: 需要登录（客户端全局自动携带 Token）
 - 依赖接口: 无
-- 接口说明: 查询文件分片上传状态（需登录）
+- 接口说明: 查询文件上传状态，支持断点续传与秒传判断（需登录）
 - HTTP 状态码: 200（业务码 code 判断成功/失败）
 - 响应结构: code=0 成功，code=1 失败；msg 为提示信息
 
@@ -1071,15 +1070,36 @@ Base URL：/v1
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
 | data | object | - |
-| data.uploadedChunks | array<string> | 已上传的分片索引列表 |
+| data.fileHash | string | 当前文件标识，可直接用于后续投稿 |
+| data.completed | boolean | 是否已完整上传完成；为 true 时可直接秒传 |
+| data.filePath | string | 已完成上传时的最终文件路径；未完成时为空字符串 |
+| data.uploadedChunks | array<string> | 未完成上传时已存在的分片索引列表 |
 
 响应示例:
-
 ```json
 {
   "code": 0,
   "data": {
-    "uploadedChunks": ["0"]
+    "fileHash": "69af04e1bb64adb459e3e0038bb7b530e3467117ccac259cac2bbf770ecb7446",
+    "completed": false,
+    "filePath": "",
+    "uploadedChunks": [
+      "0"
+    ]
+  },
+  "msg": "查询成功"
+}
+```
+
+秒传命中示例:
+```json
+{
+  "code": 0,
+  "data": {
+    "fileHash": "69af04e1bb64adb459e3e0038bb7b530e3467117ccac259cac2bbf770ecb7446",
+    "completed": true,
+    "filePath": "/path/to/resource",
+    "uploadedChunks": []
   },
   "msg": "查询成功"
 }
@@ -1108,7 +1128,6 @@ Base URL：/v1
 | data.filePath | string | 合并后的文件路径 |
 
 响应示例:
-
 ```json
 {
   "code": 0,
@@ -1138,10 +1157,9 @@ Base URL：/v1
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
 | data | object | - |
-| data.imageUrl | string | 图片 URL |
+| data.imageUrl | string | 封面图片URL |
 
 响应示例:
-
 ```json
 {
   "code": 0,
@@ -1164,7 +1182,7 @@ Base URL：/v1
 请求参数:
 | 名称 | 位置 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- | --- |
-| videoId | body | integer | 是 | 视频 ID |
+| videoId | body | integer | 是 | 视频ID |
 | progress | body | integer | 否 | 播放进度（秒） |
 | duration | body | integer | 是 | 视频总时长（秒） |
 
@@ -1174,7 +1192,6 @@ Base URL：/v1
 | data | object | 响应数据 |
 
 响应示例:
-
 ```json
 {
   "code": 0,
@@ -1195,7 +1212,7 @@ Base URL：/v1
 请求参数:
 | 名称 | 位置 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- | --- |
-| videoIds | body | array<integer> | 是 | 视频 ID 列表 |
+| videoIds | body | array<integer> | 是 | 视频ID列表 |
 
 响应字段:
 | 字段 | 类型 | 说明 |
@@ -1203,7 +1220,6 @@ Base URL：/v1
 | data | object | 响应数据 |
 
 响应示例:
-
 ```json
 {
   "code": 0,
@@ -1232,17 +1248,16 @@ Base URL：/v1
 | --- | --- | --- |
 | data | object | - |
 | data.list | array<HistoryItem> | - |
-| data.list[].videoId | integer(uint) | 视频 ID |
+| data.list[].videoId | integer(uint) | 视频ID |
 | data.list[].title | string | 标题 |
 | data.list[].cover | string | 封面 |
 | data.list[].duration | integer | 视频时长（秒） |
 | data.list[].progress | integer | 播放进度（秒） |
 | data.list[].createdAt | string(date-time) | 观看时间 |
-| data.list[].authorId | integer(uint) | 作者 ID |
+| data.list[].authorId | integer(uint) | 作者ID |
 | data.list[].author | string | 作者名称 |
 
 响应示例:
-
 ```json
 {
   "code": 0,
@@ -1283,14 +1298,13 @@ Base URL：/v1
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
 | data | FolderItem | - |
-| data.id | integer(uint) | 收藏夹 ID |
+| data.id | integer(uint) | 收藏夹ID |
 | data.name | string | 收藏夹名称 |
 | data.isDefault | boolean | 是否为默认收藏夹 |
 | data.videoCount | integer | 视频数量 |
 | data.createdAt | string(date-time) | 创建时间 |
 
 响应示例:
-
 ```json
 {
   "code": 0,
@@ -1317,21 +1331,20 @@ Base URL：/v1
 请求参数:
 | 名称 | 位置 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- | --- |
-| videoId | query | integer | 否 | 视频 ID（传入后返回各收藏夹是否已收藏该视频） |
+| videoId | query | integer | 否 | 视频ID（传入后返回该视频在各收藏夹中的收藏状态） |
 
 响应字段:
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
 | data | object | - |
 | data.list | array<FolderWithCount> | - |
-| data.list[].id | integer(uint) | 收藏夹 ID |
+| data.list[].id | integer(uint) | 收藏夹ID |
 | data.list[].name | string | 收藏夹名称 |
 | data.list[].isDefault | boolean | 是否为默认收藏夹 |
 | data.list[].videoCount | integer(int64) | 视频数量 |
 | data.list[].isFavorited | boolean | 当前 `videoId` 是否已收藏到该收藏夹；未传 `videoId` 时固定为 false |
 
 响应示例:
-
 ```json
 {
   "code": 0,
@@ -1363,7 +1376,7 @@ Base URL：/v1
 请求参数:
 | 名称 | 位置 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- | --- |
-| folderId | body | integer | 是 | 收藏夹 ID |
+| folderId | body | integer | 是 | 收藏夹ID |
 
 响应字段:
 | 字段 | 类型 | 说明 |
@@ -1371,7 +1384,6 @@ Base URL：/v1
 | data | object | 响应数据 |
 
 响应示例:
-
 ```json
 {
   "code": 0,
@@ -1392,7 +1404,7 @@ Base URL：/v1
 请求参数:
 | 名称 | 位置 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- | --- |
-| folderId | query | integer | 是 | 收藏夹 ID |
+| folderId | query | integer | 是 | 收藏夹ID |
 | page | query | integer | 否 | 页码 |
 | pageSize | query | integer | 否 | 每页数量 |
 
@@ -1401,7 +1413,7 @@ Base URL：/v1
 | --- | --- | --- |
 | data | object | - |
 | data.list | array<FolderVideoItem> | - |
-| data.list[].id | integer(uint) | 视频 ID |
+| data.list[].id | integer(uint) | 视频ID |
 | data.list[].title | string | 标题 |
 | data.list[].cover | string | 封面 |
 | data.list[].duration | integer | 时长（秒） |
@@ -1409,12 +1421,11 @@ Base URL：/v1
 | data.list[].danmuCount | integer(int64) | 弹幕数 |
 | data.list[].favoriteCount | integer(int64) | 收藏数 |
 | data.list[].author | AuthorBrief | - |
-| data.list[].author.id | integer(uint) | 用户 ID |
+| data.list[].author.id | integer(uint) | 用户ID |
 | data.list[].author.username | string | 用户名 |
-| data.list[].author.avatar | string | 头像 URL |
+| data.list[].author.avatar | string | 头像URL |
 
 响应示例:
-
 ```json
 {
   "code": 0,
@@ -1453,33 +1464,32 @@ Base URL：/v1
 请求参数:
 | 名称 | 位置 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- | --- |
-| videoId | body | integer | 是 | 视频 ID |
-| partId | body | integer | 否 | 分 P ID（分 P 视频必填） |
+| videoId | body | integer | 是 | 视频ID |
+| partId | body | integer | 否 | 分P ID（分P视频必填） |
 | content | body | string | 是 | 弹幕内容 |
 | timeOffset | body | integer | 是 | 视频时间偏移（毫秒） |
 | color | body | string | 否 | 弹幕颜色（可选） |
 | fontSize | body | integer | 否 | 字体大小（可选） |
-| position | body | integer | 否 | 弹幕位置（0 滚动 1 顶部 2 底部）（可选） |
+| position | body | integer | 否 | 弹幕位置（0滚动 1顶部 2底部）（可选） |
 
 响应字段:
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
 | data | DanmuItem | - |
-| data.id | integer(uint) | 弹幕 ID |
-| data.videoId | integer(uint) | 视频 ID |
-| data.videoPartId | integer(uint) | 分 P ID（单视频为 0） |
-| data.userId | integer(uint) | 用户 ID |
+| data.id | integer(uint) | 弹幕ID |
+| data.videoId | integer(uint) | 视频ID |
+| data.videoPartId | integer(uint) | 分P ID（单视频为 0） |
+| data.userId | integer(uint) | 用户ID |
 | data.content | string | 弹幕内容 |
 | data.timeOffset | integer | 视频时间偏移（毫秒） |
 | data.color | string | 弹幕颜色 |
 | data.fontSize | integer | 字体大小 |
-| data.position | integer | 弹幕位置（0 滚动 1 顶部 2 底部） |
+| data.position | integer | 弹幕位置（0滚动 1顶部 2底部） |
 | data.likeCount | integer(int64) | 点赞数 |
 | data.isLiked | boolean | 当前用户是否已点赞 |
 | data.createdAt | string(date-time) | 创建时间 |
 
 响应示例:
-
 ```json
 {
   "code": 0,
@@ -1513,7 +1523,7 @@ Base URL：/v1
 请求参数:
 | 名称 | 位置 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- | --- |
-| danmuId | body | integer | 是 | 弹幕 ID |
+| danmuId | body | integer | 是 | 弹幕ID |
 
 响应字段:
 | 字段 | 类型 | 说明 |
@@ -1523,7 +1533,6 @@ Base URL：/v1
 | data.isLiked | boolean | 是否已点赞 |
 
 响应示例:
-
 ```json
 {
   "code": 0,
@@ -1547,7 +1556,7 @@ Base URL：/v1
 请求参数:
 | 名称 | 位置 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- | --- |
-| danmuId | body | integer | 是 | 弹幕 ID |
+| danmuId | body | integer | 是 | 弹幕ID |
 
 响应字段:
 | 字段 | 类型 | 说明 |
@@ -1555,7 +1564,6 @@ Base URL：/v1
 | data | object | 响应数据 |
 
 响应示例:
-
 ```json
 {
   "code": 0,
@@ -1576,8 +1584,8 @@ Base URL：/v1
 请求参数:
 | 名称 | 位置 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- | --- |
-| videoId | query | integer | 是 | 视频 ID |
-| partId | query | integer | 否 | 分 P ID（分 P 视频必填） |
+| videoId | query | integer | 是 | 视频ID |
+| partId | query | integer | 否 | 分P ID（分P视频必填） |
 | start | query | integer | 否 | 开始时间偏移（毫秒） |
 | end | query | integer | 否 | 结束时间偏移（毫秒） |
 | limit | query | integer | 否 | 返回数量上限 |
@@ -1587,21 +1595,20 @@ Base URL：/v1
 | --- | --- | --- |
 | data | object | - |
 | data.list | array<DanmuItem> | - |
-| data.list[].id | integer(uint) | 弹幕 ID |
-| data.list[].videoId | integer(uint) | 视频 ID |
-| data.list[].videoPartId | integer(uint) | 分 P ID（单视频为 0） |
-| data.list[].userId | integer(uint) | 用户 ID |
+| data.list[].id | integer(uint) | 弹幕ID |
+| data.list[].videoId | integer(uint) | 视频ID |
+| data.list[].videoPartId | integer(uint) | 分P ID（单视频为 0） |
+| data.list[].userId | integer(uint) | 用户ID |
 | data.list[].content | string | 弹幕内容 |
 | data.list[].timeOffset | integer | 视频时间偏移（毫秒） |
 | data.list[].color | string | 弹幕颜色 |
 | data.list[].fontSize | integer | 字体大小 |
-| data.list[].position | integer | 弹幕位置（0 滚动 1 顶部 2 底部） |
+| data.list[].position | integer | 弹幕位置（0滚动 1顶部 2底部） |
 | data.list[].likeCount | integer(int64) | 点赞数 |
 | data.list[].isLiked | boolean | 当前用户是否已点赞 |
 | data.list[].createdAt | string(date-time) | 创建时间 |
 
 响应示例:
-
 ```json
 {
   "code": 0,
@@ -1640,32 +1647,31 @@ Base URL：/v1
 请求参数:
 | 名称 | 位置 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- | --- |
-| videoId | query | integer | 是 | 视频 ID |
-| partId | query | integer | 否 | 分 P ID（分 P 视频必填） |
+| videoId | query | integer | 是 | 视频ID |
+| partId | query | integer | 否 | 分P ID（分P视频必填） |
 | page | query | integer | 否 | 页码 |
 | pageSize | query | integer | 否 | 每页数量 |
-| date | query | string | 否 | 日期筛选（YYYY-MM-DD 格式，可选） |
+| date | query | string | 否 | 日期筛选（YYYY-MM-DD格式，可选） |
 
 响应字段:
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
 | data | object | - |
 | data.list | array<DanmuItem> | - |
-| data.list[].id | integer(uint) | 弹幕 ID |
-| data.list[].videoId | integer(uint) | 视频 ID |
-| data.list[].videoPartId | integer(uint) | 分 P ID（单视频为 0） |
-| data.list[].userId | integer(uint) | 用户 ID |
+| data.list[].id | integer(uint) | 弹幕ID |
+| data.list[].videoId | integer(uint) | 视频ID |
+| data.list[].videoPartId | integer(uint) | 分P ID（单视频为 0） |
+| data.list[].userId | integer(uint) | 用户ID |
 | data.list[].content | string | 弹幕内容 |
 | data.list[].timeOffset | integer | 视频时间偏移（毫秒） |
 | data.list[].color | string | 弹幕颜色 |
 | data.list[].fontSize | integer | 字体大小 |
-| data.list[].position | integer | 弹幕位置（0 滚动 1 顶部 2 底部） |
+| data.list[].position | integer | 弹幕位置（0滚动 1顶部 2底部） |
 | data.list[].likeCount | integer(int64) | 点赞数 |
 | data.list[].isLiked | boolean | 当前用户是否已点赞 |
 | data.list[].createdAt | string(date-time) | 创建时间 |
 
 响应示例:
-
 ```json
 {
   "code": 0,
@@ -1692,26 +1698,24 @@ Base URL：/v1
 }
 ```
 
-## [GET] 弹幕 WebSocket
+## [GET] 弹幕WebSocket
 
 - 接口路径: GET /common/video/danmu/ws
 - 认证: 无需登录
 - 依赖接口: 无
-- 接口说明: 弹幕实时推送 WebSocket 连接
+- 接口说明: 弹幕实时推送WebSocket连接
 - HTTP 状态码: 200（业务码 code 判断成功/失败）
 - 响应结构: code=0 成功，code=1 失败；msg 为提示信息
 
 请求参数:
 | 名称 | 位置 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- | --- |
-| videoId | query | integer | 是 | 视频 ID |
-| partId | query | integer | 否 | 分 P ID（分 P 视频必填） |
-| token | query | string | 否 | 用户 token（可选） |
+| videoId | query | integer | 是 | 视频ID |
+| partId | query | integer | 否 | 分P ID（分P视频必填） |
+| token | query | string | 否 | 用户token（可选） |
 
 响应字段:
-
 - 无
 
 响应示例:
-
 - 无

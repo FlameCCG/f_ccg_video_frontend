@@ -24,7 +24,6 @@ Base URL：/v1
 | data | object | 响应数据 |
 
 响应示例:
-
 ```json
 {
   "code": 0,
@@ -53,7 +52,6 @@ Base URL：/v1
 | data | object | 响应数据 |
 
 响应示例:
-
 ```json
 {
   "code": 0,
@@ -90,7 +88,6 @@ Base URL：/v1
 | data.list[].level | integer | 用户等级 |
 
 响应示例:
-
 ```json
 {
   "code": 0,
@@ -138,7 +135,6 @@ Base URL：/v1
 | data.list[].level | integer | 用户等级 |
 
 响应示例:
-
 ```json
 {
   "code": 0,
@@ -181,7 +177,6 @@ Base URL：/v1
 | data.isMutualFollow | boolean | 是否互相关注 |
 
 响应示例:
-
 ```json
 {
   "code": 0,

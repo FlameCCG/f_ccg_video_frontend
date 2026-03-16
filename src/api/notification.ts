@@ -89,6 +89,9 @@ export interface MarkReadParams {
 /**
  * 获取通知列表
  * GET /common/notification
+ * 认证: 需要登录（客户端全局自动携带 Token）
+ * 依赖接口: 无
+ * 接口说明: 获取用户通知列表（需登录）
  */
 export const getNotificationList = (
   params?: NotificationListParams
@@ -99,6 +102,9 @@ export const getNotificationList = (
 /**
  * 删除通知
  * DELETE /common/notification
+ * 认证: 需要登录（客户端全局自动携带 Token）
+ * 依赖接口: 无
+ * 接口说明: 批量删除通知（需登录）
  */
 export const deleteNotifications = (params: DeleteNotificationParams): Promise<void> => {
   return request.delete('/common/notification', { data: params })
@@ -107,6 +113,9 @@ export const deleteNotifications = (params: DeleteNotificationParams): Promise<v
 /**
  * 获取通知数量统计
  * GET /common/notification/counts
+ * 认证: 需要登录（客户端全局自动携带 Token）
+ * 依赖接口: 无
+ * 接口说明: 获取各类型通知数量统计（需登录，包含未读私信总数 message）
  */
 export const getNotificationCounts = (): Promise<NotificationCounts> => {
   return request.get('/common/notification/counts')
@@ -115,6 +124,9 @@ export const getNotificationCounts = (): Promise<NotificationCounts> => {
 /**
  * 标记通知已读
  * PUT /common/notification/read
+ * 认证: 需要登录（客户端全局自动携带 Token）
+ * 依赖接口: 无
+ * 接口说明: 批量标记通知为已读（需登录）
  */
 export const markNotificationsRead = (params: MarkReadParams): Promise<void> => {
   return request.put('/common/notification/read', params)

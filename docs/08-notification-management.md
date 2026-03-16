@@ -40,7 +40,6 @@ Base URL：/v1
 | data.list[].isRead | boolean | 是否已读 |
 
 响应示例:
-
 ```json
 {
   "code": 0,
@@ -88,7 +87,6 @@ Base URL：/v1
 | data | object | 响应数据 |
 
 响应示例:
-
 ```json
 {
   "code": 0,
@@ -107,7 +105,6 @@ Base URL：/v1
 - 响应结构: code=0 成功，code=1 失败；msg 为提示信息
 
 请求参数:
-
 - 无
 
 响应字段:
@@ -121,7 +118,6 @@ Base URL：/v1
 | data.message | integer(int64) | 未读私信总数 |
 
 响应示例:
-
 ```json
 {
   "code": 0,
@@ -156,7 +152,6 @@ Base URL：/v1
 | data | object | 响应数据 |
 
 响应示例:
-
 ```json
 {
   "code": 0,

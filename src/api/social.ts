@@ -54,6 +54,9 @@ export interface FocusParams {
 /**
  * 关注用户
  * POST /common/social/focus
+ * 认证: 需要登录（客户端全局自动携带 Token）
+ * 依赖接口: 无
+ * 接口说明: 关注指定用户（需登录）
  */
 export const followUser = (params: FocusParams): Promise<void> => {
   return request.post('/common/social/focus', params)
@@ -62,6 +65,9 @@ export const followUser = (params: FocusParams): Promise<void> => {
 /**
  * 取消关注
  * DELETE /common/social/focus
+ * 认证: 需要登录（客户端全局自动携带 Token）
+ * 依赖接口: 无
+ * 接口说明: 取消关注指定用户（需登录）
  */
 export const unfollowUser = (params: FocusParams): Promise<void> => {
   return request.delete('/common/social/focus', { data: params })
@@ -70,6 +76,9 @@ export const unfollowUser = (params: FocusParams): Promise<void> => {
 /**
  * 获取关注列表
  * GET /common/social/{id}/focus
+ * 认证: 需要登录（客户端全局自动携带 Token）
+ * 依赖接口: 无
+ * 接口说明: 获取指定用户的关注列表（需登录）
  */
 export const getFollowingList = (
   id: number,
@@ -81,6 +90,9 @@ export const getFollowingList = (
 /**
  * 获取粉丝列表
  * GET /common/social/{id}/fans
+ * 认证: 需要登录（客户端全局自动携带 Token）
+ * 依赖接口: 无
+ * 接口说明: 获取指定用户的粉丝列表（需登录）
  */
 export const getFansList = (
   id: number,
@@ -92,6 +104,9 @@ export const getFansList = (
 /**
  * 查询关注关系
  * GET /common/social/{id}/relation
+ * 认证: 需要登录（客户端全局自动携带 Token）
+ * 依赖接口: 无
+ * 接口说明: 查询与指定用户的关注关系（需登录）
  */
 export const getRelation = (id: number): Promise<RelationInfo> => {
   return request.get(`/common/social/${id}/relation`)

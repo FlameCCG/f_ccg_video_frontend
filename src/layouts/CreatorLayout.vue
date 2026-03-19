@@ -32,8 +32,8 @@ const handleLogout = () => {
 
 const navItems = [
   { name: '首页', icon: Home, path: '/creator/home' },
-  { name: '内容管理', icon: FileVideo, path: '/creator/content' },
-  { name: '互动管理', icon: MessageSquare, path: '/creator/interaction' },
+  { name: '视频管理', icon: FileVideo, path: '/creator/content' },
+  { name: '评论管理', icon: MessageSquare, path: '/creator/interaction' },
 ]
 </script>
 

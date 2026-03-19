@@ -1,11 +1,18 @@
 <script setup lang="ts">
 import { ref, onMounted, onBeforeUnmount, computed } from 'vue'
 import { useRouter } from 'vue-router'
-import { UploadCloud, Image as ImageIcon, X, Loader2, Plus } from 'lucide-vue-next'
+import { UploadCloud, Image as ImageIcon, X, Loader2, Plus, Check } from 'lucide-vue-next'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { useToast } from '@/components/ui/toast/use-toast'
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from '@/components/ui/dialog'
 import { uploadChunk, getUploadStatus, completeUpload, uploadImage } from '@/api/upload'
 import { publishVideo, getPartitions, type Partition } from '@/api/video'
 import { getSiteConfig, type StorageConfig } from '@/api/site'
@@ -67,7 +74,113 @@ const form = ref({
   tags: [] as string[],
   tagInput: '',
   isOriginal: true,
+  publishType: 'immediate',
+  publishTime: '',
 })
+
+// Cover Setting State
+const showCoverSetting = ref(false)
+const coverSettingMode = ref<'upload' | 'frame'>('upload')
+const frameVideoRef = ref<HTMLVideoElement | null>(null)
+const videoUrl = computed(() => (parts.value[0] ? URL.createObjectURL(parts.value[0].file) : ''))
+const recommendedCovers = ref<string[]>([])
+const isExtractingFrames = ref(false)
+const tempCoverPreview = ref('')
+const tempCoverFile = ref<File | null>(null)
+
+const extractFrames = async (file: File) => {
+  isExtractingFrames.value = true
+  recommendedCovers.value = []
+
+  const video = document.createElement('video')
+  video.src = URL.createObjectURL(file)
+  video.muted = true
+  video.crossOrigin = 'anonymous'
+
+  await new Promise((resolve) => {
+    video.onloadedmetadata = resolve
+  })
+
+  const duration = video.duration
+  const numFrames = 6
+  const timestamps = Array.from(
+    { length: numFrames },
+    (_, i) => (duration / (numFrames + 1)) * (i + 1)
+  )
+
+  const canvas = document.createElement('canvas')
+  const ctx = canvas.getContext('2d')
+
+  for (const time of timestamps) {
+    video.currentTime = time
+    await new Promise((resolve) => {
+      video.onseeked = resolve
+    })
+
+    canvas.width = video.videoWidth
+    canvas.height = video.videoHeight
+    ctx?.drawImage(video, 0, 0, canvas.width, canvas.height)
+
+    recommendedCovers.value.push(canvas.toDataURL('image/jpeg'))
+  }
+
+  URL.revokeObjectURL(video.src)
+  isExtractingFrames.value = false
+
+  if (!coverPreview.value && recommendedCovers.value.length > 0 && recommendedCovers.value[0]) {
+    void selectRecommendedCover(recommendedCovers.value[0])
+  }
+}
+
+const selectRecommendedCover = async (dataUrl: string) => {
+  coverPreview.value = dataUrl
+  const res = await fetch(dataUrl)
+  const blob = await res.blob()
+  coverFile.value = new File([blob], 'cover.jpg', { type: 'image/jpeg' })
+}
+
+const openCoverSetting = () => {
+  tempCoverPreview.value = coverPreview.value
+  tempCoverFile.value = coverFile.value
+  coverSettingMode.value = parts.value[0] ? 'frame' : 'upload'
+  showCoverSetting.value = true
+}
+
+const onTempCoverChange = (e: Event) => {
+  const target = e.target as HTMLInputElement
+  const file = target.files?.[0]
+  if (file) {
+    tempCoverFile.value = file
+    tempCoverPreview.value = URL.createObjectURL(file)
+  }
+  target.value = ''
+}
+
+const captureFrame = () => {
+  if (!frameVideoRef.value) return
+  const video = frameVideoRef.value
+  const canvas = document.createElement('canvas')
+  canvas.width = video.videoWidth
+  canvas.height = video.videoHeight
+  const ctx = canvas.getContext('2d')
+  ctx?.drawImage(video, 0, 0, canvas.width, canvas.height)
+
+  const dataUrl = canvas.toDataURL('image/jpeg')
+  tempCoverPreview.value = dataUrl
+
+  void fetch(dataUrl)
+    .then((res) => res.blob())
+    .then((blob) => {
+      tempCoverFile.value = new File([blob], 'cover.jpg', { type: 'image/jpeg' })
+      toast({ title: '已截取当前帧' })
+    })
+}
+
+const confirmCoverSetting = () => {
+  coverPreview.value = tempCoverPreview.value
+  coverFile.value = tempCoverFile.value
+  showCoverSetting.value = false
+}
 
 onMounted(async () => {
   const [partitionRes, configRes] = await Promise.allSettled([getPartitions(), getSiteConfig()])
@@ -294,8 +407,13 @@ const handleFilesSelect = (files: FileList | File[]) => {
     form.value.title = newParts[0].title
   }
 
+  const isFirstVideo = parts.value.length === 0
   parts.value.push(...newParts)
   processUploadQueue()
+
+  if (isFirstVideo && newParts[0]) {
+    void extractFrames(newParts[0].file)
+  }
 }
 
 const uploadPart = async (part: VideoPart) => {
@@ -369,7 +487,7 @@ const uploadPart = async (part: VideoPart) => {
         () =>
           completeUpload(
             { fileHash: part.hash, fileName: part.file.name, totalChunks },
-            { signal }
+            { signal, timeout: 5 * 60 * 1000 }
           ),
         2,
         signal
@@ -403,17 +521,6 @@ const removePart = (index: number) => {
 onBeforeUnmount(() => {
   parts.value.forEach((p) => p.abortController?.abort())
 })
-
-// Cover Upload
-const onCoverChange = (e: Event) => {
-  const target = e.target as HTMLInputElement
-  const file = target.files?.[0]
-  if (file) {
-    coverFile.value = file
-    coverPreview.value = URL.createObjectURL(file)
-  }
-  target.value = ''
-}
 
 // Tags
 const addTag = () => {
@@ -450,6 +557,21 @@ const handlePublish = async () => {
     return
   }
 
+  let publishTimeStr = undefined
+  if (form.value.publishType === 'scheduled') {
+    if (!form.value.publishTime) {
+      toast({ title: '请选择定时发布时间', variant: 'destructive' })
+      return
+    }
+    const d = new Date(form.value.publishTime)
+    if (isNaN(d.getTime())) {
+      toast({ title: '发布时间格式不正确', variant: 'destructive' })
+      return
+    }
+    // 后端需要 RFC3339 格式的时间字符串
+    publishTimeStr = d.toISOString()
+  }
+
   try {
     isPublishing.value = true
 
@@ -465,6 +587,7 @@ const handlePublish = async () => {
       partitionId: form.value.partitionId,
       isOriginal: form.value.isOriginal,
       coverUrl: coverUrl,
+      publishTime: publishTimeStr,
       parts: parts.value.map((p) => ({
         title: p.title,
         filePath: p.filePath,
@@ -629,133 +752,210 @@ const handlePublish = async () => {
       <div class="bg-card rounded-xl border p-6 shadow-sm">
         <h2 class="text-xl font-bold mb-6">基本设置</h2>
 
-        <div class="grid grid-cols-1 lg:grid-cols-[1fr_300px] gap-10">
-          <div class="space-y-6">
-            <!-- Title -->
-            <div class="space-y-2">
-              <Label for="title" class="text-base">标题 <span class="text-red-500">*</span></Label>
-              <Input
-                id="title"
-                :model-value="form.title"
-                placeholder="给视频起个响亮的标题吧"
-                class="text-lg"
-                @update:model-value="(v) => (form.title = String(v))"
-              />
-              <div class="text-xs text-muted-foreground text-right">{{ form.title.length }}/80</div>
-            </div>
+        <div class="max-w-4xl space-y-8">
+          <!-- Cover -->
+          <div class="space-y-4">
+            <Label class="text-base">视频封面 <span class="text-red-500">*</span></Label>
 
-            <!-- Type (Original / Copied) -->
-            <div class="space-y-2">
-              <Label class="text-base">类型 <span class="text-red-500">*</span></Label>
-              <div class="flex gap-6 mt-2">
-                <label class="flex items-center gap-2 cursor-pointer">
-                  <input
-                    v-model="form.isOriginal"
-                    type="radio"
-                    :value="true"
-                    class="accent-primary w-4 h-4"
-                  />
-                  <span class="text-sm">自制</span>
-                </label>
-                <label class="flex items-center gap-2 cursor-pointer">
-                  <input
-                    v-model="form.isOriginal"
-                    type="radio"
-                    :value="false"
-                    class="accent-primary w-4 h-4"
-                  />
-                  <span class="text-sm">转载</span>
-                </label>
-              </div>
-            </div>
-
-            <!-- Partition -->
-            <div class="space-y-2">
-              <Label class="text-base">分区 <span class="text-red-500">*</span></Label>
-              <div class="grid grid-cols-3 sm:grid-cols-5 gap-2 mt-2">
-                <div
-                  v-for="p in partitions"
-                  :key="p.id"
-                  class="px-3 py-2 rounded-lg border text-center text-sm cursor-pointer transition-colors"
-                  :class="
-                    form.partitionId === p.id
-                      ? 'bg-primary/10 border-primary text-primary font-medium'
-                      : 'hover:bg-muted'
-                  "
-                  @click="form.partitionId = p.id"
-                >
-                  {{ p.name }}
-                </div>
-              </div>
-            </div>
-
-            <!-- Tags -->
-            <div class="space-y-2">
-              <Label class="text-base">标签</Label>
-              <div class="flex flex-wrap gap-2 mb-2">
-                <span
-                  v-for="(tag, index) in form.tags"
-                  :key="index"
-                  class="bg-primary/10 text-primary px-3 py-1.5 rounded-full text-sm flex items-center gap-1"
-                >
-                  {{ tag }}
-                  <X
-                    class="h-3 w-3 cursor-pointer hover:text-primary/70"
-                    @click="removeTag(index)"
-                  />
-                </span>
-              </div>
-              <input
-                v-model="form.tagInput"
-                type="text"
-                class="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-                placeholder="输入标签后按回车添加"
-                :disabled="form.tags.length >= 10"
-                @keydown.enter.prevent="addTag"
-              />
-            </div>
-
-            <!-- Description -->
-            <div class="space-y-2">
-              <Label for="desc" class="text-base">简介</Label>
-              <textarea
-                id="desc"
-                v-model="form.description"
-                class="flex w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 min-h-[120px] resize-y"
-                placeholder="填写更全面的相关信息，让更多人能找到你的视频"
-                rows="4"
-              ></textarea>
-            </div>
-          </div>
-
-          <!-- Sidebar: Cover -->
-          <div class="space-y-6">
-            <div class="space-y-2">
-              <Label class="text-base">视频封面 <span class="text-red-500">*</span></Label>
+            <div class="flex flex-col gap-4">
+              <!-- Main Cover -->
               <div
-                class="relative aspect-video rounded-lg border-2 border-dashed overflow-hidden group bg-muted/30 cursor-pointer transition-colors hover:border-primary/50"
+                class="relative w-[240px] aspect-video rounded-lg border-2 overflow-hidden group bg-muted/30"
+                :class="!coverPreview ? 'border-dashed' : 'border-transparent'"
               >
                 <img v-if="coverPreview" :src="coverPreview" class="w-full h-full object-cover" />
                 <div
                   v-else
                   class="absolute inset-0 flex flex-col items-center justify-center text-muted-foreground"
                 >
-                  <ImageIcon class="h-10 w-10 mb-3 opacity-50" />
-                  <span class="text-sm font-medium">点击上传封面</span>
-                  <span class="text-xs mt-1 opacity-70">建议比例 16:9</span>
+                  <ImageIcon class="h-8 w-8 mb-2 opacity-50" />
+                  <span class="text-sm">点击设置封面</span>
                 </div>
 
                 <div
-                  class="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center"
+                  class="absolute bottom-0 left-0 right-0 p-2 bg-gradient-to-t from-black/80 to-transparent opacity-0 group-hover:opacity-100 transition-opacity flex justify-center cursor-pointer"
+                  @click="openCoverSetting"
                 >
-                  <span class="text-white text-sm font-medium">更换封面</span>
+                  <Button size="sm" variant="secondary" class="h-7 text-xs"> 封面设置 </Button>
                 </div>
+                <div
+                  v-if="!coverPreview"
+                  class="absolute inset-0 cursor-pointer"
+                  @click="openCoverSetting"
+                ></div>
+              </div>
+
+              <!-- Recommended Covers -->
+              <div class="bg-muted/30 p-4 rounded-lg border max-w-full">
+                <p class="text-sm text-muted-foreground mb-3">
+                  系统默认选中第一帧为视频封面，以下为更多智能推荐封面
+                </p>
+                <div class="flex gap-3 overflow-x-auto pb-2">
+                  <div
+                    v-if="isExtractingFrames"
+                    class="flex items-center gap-2 text-sm text-muted-foreground h-[68px]"
+                  >
+                    <Loader2 class="h-4 w-4 animate-spin" />
+                    正在生成推荐封面...
+                  </div>
+                  <template v-else>
+                    <div
+                      v-for="(cover, index) in recommendedCovers"
+                      :key="index"
+                      class="relative w-[120px] aspect-video rounded border-2 cursor-pointer flex-shrink-0 overflow-hidden transition-colors"
+                      :class="
+                        coverPreview === cover
+                          ? 'border-primary'
+                          : 'border-transparent hover:border-primary/50'
+                      "
+                      @click="selectRecommendedCover(cover)"
+                    >
+                      <img :src="cover" class="w-full h-full object-cover" />
+                      <div
+                        v-if="coverPreview === cover"
+                        class="absolute inset-0 bg-black/20 flex items-center justify-center"
+                      >
+                        <Check class="h-6 w-6 text-white drop-shadow-md" />
+                      </div>
+                    </div>
+                  </template>
+                  <div
+                    v-if="!isExtractingFrames && recommendedCovers.length === 0"
+                    class="text-sm text-muted-foreground h-[68px] flex items-center"
+                  >
+                    上传视频后将自动生成推荐封面
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Title -->
+          <div class="space-y-2">
+            <Label for="title" class="text-base">标题 <span class="text-red-500">*</span></Label>
+            <Input
+              id="title"
+              :model-value="form.title"
+              placeholder="给视频起个响亮的标题吧"
+              class="text-lg"
+              @update:model-value="(v) => (form.title = String(v))"
+            />
+            <div class="text-xs text-muted-foreground text-right">{{ form.title.length }}/80</div>
+          </div>
+
+          <!-- Type (Original / Copied) -->
+          <div class="space-y-2">
+            <Label class="text-base">类型 <span class="text-red-500">*</span></Label>
+            <div class="flex gap-6 mt-2">
+              <label class="flex items-center gap-2 cursor-pointer">
                 <input
-                  type="file"
-                  accept="image/*"
-                  class="absolute inset-0 opacity-0 cursor-pointer"
-                  @change="onCoverChange"
+                  v-model="form.isOriginal"
+                  type="radio"
+                  :value="true"
+                  class="accent-primary w-4 h-4"
                 />
+                <span class="text-sm">自制</span>
+              </label>
+              <label class="flex items-center gap-2 cursor-pointer">
+                <input
+                  v-model="form.isOriginal"
+                  type="radio"
+                  :value="false"
+                  class="accent-primary w-4 h-4"
+                />
+                <span class="text-sm">转载</span>
+              </label>
+            </div>
+          </div>
+
+          <!-- Partition -->
+          <div class="space-y-2">
+            <Label class="text-base">分区 <span class="text-red-500">*</span></Label>
+            <div class="grid grid-cols-3 sm:grid-cols-5 md:grid-cols-8 gap-2 mt-2">
+              <div
+                v-for="p in partitions"
+                :key="p.id"
+                class="px-3 py-2 rounded-lg border text-center text-sm cursor-pointer transition-colors"
+                :class="
+                  form.partitionId === p.id
+                    ? 'bg-primary/10 border-primary text-primary font-medium'
+                    : 'hover:bg-muted'
+                "
+                @click="form.partitionId = p.id"
+              >
+                {{ p.name }}
+              </div>
+            </div>
+          </div>
+
+          <!-- Tags -->
+          <div class="space-y-2">
+            <Label class="text-base">标签</Label>
+            <div class="flex flex-wrap gap-2 mb-2">
+              <span
+                v-for="(tag, index) in form.tags"
+                :key="index"
+                class="bg-primary/10 text-primary px-3 py-1.5 rounded-full text-sm flex items-center gap-1"
+              >
+                {{ tag }}
+                <X class="h-3 w-3 cursor-pointer hover:text-primary/70" @click="removeTag(index)" />
+              </span>
+            </div>
+            <input
+              v-model="form.tagInput"
+              type="text"
+              class="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+              placeholder="输入标签后按回车添加"
+              :disabled="form.tags.length >= 10"
+              @keydown.enter.prevent="addTag"
+            />
+          </div>
+
+          <!-- Description -->
+          <div class="space-y-2">
+            <Label for="desc" class="text-base">简介</Label>
+            <textarea
+              id="desc"
+              v-model="form.description"
+              class="flex w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 min-h-[120px] resize-y"
+              placeholder="填写更全面的相关信息，让更多人能找到你的视频"
+              rows="4"
+            ></textarea>
+          </div>
+
+          <!-- Publish Time -->
+          <div class="space-y-2">
+            <Label class="text-base">发布时间</Label>
+            <div class="flex flex-col gap-4 mt-2">
+              <div class="flex gap-6">
+                <label class="flex items-center gap-2 cursor-pointer">
+                  <input
+                    v-model="form.publishType"
+                    type="radio"
+                    value="immediate"
+                    class="accent-primary w-4 h-4"
+                  />
+                  <span class="text-sm">立即发布</span>
+                </label>
+                <label class="flex items-center gap-2 cursor-pointer">
+                  <input
+                    v-model="form.publishType"
+                    type="radio"
+                    value="scheduled"
+                    class="accent-primary w-4 h-4"
+                  />
+                  <span class="text-sm">定时发布</span>
+                </label>
+              </div>
+
+              <div v-if="form.publishType === 'scheduled'" class="flex items-center gap-4">
+                <Input
+                  type="datetime-local"
+                  :model-value="form.publishTime"
+                  class="w-[250px]"
+                  @update:model-value="(v) => (form.publishTime = String(v))"
+                />
+                <span class="text-sm text-muted-foreground">请选择至少2小时后的时间</span>
               </div>
             </div>
           </div>
@@ -774,5 +974,95 @@ const handlePublish = async () => {
         </Button>
       </div>
     </div>
+
+    <!-- Cover Setting Dialog -->
+    <Dialog :open="showCoverSetting" @update:open="showCoverSetting = $event">
+      <DialogContent class="sm:max-w-[700px]">
+        <DialogHeader>
+          <DialogTitle>设置封面</DialogTitle>
+        </DialogHeader>
+
+        <div class="space-y-6 py-4">
+          <div class="flex gap-4 border-b pb-4">
+            <Button
+              :variant="coverSettingMode === 'upload' ? 'default' : 'ghost'"
+              @click="coverSettingMode = 'upload'"
+              >本地上传</Button
+            >
+            <Button
+              :variant="coverSettingMode === 'frame' ? 'default' : 'ghost'"
+              :disabled="!parts[0]"
+              @click="coverSettingMode = 'frame'"
+              >截取视频帧</Button
+            >
+          </div>
+
+          <div v-if="coverSettingMode === 'upload'" class="space-y-4">
+            <div
+              class="relative aspect-video rounded-lg border-2 border-dashed overflow-hidden group bg-muted/30 cursor-pointer transition-colors hover:border-primary/50 max-w-md mx-auto"
+            >
+              <img
+                v-if="tempCoverPreview"
+                :src="tempCoverPreview"
+                class="w-full h-full object-cover"
+              />
+              <div
+                v-else
+                class="absolute inset-0 flex flex-col items-center justify-center text-muted-foreground"
+              >
+                <UploadCloud class="h-10 w-10 mb-3 opacity-50" />
+                <span class="text-sm font-medium">点击上传封面</span>
+                <span class="text-xs mt-1 opacity-70">建议比例 16:9</span>
+              </div>
+
+              <div
+                v-if="tempCoverPreview"
+                class="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center"
+              >
+                <span class="text-white text-sm font-medium">更换封面</span>
+              </div>
+              <input
+                type="file"
+                accept="image/*"
+                class="absolute inset-0 opacity-0 cursor-pointer"
+                @change="onTempCoverChange"
+              />
+            </div>
+          </div>
+
+          <div v-else-if="coverSettingMode === 'frame' && parts[0]" class="space-y-4">
+            <div
+              class="relative aspect-video bg-black rounded-lg overflow-hidden flex items-center justify-center"
+            >
+              <video
+                ref="frameVideoRef"
+                :src="videoUrl"
+                controls
+                class="w-full h-full"
+                crossorigin="anonymous"
+              ></video>
+            </div>
+            <div class="flex justify-between items-center bg-muted/50 p-3 rounded-lg">
+              <span class="text-sm text-muted-foreground"
+                >拖动进度条，点击右侧按钮截取当前画面作为封面</span
+              >
+              <Button @click="captureFrame">截取当前帧</Button>
+            </div>
+
+            <div v-if="tempCoverPreview" class="mt-4">
+              <p class="text-sm font-medium mb-2">已截取封面预览：</p>
+              <div class="w-[200px] aspect-video rounded border overflow-hidden">
+                <img :src="tempCoverPreview" class="w-full h-full object-cover" />
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <DialogFooter>
+          <Button variant="outline" @click="showCoverSetting = false">取消</Button>
+          <Button @click="confirmCoverSetting">确定</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   </div>
 </template>

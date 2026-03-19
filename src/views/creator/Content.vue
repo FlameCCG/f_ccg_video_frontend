@@ -31,14 +31,22 @@ const page = ref(1)
 const deleteDialogOpen = ref(false)
 const videoToDelete = ref<number | null>(null)
 
+const activeTab = ref<'all' | 'published' | 'private' | 'reviewing'>('all')
+
 const fetchVideos = async () => {
   if (!authStore.userId) return
   try {
     loading.value = true
+    let auditStatus: number | undefined = undefined
+    if (activeTab.value === 'published') auditStatus = 1
+    else if (activeTab.value === 'private') auditStatus = 2
+    else if (activeTab.value === 'reviewing') auditStatus = 4
+
     const res = await getUserVideoList({
       userId: authStore.userId,
       page: page.value,
       pageSize: 20,
+      auditStatus,
     })
     videos.value = res.list
     total.value = res.total
@@ -47,6 +55,12 @@ const fetchVideos = async () => {
   } finally {
     loading.value = false
   }
+}
+
+const handleTabChange = (tab: 'all' | 'published' | 'private' | 'reviewing') => {
+  activeTab.value = tab
+  page.value = 1
+  void fetchVideos()
 }
 
 onMounted(() => {
@@ -88,7 +102,7 @@ const handleDelete = async () => {
 <template>
   <div class="space-y-6">
     <div class="flex items-center justify-between">
-      <h1 class="text-2xl font-bold tracking-tight">内容管理</h1>
+      <h1 class="text-2xl font-bold tracking-tight">视频管理</h1>
       <Button variant="outline" as-child>
         <router-link to="/creator/upload">发布视频</router-link>
       </Button>
@@ -97,8 +111,49 @@ const handleDelete = async () => {
     <div class="bg-card rounded-xl border shadow-sm overflow-hidden">
       <!-- Tabs / Filters placeholder -->
       <div class="border-b px-6 py-3 flex gap-6 text-sm font-medium">
-        <div class="text-primary border-b-2 border-primary pb-3 -mb-3 cursor-pointer">
-          全部视频 ({{ total }})
+        <div
+          class="pb-3 -mb-3 cursor-pointer transition-colors"
+          :class="
+            activeTab === 'all'
+              ? 'text-primary border-b-2 border-primary'
+              : 'text-muted-foreground hover:text-foreground'
+          "
+          @click="handleTabChange('all')"
+        >
+          全部视频 <span v-if="activeTab === 'all'">({{ total }})</span>
+        </div>
+        <div
+          class="pb-3 -mb-3 cursor-pointer transition-colors"
+          :class="
+            activeTab === 'published'
+              ? 'text-primary border-b-2 border-primary'
+              : 'text-muted-foreground hover:text-foreground'
+          "
+          @click="handleTabChange('published')"
+        >
+          已发布 <span v-if="activeTab === 'published'">({{ total }})</span>
+        </div>
+        <div
+          class="pb-3 -mb-3 cursor-pointer transition-colors"
+          :class="
+            activeTab === 'reviewing'
+              ? 'text-primary border-b-2 border-primary'
+              : 'text-muted-foreground hover:text-foreground'
+          "
+          @click="handleTabChange('reviewing')"
+        >
+          审核中 <span v-if="activeTab === 'reviewing'">({{ total }})</span>
+        </div>
+        <div
+          class="pb-3 -mb-3 cursor-pointer transition-colors"
+          :class="
+            activeTab === 'private'
+              ? 'text-primary border-b-2 border-primary'
+              : 'text-muted-foreground hover:text-foreground'
+          "
+          @click="handleTabChange('private')"
+        >
+          私密 <span v-if="activeTab === 'private'">({{ total }})</span>
         </div>
       </div>
 
@@ -139,11 +194,65 @@ const handleDelete = async () => {
             <!-- Info -->
             <div class="flex-1 min-w-0 flex flex-col justify-between py-0.5">
               <div>
-                <h3
-                  class="font-medium text-base line-clamp-2 hover:text-primary cursor-pointer transition-colors"
-                >
-                  <router-link :to="`/video/${video.id}`">{{ video.title }}</router-link>
-                </h3>
+                <div class="flex items-center gap-2">
+                  <h3
+                    class="font-medium text-base line-clamp-2 hover:text-primary cursor-pointer transition-colors"
+                  >
+                    <router-link :to="`/video/${video.id}`">{{ video.title }}</router-link>
+                  </h3>
+                  <div class="flex gap-2">
+                    <span
+                      v-if="video.status"
+                      class="px-2 py-0.5 text-[11px] rounded-sm whitespace-nowrap"
+                      :class="{
+                        'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400':
+                          video.status === 1,
+                        'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400':
+                          video.status === 2,
+                        'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400':
+                          video.status === 3,
+                        'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400':
+                          video.status === 4,
+                      }"
+                    >
+                      {{
+                        video.statusText ||
+                        (video.status === 1
+                          ? '已发布'
+                          : video.status === 2
+                            ? '私密'
+                            : video.status === 3
+                              ? '已删除'
+                              : '审核中')
+                      }}
+                    </span>
+                    <span
+                      v-if="video.auditStatus && video.auditStatus !== video.status"
+                      class="px-2 py-0.5 text-[11px] rounded-sm whitespace-nowrap"
+                      :class="{
+                        'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400':
+                          video.auditStatus === 1,
+                        'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400':
+                          video.auditStatus === 2,
+                        'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400':
+                          video.auditStatus === 3,
+                        'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400':
+                          video.auditStatus === 4,
+                      }"
+                    >
+                      {{
+                        video.auditStatusText ||
+                        (video.auditStatus === 1
+                          ? '已发布'
+                          : video.auditStatus === 2
+                            ? '私密'
+                            : video.auditStatus === 3
+                              ? '已删除'
+                              : '审核中')
+                      }}
+                    </span>
+                  </div>
+                </div>
                 <div class="flex items-center gap-4 text-xs text-muted-foreground mt-2">
                   <span class="flex items-center gap-1"
                     ><PlaySquare class="h-3.5 w-3.5" /> {{ video.views }}</span

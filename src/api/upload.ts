@@ -84,7 +84,10 @@ export const completeUpload = (
   params: CompleteUploadParams,
   config?: Record<string, unknown>
 ): Promise<CompleteUploadResult> => {
-  return request.post('/common/video/upload/complete', params, config)
+  return request.post('/common/video/upload/complete', params, {
+    timeout: 5 * 60 * 1000,
+    ...config,
+  })
 }
 
 /**

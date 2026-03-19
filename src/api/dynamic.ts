@@ -112,6 +112,7 @@ export interface PinDynamicParams {
  */
 export interface DynamicListParams {
   userId?: number
+  type?: 0 | 1 | 2
   page?: number
   pageSize?: number
 }

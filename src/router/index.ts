@@ -4,9 +4,10 @@ import { createRouter, createWebHistory, type RouteRecordRaw } from 'vue-router'
 const MainLayout = () => import('@/layouts/MainLayout.vue')
 const VideoLayout = () => import('@/layouts/VideoLayout.vue')
 const CreatorLayout = () => import('@/layouts/CreatorLayout.vue')
+const UserLayout = () => import('@/layouts/UserLayout.vue')
 
 const routes: RouteRecordRaw[] = [
-  // Video detail uses its own layout (no banner, no channel nav)
+  // Routes with VideoLayout (white header, no banner, no channel nav)
   {
     path: '/video/:id',
     component: VideoLayout,
@@ -20,6 +21,29 @@ const routes: RouteRecordRaw[] = [
         path: '/search',
         name: 'search',
         component: () => import('@/views/search/SearchResult.vue'),
+      },
+    ],
+  },
+  {
+    path: '/user/:id',
+    component: UserLayout,
+    children: [
+      {
+        path: '',
+        name: 'user-home',
+        component: () => import('@/views/user/User.vue'),
+      },
+    ],
+  },
+  {
+    path: '/settings',
+    component: VideoLayout,
+    meta: { requiresAuth: true },
+    children: [
+      {
+        path: '',
+        name: 'settings',
+        component: () => import('@/views/settings/Settings.vue'),
       },
     ],
   },
@@ -53,17 +77,6 @@ const routes: RouteRecordRaw[] = [
         path: 'partition/:id?',
         name: 'partition',
         component: () => import('@/views/partition/Partition.vue'),
-      },
-      {
-        path: 'user/:id',
-        name: 'user-home',
-        component: () => import('@/views/user/User.vue'),
-      },
-      {
-        path: 'settings',
-        name: 'settings',
-        component: () => import('@/views/settings/Settings.vue'),
-        meta: { requiresAuth: true },
       },
       {
         path: 'history',

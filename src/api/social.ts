@@ -38,6 +38,7 @@ export interface RelationInfo {
 export interface SocialPaginationParams {
   page?: number
   pageSize?: number
+  keyword?: string
 }
 
 /**

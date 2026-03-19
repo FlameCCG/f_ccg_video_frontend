@@ -173,6 +173,10 @@ request.interceptors.response.use(
     return Promise.reject(new Error(msg))
   },
   (error) => {
+    // Skip toast for silent requests
+    if (error.config?.silent) {
+      return Promise.reject(error)
+    }
     // Network error
     if (error.code === 'ECONNABORTED') {
       toast.error('请求超时，请检查网络连接')

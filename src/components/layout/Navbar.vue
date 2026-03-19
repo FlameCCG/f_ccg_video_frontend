@@ -1,13 +1,10 @@
 <script setup lang="ts">
-import { ref, onMounted, computed } from 'vue'
+import { ref, onMounted, computed, onBeforeUnmount } from 'vue'
 import { useRouter } from 'vue-router'
 import {
   Search,
   Mail,
   Upload,
-  User,
-  LogOut,
-  Settings,
   Crown,
   Zap,
   Star,
@@ -17,19 +14,33 @@ import {
   Trash2,
 } from 'lucide-vue-next'
 import { Button } from '@/components/ui/button'
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu'
 import { getSearchSuggest, type SearchSuggestItem } from '@/api/video'
 import { getNotificationCounts } from '@/api/notification'
+import { getDynamicCounts } from '@/api/dynamic'
 import { useAuthStore } from '@/stores/auth'
 import { useSearchHistory } from '@/composables/useSearchHistory'
 import AuthDialog from '@/components/auth/AuthDialog.vue'
+import UserHoverPanel from '@/components/layout/UserHoverPanel.vue'
+
+const props = withDefaults(defineProps<{ light?: boolean }>(), { light: false })
+
+const navActionTextClass = computed(() =>
+  props.light
+    ? 'text-[#61666d] transition-colors hover:text-[#18191c]'
+    : 'text-white/90 transition-colors hover:text-white'
+)
+
+const avatarBorderClass = computed(() =>
+  props.light
+    ? 'border-[#e3e5e7] group-hover:border-[#00a1d6]'
+    : 'border-white/50 group-hover:border-white'
+)
+
+const searchBgClass = computed(() =>
+  props.light
+    ? 'bg-[#f4f5f7] text-foreground ring-1 ring-[#e3e5e7] focus-visible:ring-primary/50'
+    : 'bg-white/95 text-foreground focus-visible:ring-primary/50'
+)
 
 const router = useRouter()
 const authStore = useAuthStore()
@@ -57,13 +68,21 @@ const unreadCounts = ref({
   system: 0,
   message: 0,
 })
+const dynamicUnreadCount = ref(0)
 
 // Fetch Data
 onMounted(async () => {
+  if (!authStore.isLoggedIn) return
   try {
-    if (authStore.isLoggedIn) {
-      const counts = await getNotificationCounts()
-      unreadCounts.value = counts
+    const [notifResult, dynResult] = await Promise.allSettled([
+      getNotificationCounts(),
+      getDynamicCounts(),
+    ])
+    if (notifResult.status === 'fulfilled') {
+      unreadCounts.value = notifResult.value
+    }
+    if (dynResult.status === 'fulfilled') {
+      dynamicUnreadCount.value = dynResult.value.unreadCount
     }
   } catch (error) {
     console.error('Failed to fetch navbar data:', error)
@@ -100,21 +119,46 @@ const handleBlur = () => {
   }, 200)
 }
 
-const handleLogout = () => {
-  authStore.logout()
-  void router.push('/')
+// Avatar hover panel
+const showAvatarPanel = ref(false)
+const avatarAreaRef = ref<HTMLDivElement | null>(null)
+let hoverTimer: ReturnType<typeof setTimeout> | null = null
+
+const openAvatarPanel = () => {
+  if (hoverTimer) clearTimeout(hoverTimer)
+  showAvatarPanel.value = true
 }
 
-// Total unread count
-const totalUnread = computed(() => {
-  return Object.values(unreadCounts.value).reduce((a, b) => a + b, 0)
+const scheduleClosePanel = () => {
+  hoverTimer = setTimeout(() => {
+    showAvatarPanel.value = false
+  }, 200)
+}
+
+const closePanel = () => {
+  showAvatarPanel.value = false
+}
+
+const handleClickOutside = (e: MouseEvent) => {
+  if (avatarAreaRef.value && !avatarAreaRef.value.contains(e.target as Node)) {
+    showAvatarPanel.value = false
+  }
+}
+
+onMounted(() => {
+  document.addEventListener('click', handleClickOutside)
+})
+
+onBeforeUnmount(() => {
+  document.removeEventListener('click', handleClickOutside)
+  if (hoverTimer) clearTimeout(hoverTimer)
 })
 
 // Nav action items
 const navActions = [
   { name: '大会员', icon: Crown, path: '/vip' },
-  { name: '消息', icon: Mail, path: '/chat', badge: 'message' },
-  { name: '动态', icon: Zap, path: '/dynamic', badge: 'total' },
+  { name: '消息', icon: Mail, path: '/chat', badge: 'message' as const },
+  { name: '动态', icon: Zap, path: '/dynamic', badge: 'dynamic' as const },
   { name: '收藏', icon: Star, path: '/favorites' },
   { name: '历史', icon: History, path: '/history' },
   { name: '创作中心', icon: Lightbulb, path: '/creator' },
@@ -139,7 +183,8 @@ const navActions = [
         <input
           v-model="searchQuery"
           type="text"
-          class="flex h-10 w-full rounded-full border-0 bg-white/95 px-4 py-2 pl-10 pr-4 text-sm text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50 transition-all"
+          class="flex h-10 w-full rounded-full border-0 px-4 py-2 pl-10 pr-4 text-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 transition-all"
+          :class="searchBgClass"
           placeholder="搜索视频、UP主..."
           @input="handleSearchInput"
           @keydown.enter="handleSearch(searchQuery)"
@@ -202,51 +247,35 @@ const navActions = [
     <div class="flex items-center gap-1">
       <!-- User Avatar (when logged in) / Login Button -->
       <template v-if="authStore.isLoggedIn">
-        <DropdownMenu>
-          <DropdownMenuTrigger as-child>
-            <div class="relative mr-4 cursor-pointer group">
-              <div
-                class="h-8 w-8 rounded-full border-2 border-white/50 group-hover:border-white transition-colors overflow-hidden"
-              >
-                <img
-                  :src="authStore.user?.avatar || '/placeholder-avatar.png'"
-                  alt="Avatar"
-                  class="h-full w-full object-cover"
-                />
-              </div>
+        <div
+          ref="avatarAreaRef"
+          class="relative mr-4"
+          @mouseenter="openAvatarPanel"
+          @mouseleave="scheduleClosePanel"
+        >
+          <div class="cursor-pointer group">
+            <div
+              class="h-8 w-8 rounded-full border-2 transition-colors overflow-hidden"
+              :class="avatarBorderClass"
+            >
+              <img
+                :src="authStore.user?.avatar || '/placeholder-avatar.png'"
+                alt="Avatar"
+                class="h-full w-full object-cover"
+              />
             </div>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" class="w-56">
-            <DropdownMenuLabel>
-              <div class="flex flex-col space-y-1">
-                <p class="text-sm font-medium leading-none">
-                  {{ authStore.user?.username || '用户' }}
-                </p>
-                <p class="text-xs leading-none text-muted-foreground">
-                  {{ authStore.user?.email || 'user@example.com' }}
-                </p>
-              </div>
-            </DropdownMenuLabel>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem as-child>
-              <router-link :to="`/user/${authStore.userId}`">
-                <User class="mr-2 h-4 w-4" />
-                <span>个人中心</span>
-              </router-link>
-            </DropdownMenuItem>
-            <DropdownMenuItem as-child>
-              <router-link to="/settings">
-                <Settings class="mr-2 h-4 w-4" />
-                <span>设置</span>
-              </router-link>
-            </DropdownMenuItem>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem @select="handleLogout">
-              <LogOut class="mr-2 h-4 w-4" />
-              <span>退出登录</span>
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
+          </div>
+          <Transition name="panel-fade">
+            <div
+              v-if="showAvatarPanel"
+              class="absolute right-0 top-full z-[200] pt-2"
+              @mouseenter="openAvatarPanel"
+              @mouseleave="scheduleClosePanel"
+            >
+              <UserHoverPanel @close="closePanel" />
+            </div>
+          </Transition>
+        </div>
       </template>
       <template v-else>
         <Button
@@ -265,7 +294,8 @@ const navActions = [
           <router-link
             v-if="authStore.isLoggedIn"
             :to="action.path"
-            class="group relative flex cursor-pointer flex-col items-center justify-center px-3 py-1 text-white/90 transition-colors hover:text-white"
+            class="group relative flex cursor-pointer flex-col items-center justify-center px-3 py-1"
+            :class="navActionTextClass"
           >
             <div class="relative">
               <component :is="action.icon" class="h-5 w-5" />
@@ -277,17 +307,18 @@ const navActions = [
                 {{ unreadCounts.message > 99 ? '99+' : unreadCounts.message }}
               </span>
               <span
-                v-if="action.badge === 'total' && totalUnread > 0"
+                v-if="action.badge === 'dynamic' && dynamicUnreadCount > 0"
                 class="absolute -right-1 -top-1 flex h-4 min-w-[16px] items-center justify-center rounded-full bg-red-500 px-1 text-[10px] text-white"
               >
-                {{ totalUnread > 99 ? '99+' : totalUnread }}
+                {{ dynamicUnreadCount > 99 ? '99+' : dynamicUnreadCount }}
               </span>
             </div>
             <span class="mt-0.5 text-[10px] font-medium">{{ action.name }}</span>
           </router-link>
           <div
             v-else
-            class="group relative flex cursor-pointer flex-col items-center justify-center px-3 py-1 text-white/90 transition-colors hover:text-white"
+            class="group relative flex cursor-pointer flex-col items-center justify-center px-3 py-1"
+            :class="navActionTextClass"
             @click="openLoginDialog"
           >
             <div class="relative">
@@ -332,5 +363,23 @@ const navActions = [
   color: hsl(var(--primary));
   font-style: normal;
   font-weight: 600;
+}
+
+.panel-fade-enter-active {
+  transition:
+    opacity 0.18s ease,
+    transform 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.panel-fade-leave-active {
+  transition:
+    opacity 0.12s ease,
+    transform 0.12s ease;
+}
+
+.panel-fade-enter-from,
+.panel-fade-leave-to {
+  opacity: 0;
+  transform: translateY(-4px);
 }
 </style>

@@ -89,7 +89,7 @@ export const getQQLoginUrl = (): Promise<string> => {
  * - 登录相关开关查看 data.site.login.*
  */
 export const getSiteConfig = (): Promise<SiteConfigResult> => {
-  return request.get('/common/site/config')
+  return request.get('/common/site/config', { silent: true })
 }
 
 /**
@@ -100,7 +100,7 @@ export const getSiteConfig = (): Promise<SiteConfigResult> => {
  * 接口说明: 增加站点流量（PV）并统计今日 UV（含游客）；若已登录则当日首次打点时发放登录经验
  */
 export const touchSiteStat = (): Promise<SiteTouchResult> => {
-  return request.post('/common/site/stat/touch')
+  return request.post('/common/site/stat/touch', undefined, { silent: true })
 }
 
 /**
@@ -111,5 +111,5 @@ export const touchSiteStat = (): Promise<SiteTouchResult> => {
  * 接口说明: 维护 UV 与在线人数，不增加 PV（支持游客）
  */
 export const sendHeartbeat = (): Promise<SiteHeartbeatResult> => {
-  return request.post('/common/site/stat/heartbeat')
+  return request.post('/common/site/stat/heartbeat', undefined, { silent: true })
 }

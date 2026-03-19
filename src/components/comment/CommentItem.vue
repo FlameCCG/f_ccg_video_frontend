@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
+import { useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import type { CommentItem } from '@/api/comment'
 import { toggleCommentLike, deleteComment, toggleCommentPin, getReplyList } from '@/api/comment'
@@ -9,10 +10,13 @@ import { onClickOutside } from '@vueuse/core'
 import { toast } from 'vue-sonner'
 import CommentInput from './CommentInput.vue'
 
+const router = useRouter()
+
 const props = defineProps<{
   comment: CommentItem
   videoId?: number
-  isAuthor?: boolean // Is the current user the author of the video?
+  dynamicId?: number
+  isAuthor?: boolean
   isReply?: boolean
 }>()
 
@@ -52,14 +56,24 @@ const parsedContent = computed(() => {
 
   const regex = /(@[^\s]+)/g
   const parts = text.split(regex)
+  const atUserIds = props.comment.atUserIds ?? []
+  let mentionIdx = 0
 
   return parts.map((part, index) => {
     if (part.startsWith('@')) {
-      return { type: 'mention', text: part, id: index }
+      const userId = mentionIdx < atUserIds.length ? atUserIds[mentionIdx] : undefined
+      mentionIdx++
+      return { type: 'mention' as const, text: part, id: index, userId }
     }
-    return { type: 'text', text: part, id: index }
+    return { type: 'text' as const, text: part, id: index, userId: undefined }
   })
 })
+
+const handleMentionClick = (userId?: number) => {
+  if (userId) {
+    void router.push(`/user/${userId}`)
+  }
+}
 
 const handleLike = async () => {
   if (!authStore.isLoggedIn) {
@@ -124,7 +138,8 @@ const handleReplySubmit = async (content: string, atUserIds: number[]) => {
   try {
     const { createComment } = await import('@/api/comment')
     const res = await createComment({
-      videoId: props.videoId,
+      videoId: props.videoId || undefined,
+      dynamicId: props.dynamicId || undefined,
       content,
       parentId: props.comment.id,
       atUserIds,
@@ -184,6 +199,7 @@ const handleReplyDeleted = (id: number) => {
           <span
             v-if="part.type === 'mention'"
             class="text-[#00aeec] cursor-pointer hover:underline"
+            @click.stop="handleMentionClick(part.userId)"
           >
             {{ part.text }}
           </span>
@@ -264,6 +280,7 @@ const handleReplyDeleted = (id: number) => {
             :key="reply.id"
             :comment="reply"
             :video-id="videoId"
+            :dynamic-id="dynamicId"
             :is-author="isAuthor"
             is-reply
             @deleted="handleReplyDeleted"

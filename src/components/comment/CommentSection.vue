@@ -6,7 +6,8 @@ import CommentItem from './CommentItem.vue'
 import { toast } from 'vue-sonner'
 
 const props = defineProps<{
-  videoId: number
+  videoId?: number
+  dynamicId?: number
   authorId?: number
 }>()
 
@@ -27,7 +28,8 @@ const loadComments = async (reset = false) => {
   isLoading.value = true
   try {
     const res = await getCommentList({
-      videoId: props.videoId,
+      videoId: props.videoId || undefined,
+      dynamicId: props.dynamicId || undefined,
       page: page.value,
       pageSize: pageSize.value,
       sortBy: sortBy.value,
@@ -54,7 +56,8 @@ const handleSortChange = (sort: 'time' | 'hot') => {
 const handleCreateComment = async (content: string, atUserIds: number[]) => {
   try {
     const res = await createComment({
-      videoId: props.videoId,
+      videoId: props.videoId || undefined,
+      dynamicId: props.dynamicId || undefined,
       content,
       atUserIds,
     })
@@ -85,17 +88,14 @@ const handleCommentPinned = (id: number, pinned: boolean) => {
   }
 }
 
-watch(
-  () => props.videoId,
-  () => {
-    if (props.videoId) {
-      void loadComments(true)
-    }
+watch([() => props.videoId, () => props.dynamicId], () => {
+  if (props.videoId || props.dynamicId) {
+    void loadComments(true)
   }
-)
+})
 
 onMounted(() => {
-  if (props.videoId) {
+  if (props.videoId || props.dynamicId) {
     void loadComments(true)
   }
 })
@@ -139,6 +139,7 @@ onMounted(() => {
           <CommentItem
             :comment="comment"
             :video-id="videoId"
+            :dynamic-id="dynamicId"
             :is-author="authorId === comment.userId"
             @deleted="handleCommentDeleted"
             @pinned="handleCommentPinned"

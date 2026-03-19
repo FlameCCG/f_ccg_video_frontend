@@ -1,8 +1,11 @@
 <script setup lang="ts">
-import { ref, onMounted, onBeforeUnmount } from 'vue'
-import { RouterView } from 'vue-router'
+import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
+import { RouterView, useRoute } from 'vue-router'
 import Navbar from '@/components/layout/Navbar.vue'
 import ChannelNav from '@/components/layout/ChannelNav.vue'
+
+const route = useRoute()
+const hideChannelNav = computed(() => route.path === '/dynamic' || route.path === '/history')
 
 const bannerRef = ref<HTMLDivElement | null>(null)
 const videoRef = ref<HTMLVideoElement | null>(null)
@@ -49,33 +52,38 @@ onBeforeUnmount(() => {
 
 <template>
   <div class="relative min-h-screen bg-background">
-    <!-- Header with Video Banner (Bilibili-style parallax) -->
-    <div ref="bannerRef" class="banner-shell relative h-[200px] cursor-pointer">
-      <!-- Video Background -->
-      <div class="absolute inset-0 z-0 flex items-center justify-center overflow-hidden">
-        <video
-          ref="videoRef"
-          loop
-          autoplay
-          muted
-          playsinline
-          src="/banner-video.mp4"
-          class="banner-video pointer-events-none h-full min-w-full object-cover"
-        />
-        <!-- Gradient overlays for readability -->
-        <div class="absolute inset-0 bg-gradient-to-b from-black/40 via-black/10 to-black/30"></div>
+    <!-- Slim header for /dynamic (no video banner) -->
+    <template v-if="hideChannelNav">
+      <div class="slim-header relative z-50">
+        <Navbar light />
       </div>
+    </template>
 
-      <!-- Navbar -->
-      <div class="relative z-50">
-        <Navbar />
+    <!-- Full header with Video Banner for other pages -->
+    <template v-else>
+      <div ref="bannerRef" class="banner-shell relative h-[200px] cursor-pointer">
+        <div class="absolute inset-0 z-0 flex items-center justify-center overflow-hidden">
+          <video
+            ref="videoRef"
+            loop
+            autoplay
+            muted
+            playsinline
+            src="/banner-video.mp4"
+            class="banner-video pointer-events-none h-full min-w-full object-cover"
+          />
+          <div
+            class="absolute inset-0 bg-gradient-to-b from-black/40 via-black/10 to-black/30"
+          ></div>
+        </div>
+        <div class="relative z-50">
+          <Navbar />
+        </div>
       </div>
-    </div>
-
-    <!-- Channel Navigation -->
-    <div class="sticky top-0 z-40 w-full bg-background shadow-sm">
-      <ChannelNav />
-    </div>
+      <div class="sticky top-0 z-40 w-full bg-background shadow-sm">
+        <ChannelNav />
+      </div>
+    </template>
 
     <!-- Main Content Area -->
     <main>
@@ -88,5 +96,10 @@ onBeforeUnmount(() => {
 .banner-video {
   transform: translateX(0) translateY(-4px) scale(1.15);
   will-change: transform;
+}
+
+.slim-header {
+  background: #fff;
+  border-bottom: 1px solid #e3e5e7;
 }
 </style>

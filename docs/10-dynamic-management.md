@@ -109,14 +109,15 @@ Base URL：/v1
 - 接口路径: GET /common/dynamic/list
 - 认证: 需要登录（客户端全局自动携带 Token）
 - 依赖接口: 无
-- 接口说明: 获取动态列表（需登录）
+- 接口说明: 获取指定用户的作品动态列表（需登录）
 - HTTP 状态码: 200（业务码 code 判断成功/失败）
 - 响应结构: code=0 成功，code=1 失败；msg 为提示信息
 
 请求参数:
 | 名称 | 位置 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- | --- |
-| userId | query | integer | 否 | 指定用户ID（可选，不填获取自己和关注用户的动态） |
+| userId | query | integer | 是 | 指定用户ID |
+| type | query | integer | 否 | 类型筛选（0全部 1仅视频作品 2仅图文动态；不传或传0时返回两者） 可选: 0/1/2 |
 | page | query | integer | 否 | 页码 |
 | pageSize | query | integer | 否 | 每页数量 |
 

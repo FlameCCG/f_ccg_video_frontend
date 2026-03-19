@@ -40,6 +40,7 @@ Base URL：/v1
 | data.list[].isLiked | boolean | 当前用户是否已点赞 |
 | data.list[].createdAt | string(date-time) | 创建时间 |
 
+
 响应示例:
 ```json
 {
@@ -297,6 +298,7 @@ Base URL：/v1
 | page | query | integer | 否 | 页码 |
 | pageSize | query | integer | 否 | 每页数量 |
 | sort | query | integer | 否 | 排序方式（0最近 1点赞最多 2回复最多） 可选: 0/1/2 |
+| keyword | query | string | 否 | 关键字搜索，支持匹配评论内容、评论用户、视频标题 |
 
 响应字段:
 | 字段 | 类型 | 说明 |
@@ -315,6 +317,10 @@ Base URL：/v1
 | data.list[].pinnedAt | string(date-time) | 置顶时间 |
 | data.list[].isLiked | boolean | 当前用户是否已点赞 |
 | data.list[].createdAt | string(date-time) | 创建时间 |
+| data.list[].videoId | integer(uint) | 视频ID |
+| data.list[].dynamicId | integer(uint) | 动态ID |
+
+
 
 响应示例:
 ```json
@@ -336,8 +342,10 @@ Base URL：/v1
         "isPinned": true,
         "pinnedAt": "2024-06-01T12:00:00Z",
         "isLiked": true,
-        "createdAt": "2024-06-01T12:00:00Z"
-      }
+        "createdAt": "2024-06-01T12:00:00Z",
+        "videoId": 2001,
+        "dynamicId": 4001
+     }
     ],
     "total": 1
   },

@@ -268,6 +268,10 @@ export interface SaveHistoryParams {
   duration: number
 }
 
+export interface HistoryListParams extends PaginationParams {
+  keyword?: string
+}
+
 export interface DeleteHistoryParams {
   videoIds: number[]
 }
@@ -308,6 +312,7 @@ export interface FolderVideosParams {
   folderId: number
   page?: number
   pageSize?: number
+  sort?: 0 | 1 | 2
 }
 
 export interface FolderVideoItem {
@@ -318,6 +323,7 @@ export interface FolderVideoItem {
   views: number
   danmuCount: number
   favoriteCount: number
+  favoritedAt: string
   author: AuthorBrief
 }
 
@@ -523,7 +529,7 @@ export const reportVideo = (params: ReportVideoParams): Promise<void> => {
  * - parts[].title 可不传，后端会按默认规则生成
  */
 export const publishVideo = (params: PublishVideoParams): Promise<PublishVideoResult> => {
-  return request.post('/common/video/publish', params)
+  return request.post('/common/video/publish', params, { timeout: 5 * 60 * 1000 })
 }
 
 /**
@@ -571,7 +577,7 @@ export const deletePlayHistory = (params: DeleteHistoryParams): Promise<void> =>
  * 接口说明: 获取用户播放历史记录（需登录）
  */
 export const getPlayHistoryList = (
-  params?: PaginationParams
+  params?: HistoryListParams
 ): Promise<PaginatedResult<HistoryItem>> => {
   return request.get('/common/video/history/list', { params })
 }

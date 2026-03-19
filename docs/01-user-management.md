@@ -850,6 +850,7 @@ Base URL：/v1
 | page | query | integer | 否 | 页码 |
 | pageSize | query | integer | 否 | 每页数量 |
 | sort | query | integer | 否 | 排序方式（0最新 1最多播放 2最多收藏） 可选: 0/1/2 |
+| auditStatus | query | integer | 否 | 审核状态筛选（1已发布 2私密 3已删除 4审核中，仅本人查看自己的视频列表时生效；不传时本人默认查看全部状态，非本人访问时会被忽略） 可选: 1/2/3 |
 
 响应字段:
 | 字段 | 类型 | 说明 |
@@ -864,6 +865,10 @@ Base URL：/v1
 | data.list[].duration | integer | 时长（秒） |
 | data.list[].progress | integer | 播放进度（秒） |
 | data.list[].createdAt | string(date-time) | 创建时间 |
+| data.list[].status | integer | 视频状态（1已发布 2私密 3已删除 4审核中） |
+| data.list[].statusText | string | 视频状态文案 |
+| data.list[].auditStatus | integer | 审核状态（1已发布 2私密 3已删除 4审核中，仅本人查看自己的视频列表时返回） |
+| data.list[].auditStatusText | string | 审核状态文案，仅本人查看自己的视频列表时返回 |
 | data.list[].authorId | integer(uint) | 作者ID |
 | data.list[].authorName | string | 作者名称 |
 
@@ -882,6 +887,10 @@ Base URL：/v1
         "duration": 60,
         "progress": 1,
         "createdAt": "2024-06-01T12:00:00Z",
+        "status": 1,
+        "statusText": "已发布",
+        "auditStatus": 1,
+        "auditStatusText": "已通过",
         "authorId": 1001,
         "authorName": "示例名称"
       }

@@ -104,6 +104,15 @@ export interface PinCommentParams {
  */
 export interface CreatorCommentListParams extends PaginationParams {
   sort?: 0 | 1 | 2 // 0 最近 1 点赞最多 2 回复最多
+  keyword?: string
+}
+
+export interface CreatorCommentItem extends CommentItem {
+  videoId?: number
+  dynamicId?: number
+  videoTitle?: string
+  videoCover?: string
+  commenterAddr?: string
 }
 
 // ============================================================================
@@ -190,6 +199,6 @@ export const toggleCommentPin = (params: PinCommentParams): Promise<void> => {
  */
 export const getCreatorCommentList = (
   params?: CreatorCommentListParams
-): Promise<PaginatedResult<CommentItem>> => {
+): Promise<PaginatedResult<CreatorCommentItem>> => {
   return request.get('/common/comment/creator/list', { params })
 }

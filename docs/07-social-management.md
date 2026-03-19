@@ -75,6 +75,7 @@ Base URL：/v1
 | id | path | integer | 是 | 用户ID |
 | page | query | integer | 否 | 页码 |
 | pageSize | query | integer | 否 | 每页数量 |
+| keyword | query | string | 否 | 关键词 |
 
 响应字段:
 | 字段 | 类型 | 说明 |
@@ -122,6 +123,7 @@ Base URL：/v1
 | id | path | integer | 是 | 用户ID |
 | page | query | integer | 否 | 页码 |
 | pageSize | query | integer | 否 | 每页数量 |
+| keyword | query | string | 否 | 关键词 |
 
 响应字段:
 | 字段 | 类型 | 说明 |

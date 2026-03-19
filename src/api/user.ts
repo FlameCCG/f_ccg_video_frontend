@@ -262,6 +262,10 @@ export interface UserVideoItem {
   duration: number
   progress: number
   createdAt: string
+  status: number
+  statusText: string
+  auditStatus?: number
+  auditStatusText?: string
   authorId: number
   authorName: string
 }
@@ -271,6 +275,7 @@ export interface UserVideoListParams {
   page?: number
   pageSize?: number
   sort?: 0 | 1 | 2
+  auditStatus?: number // 1已发布 2私密 3已删除 4审核中
 }
 
 export interface DeleteVideoParams {

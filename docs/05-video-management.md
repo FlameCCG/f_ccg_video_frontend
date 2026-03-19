@@ -1242,6 +1242,7 @@ Base URL：/v1
 | --- | --- | --- | --- | --- |
 | page | query | integer | 否 | 页码 |
 | pageSize | query | integer | 否 | 每页数量 |
+| keyword | query | string | 否 | 关键字搜索，支持匹配视频标题、作者名称 |
 
 响应字段:
 | 字段 | 类型 | 说明 |
@@ -1407,6 +1408,7 @@ Base URL：/v1
 | folderId | query | integer | 是 | 收藏夹ID |
 | page | query | integer | 否 | 页码 |
 | pageSize | query | integer | 否 | 每页数量 |
+| sort | query | integer | 否 | 排序方式（0最近收藏 1最多播放 2最多点赞） 可选: 0/1/2 |
 
 响应字段:
 | 字段 | 类型 | 说明 |
@@ -1420,6 +1422,7 @@ Base URL：/v1
 | data.list[].views | integer(int64) | 播放数 |
 | data.list[].danmuCount | integer(int64) | 弹幕数 |
 | data.list[].favoriteCount | integer(int64) | 收藏数 |
+| data.list[].favoritedAt | string(date-time) | 该视频被收藏到当前收藏夹的时间 |
 | data.list[].author | AuthorBrief | - |
 | data.list[].author.id | integer(uint) | 用户ID |
 | data.list[].author.username | string | 用户名 |
@@ -1439,6 +1442,7 @@ Base URL：/v1
         "views": 1,
         "danmuCount": 1,
         "favoriteCount": 1,
+        "favoritedAt": "2026-03-17T18:30:00Z",
         "author": {
           "id": 1001,
           "username": "alice",

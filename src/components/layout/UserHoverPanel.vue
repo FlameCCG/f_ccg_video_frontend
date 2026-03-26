@@ -4,6 +4,7 @@ import { useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { useThemeStore } from '@/stores/theme'
 import { User, LogOut, FileVideo, Sun, Moon } from 'lucide-vue-next'
+import AppAvatar from '@/components/common/AppAvatar.vue'
 
 const emit = defineEmits<{
   (e: 'close'): void
@@ -45,30 +46,33 @@ const toggleTheme = () => {
 
 <template>
   <div class="user-hover-panel">
-    <!-- User Header -->
-    <div class="panel-header">
-      <div class="avatar-area" @click="navigate(`/user/${authStore.userId}`)">
-        <img
-          :src="authStore.user?.avatar || '/placeholder-avatar.png'"
-          alt="Avatar"
-          class="panel-avatar"
-        />
+    <!-- Big Avatar -->
+    <div class="panel-avatar-wrap" @click="navigate(`/user/${authStore.userId}`)">
+      <AppAvatar
+        :src="authStore.user?.avatar"
+        :name="authStore.user?.username"
+        alt="Avatar"
+        container-class="panel-avatar"
+        text-class="text-2xl font-bold"
+      />
+    </div>
+
+    <!-- User Info (Centered) -->
+    <div class="user-info">
+      <div class="username-row">
+        <span class="username" @click="navigate(`/user/${authStore.userId}`)">
+          {{ authStore.user?.username || '用户' }}
+        </span>
       </div>
-      <div class="user-meta">
-        <div class="username-row">
-          <span class="username" @click="navigate(`/user/${authStore.userId}`)">
-            {{ authStore.user?.username || '用户' }}
-          </span>
-          <span
-            v-if="authStore.user"
-            class="level-badge"
-            :style="{ backgroundColor: levelColor(authStore.level) }"
-          >
-            Lv{{ authStore.level }}
-          </span>
-        </div>
-        <div class="coin-row">
-          <span class="coin-item">硬币: {{ authStore.coinCount }}</span>
+      <div class="level-row">
+        <span class="level-badge" :style="{ backgroundColor: levelColor(authStore.level) }">
+          LV{{ authStore.level }}
+        </span>
+      </div>
+      <div class="coin-row">
+        <div class="coin-item">
+          硬币: <span class="font-medium mr-3">{{ authStore.coinCount }}</span> B币:
+          <span class="font-medium">0</span>
         </div>
       </div>
     </div>
@@ -89,26 +93,43 @@ const toggleTheme = () => {
       </div>
     </div>
 
+    <!-- VIP Banner -->
+    <div class="vip-wrap px-4 pb-3">
+      <div class="vip-banner">
+        <div class="vip-text text-left">
+          <div class="text-xs font-medium text-[#ff6699]">悄悄成为大会员</div>
+          <div class="text-[10px] text-[#ff6699]/80 mt-0.5">然后惊艳所有人</div>
+        </div>
+        <div class="vip-btn">会员中心</div>
+      </div>
+    </div>
+
     <!-- Menu Links -->
     <div class="panel-menu">
       <div class="menu-item" @click="navigate('/settings')">
-        <User :size="18" />
+        <User :size="18" class="text-muted-foreground mr-1" />
         <span>个人中心</span>
+        <span class="ml-auto text-muted-foreground font-mono text-xs">❯</span>
       </div>
       <div class="menu-item" @click="navigate('/creator')">
-        <FileVideo :size="18" />
+        <FileVideo :size="18" class="text-muted-foreground mr-1" />
         <span>投稿管理</span>
+        <span class="ml-auto text-muted-foreground font-mono text-xs">❯</span>
       </div>
     </div>
 
     <!-- Bottom Area -->
-    <div class="panel-bottom">
+    <div class="panel-menu border-b-0">
       <div class="menu-item" @click="toggleTheme">
-        <component :is="isDark ? Sun : Moon" :size="18" />
+        <component :is="isDark ? Sun : Moon" :size="18" class="text-muted-foreground mr-1" />
         <span>主题: {{ isDark ? '深色' : '浅色' }}</span>
+        <span class="ml-auto text-muted-foreground font-mono text-xs">❯</span>
       </div>
+    </div>
+
+    <div class="panel-menu border-b-0 border-t-0 pt-0">
       <div class="menu-item logout-item" @click="handleLogout">
-        <LogOut :size="18" />
+        <LogOut :size="18" class="text-muted-foreground mr-1" />
         <span>退出登录</span>
       </div>
     </div>
@@ -117,105 +138,119 @@ const toggleTheme = () => {
 
 <style scoped>
 .user-hover-panel {
-  width: 280px;
+  width: 300px;
+  position: relative;
+  background: hsl(var(--card));
   border-radius: 12px;
-  background: hsl(var(--popover));
-  color: hsl(var(--popover-foreground));
-  box-shadow:
-    0 4px 6px -1px rgb(0 0 0 / 0.05),
-    0 12px 40px -4px rgb(0 0 0 / 0.15);
-  border: 1px solid hsl(var(--border));
-  overflow: hidden;
-  animation: panel-enter 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  color: hsl(var(--card-foreground));
+  box-shadow: 0 4px 24px -6px rgb(0 0 0 / 0.15);
+  border: 1px solid hsl(var(--border) / 0.6);
+  animation: panel-enter 0.25s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 @keyframes panel-enter {
-  from {
+  0% {
     opacity: 0;
-    transform: translateY(-6px) scale(0.97);
+    transform: translateY(-8px);
   }
 
-  to {
+  100% {
     opacity: 1;
-    transform: translateY(0) scale(1);
+    transform: translateY(0);
   }
 }
 
-.panel-header {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  padding: 20px 20px 16px;
-}
-
-.avatar-area {
+.panel-avatar-wrap {
+  position: absolute;
+  top: -40px;
+  left: 50%;
+  margin-left: -40px;
+  z-index: 20;
   cursor: pointer;
-  flex-shrink: 0;
+  animation: avatar-enter 0.4s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
 }
 
-.panel-avatar {
-  width: 52px;
-  height: 52px;
-  border-radius: 50%;
-  object-fit: cover;
-  border: 2px solid hsl(var(--border));
+@keyframes avatar-enter {
+  0% {
+    transform: translate(0, -24px) scale(0.4);
+  }
+
+  100% {
+    transform: translate(0, 0) scale(1);
+  }
+}
+
+:deep(.panel-avatar) {
+  width: 80px !important;
+  height: 80px !important;
+  border-radius: 50% !important;
+  border: 2px solid hsl(var(--card)) !important;
+  background-color: hsl(var(--card)) !important;
   transition:
-    border-color 0.2s,
-    transform 0.2s;
+    transform 0.2s,
+    box-shadow 0.2s;
 }
 
-.panel-avatar:hover {
-  border-color: hsl(var(--primary));
+:deep(.panel-avatar:hover) {
   transform: scale(1.05);
 }
 
-.user-meta {
-  min-width: 0;
-  flex: 1;
+/* User Info Section */
+.user-info {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding-top: 48px;
+  padding-bottom: 12px;
 }
 
 .username-row {
   display: flex;
+  justify-content: center;
   align-items: center;
-  gap: 8px;
 }
 
 .username {
-  font-size: 16px;
+  font-size: 18px;
   font-weight: 700;
   cursor: pointer;
+  color: hsl(var(--foreground));
   transition: color 0.15s;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .username:hover {
   color: hsl(var(--primary));
 }
 
+.level-row {
+  margin-top: 4px;
+}
+
 .level-badge {
-  flex-shrink: 0;
   display: inline-flex;
   align-items: center;
-  padding: 1px 6px;
-  border-radius: 4px;
+  justify-content: center;
+  padding: 0 4px;
+  height: 14px;
+  border-radius: 2px;
   font-size: 10px;
+  line-height: 1;
   font-weight: 800;
   color: white;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.05em;
+  font-style: italic;
 }
 
 .coin-row {
-  margin-top: 4px;
+  margin-top: 8px;
   font-size: 12px;
   color: hsl(var(--muted-foreground));
 }
 
+/* Stats Section */
 .panel-stats {
   display: flex;
   padding: 0 20px 16px;
-  gap: 0;
 }
 
 .stat-item {
@@ -224,8 +259,8 @@ const toggleTheme = () => {
   flex-direction: column;
   align-items: center;
   cursor: pointer;
-  padding: 8px 0;
-  border-radius: 8px;
+  padding: 6px 0;
+  border-radius: 6px;
   transition: background 0.15s;
 }
 
@@ -234,9 +269,8 @@ const toggleTheme = () => {
 }
 
 .stat-value {
-  font-size: 18px;
+  font-size: 16px;
   font-weight: 700;
-  line-height: 1.2;
   color: hsl(var(--foreground));
 }
 
@@ -246,22 +280,49 @@ const toggleTheme = () => {
   margin-top: 2px;
 }
 
-.panel-menu {
-  padding: 4px 8px;
-  border-top: 1px solid hsl(var(--border) / 0.6);
+/* VIP Banner Section */
+.vip-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: linear-gradient(90deg, #fff0f5 0%, #fff 100%);
+  border: 1px solid #ffe4e1;
+  border-radius: 6px;
+  padding: 10px 14px;
 }
 
-.panel-bottom {
-  padding: 4px 8px 8px;
-  border-top: 1px solid hsl(var(--border) / 0.6);
+:global(.dark) .vip-banner {
+  background: linear-gradient(90deg, rgb(255, 102, 153, 0.1) 0%, rgb(255, 102, 153, 0) 100%);
+  border-color: rgb(255, 102, 153, 0.2);
+}
+
+.vip-btn {
+  background: #ff6699;
+  color: white;
+  font-size: 12px;
+  padding: 4px 10px;
+  border-radius: 4px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: opacity 0.2s;
+}
+
+.vip-btn:hover {
+  opacity: 0.9;
+}
+
+/* Menu Section */
+.panel-menu {
+  padding: 6px 12px;
+  border-top: 1px solid hsl(var(--border) / 0.4);
 }
 
 .menu-item {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 8px;
   padding: 10px 12px;
-  border-radius: 8px;
+  border-radius: 6px;
   font-size: 14px;
   cursor: pointer;
   transition:
@@ -271,11 +332,10 @@ const toggleTheme = () => {
 }
 
 .menu-item:hover {
-  background: hsl(var(--muted));
-  color: hsl(var(--primary));
+  background: hsl(var(--muted) / 0.6);
 }
 
 .logout-item:hover {
-  color: hsl(var(--destructive));
+  background: hsl(var(--muted) / 0.4);
 }
 </style>

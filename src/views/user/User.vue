@@ -31,9 +31,11 @@ import {
   pinDynamic,
   type WorkFeedItem,
 } from '@/api/dynamic'
+import { createConversation } from '@/api/chat'
 import { uploadImage } from '@/api/upload'
 import { toast } from 'vue-sonner'
 import Navbar from '@/components/layout/Navbar.vue'
+import AppAvatar from '@/components/common/AppAvatar.vue'
 import {
   Home,
   Zap,
@@ -70,6 +72,7 @@ const user = ref<UserDetail | null>(null)
 const relation = ref<RelationInfo | null>(null)
 const loading = ref(true)
 const followLoading = ref(false)
+const chatOpening = ref(false)
 
 type TabKey = 'home' | 'dynamic' | 'videos' | 'favorites' | 'following' | 'fans' | 'settings'
 const activeTab = ref<TabKey>('home')
@@ -484,6 +487,25 @@ const handleFollow = async () => {
   }
 }
 
+const handleOpenChat = async () => {
+  if (isSelf.value) return
+  if (!authStore.isLoggedIn) {
+    toast.warning('请先登录')
+    return
+  }
+  if (chatOpening.value) return
+
+  chatOpening.value = true
+  try {
+    await createConversation({ peerId: userId.value })
+    void router.push({ name: 'message-chat-room', params: { peerId: userId.value } })
+  } catch {
+    toast.error('发起私聊失败')
+  } finally {
+    chatOpening.value = false
+  }
+}
+
 const publishDynamic = async () => {
   if (!newDynamicContent.value.trim()) {
     toast.warning('请输入动态内容')
@@ -771,9 +793,11 @@ const privacySettings = [
           class="absolute bottom-0 left-0 right-0 z-10 flex items-end px-8 pb-4 pt-24 bg-gradient-to-t from-black/60 to-transparent"
         >
           <div class="w-full flex items-end">
-            <img
+            <AppAvatar
               :src="user.avatar"
-              class="w-[84px] h-[84px] rounded-full border-[2px] border-white/80 shadow-md object-cover"
+              :name="user.username"
+              container-class="h-[84px] w-[84px] border-[2px] border-white/80 shadow-md"
+              text-class="text-2xl font-bold"
             />
             <div class="ml-5 text-white mb-1">
               <div class="flex items-center gap-2">
@@ -789,7 +813,7 @@ const privacySettings = [
                 {{ user.description || '编辑个性签名' }}
               </div>
             </div>
-            <div class="ml-auto mb-2">
+            <div class="ml-auto mb-2 flex items-center gap-3">
               <button
                 v-if="isSelf"
                 class="px-6 py-1.5 rounded bg-white/20 hover:bg-white/30 text-white border border-white/50 text-[14px] transition-colors"
@@ -797,18 +821,27 @@ const privacySettings = [
               >
                 编辑资料
               </button>
-              <button
-                v-else
-                class="px-8 py-1.5 rounded text-white text-[14px] font-medium transition-colors"
-                :class="
-                  isFollowed
-                    ? 'bg-white/20 hover:bg-white/30 border border-white/50'
-                    : 'bg-[#00a1d6] hover:bg-[#00b5e5] border border-transparent'
-                "
-                @click="handleFollow"
-              >
-                {{ followBtnText }}
-              </button>
+              <template v-else>
+                <button
+                  class="px-8 py-1.5 rounded text-white text-[14px] font-medium transition-colors"
+                  :class="
+                    isFollowed
+                      ? 'bg-white/20 hover:bg-white/30 border border-white/50'
+                      : 'bg-[#00a1d6] hover:bg-[#00b5e5] border border-transparent'
+                  "
+                  @click="handleFollow"
+                >
+                  {{ followBtnText }}
+                </button>
+                <button
+                  class="inline-flex items-center gap-1 rounded border border-white/50 bg-white/15 px-5 py-1.5 text-[14px] text-white transition-colors hover:bg-white/25 disabled:cursor-not-allowed disabled:opacity-60"
+                  :disabled="chatOpening"
+                  @click="handleOpenChat"
+                >
+                  <MessageSquare :size="14" />
+                  <span>{{ chatOpening ? '打开中...' : '私聊' }}</span>
+                </button>
+              </template>
             </div>
           </div>
         </div>
@@ -1135,7 +1168,12 @@ const privacySettings = [
             <!-- Post Editor (self only) -->
             <div v-if="isSelf" class="border border-[#e3e5e7] rounded-lg p-5">
               <div class="flex gap-3">
-                <img :src="user.avatar" class="w-10 h-10 rounded-full object-cover flex-shrink-0" />
+                <AppAvatar
+                  :src="user.avatar"
+                  :name="user.username"
+                  container-class="h-10 w-10 flex-shrink-0"
+                  text-class="text-sm font-semibold"
+                />
                 <div class="flex-1">
                   <textarea
                     v-model="newDynamicContent"
@@ -1183,11 +1221,17 @@ const privacySettings = [
               class="border border-[#e3e5e7] rounded-lg p-5"
             >
               <div class="flex gap-3">
-                <img
-                  :src="item.author.avatar"
-                  class="w-10 h-10 rounded-full object-cover flex-shrink-0 cursor-pointer"
+                <div
+                  class="flex-shrink-0 cursor-pointer"
                   @click="router.push(`/user/${item.author.id}`)"
-                />
+                >
+                  <AppAvatar
+                    :src="item.author.avatar"
+                    :name="item.author.username"
+                    container-class="h-10 w-10"
+                    text-class="text-sm font-semibold"
+                  />
+                </div>
                 <div class="flex-1 min-w-0">
                   <div class="flex items-center justify-between">
                     <div>
@@ -1615,7 +1659,15 @@ const privacySettings = [
             <template v-if="activeTab === 'following'">
               <div v-if="followingList.length > 0" class="grid grid-cols-3 gap-x-4 gap-y-1">
                 <div v-for="u in followingList" :key="u.id" class="sc-card">
-                  <img :src="u.avatar" class="sc-avatar" @click="router.push(`/user/${u.id}`)" />
+                  <div @click="router.push(`/user/${u.id}`)">
+                    <AppAvatar
+                      :src="u.avatar"
+                      :name="u.username"
+                      :alt="u.username"
+                      container-class="sc-avatar"
+                      text-class="text-base font-semibold"
+                    />
+                  </div>
                   <div class="sc-info">
                     <div class="sc-name" @click="router.push(`/user/${u.id}`)">
                       {{ u.username }}
@@ -1663,7 +1715,15 @@ const privacySettings = [
             <template v-else>
               <div v-if="fansList.length > 0" class="grid grid-cols-3 gap-x-4 gap-y-1">
                 <div v-for="u in fansList" :key="u.id" class="sc-card">
-                  <img :src="u.avatar" class="sc-avatar" @click="router.push(`/user/${u.id}`)" />
+                  <div @click="router.push(`/user/${u.id}`)">
+                    <AppAvatar
+                      :src="u.avatar"
+                      :name="u.username"
+                      :alt="u.username"
+                      container-class="sc-avatar"
+                      text-class="text-base font-semibold"
+                    />
+                  </div>
                   <div class="sc-info">
                     <div class="sc-name" @click="router.push(`/user/${u.id}`)">
                       {{ u.username }}

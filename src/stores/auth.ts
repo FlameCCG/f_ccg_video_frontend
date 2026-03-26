@@ -156,7 +156,8 @@ export const useAuthStore = defineStore(
      */
     const updateCoinCount = (delta: number) => {
       if (user.value) {
-        user.value.coinCount = Math.max(0, user.value.coinCount + delta)
+        const nextCoinCount = user.value.coinCount + delta
+        user.value.coinCount = Math.max(0, Math.round(nextCoinCount * 10) / 10)
       }
     }
 

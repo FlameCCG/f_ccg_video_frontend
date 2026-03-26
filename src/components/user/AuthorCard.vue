@@ -6,6 +6,7 @@ import { followUser, unfollowUser, getRelation, type RelationInfo } from '@/api/
 import type { VideoAuthorBrief } from '@/api/video'
 import { toast } from 'vue-sonner'
 import { UserPlus, UserCheck, Users } from 'lucide-vue-next'
+import AppAvatar from '@/components/common/AppAvatar.vue'
 
 const props = defineProps<{
   author: VideoAuthorBrief
@@ -82,10 +83,12 @@ watch(() => props.author.id, fetchRelation)
   <div class="author-card flex items-center gap-4 rounded-xl bg-card p-4">
     <!-- Avatar -->
     <div class="avatar-wrapper shrink-0 cursor-pointer relative group" @click="goToUserPage">
-      <img
+      <AppAvatar
         :src="author.avatar"
+        :name="author.username"
         :alt="author.username"
-        class="relative h-12 w-12 rounded-full object-cover ring-2 ring-border/50 transition-all duration-300 group-hover:ring-primary/50 group-hover:scale-105 shadow-sm z-10"
+        container-class="relative h-12 w-12 ring-2 ring-border/50 transition-all duration-300 group-hover:ring-primary/50 group-hover:scale-105 shadow-sm z-10"
+        text-class="text-base font-bold"
       />
     </div>
 

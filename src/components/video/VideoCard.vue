@@ -13,6 +13,23 @@ const props = withDefaults(defineProps<Props>(), {
 })
 const router = useRouter()
 
+const escapeHtml = (value: string) =>
+  value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
+
+const sanitizedTitleHtml = computed(() => {
+  const highlightedTitle = props.video.highlight?.title?.[0]?.trim()
+  if (!highlightedTitle) {
+    return escapeHtml(props.video.title)
+  }
+
+  return highlightedTitle.replace(/<(?!\/?em\b)[^>]*>/g, '')
+})
+
 // Format duration from seconds to mm:ss
 const formattedDuration = computed(() => {
   const seconds = props.video.duration
@@ -137,9 +154,8 @@ const handleClick = () => {
             ? 'line-clamp-1 text-[11px] leading-tight'
             : 'mb-1.5 line-clamp-2 text-sm leading-5',
         ]"
-      >
-        {{ video.title }}
-      </h3>
+        v-html="sanitizedTitleHtml"
+      ></h3>
 
       <!-- Author & Time Info (default mode only) -->
       <div
@@ -177,3 +193,10 @@ const handleClick = () => {
     </div>
   </div>
 </template>
+
+<style scoped>
+:deep(em) {
+  font-style: normal;
+  color: var(--color-primary);
+}
+</style>

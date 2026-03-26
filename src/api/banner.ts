@@ -25,11 +25,13 @@ export interface BannerItem {
   href: string
   show: boolean
   type: BannerType
+  partitionId: number
 }
 
 // Banner List Params
 export interface BannerListParams {
   type?: BannerType
+  partitionId?: number
 }
 
 // ============================================================================
@@ -50,11 +52,11 @@ export const getBannerList = (params?: BannerListParams): Promise<BannerItem[]> 
 
 /**
  * 获取首页轮播图
- * GET /common/banner/list?type=1
+ * GET /common/banner/list?type=1&partitionId=?
  * 接口说明: 获取首页轮播图列表
  */
-export const getHomeCarouselBanners = (): Promise<BannerItem[]> => {
-  return getBannerList({ type: BannerType.HOME_CAROUSEL })
+export const getHomeCarouselBanners = (partitionId?: number): Promise<BannerItem[]> => {
+  return getBannerList({ type: BannerType.HOME_CAROUSEL, partitionId })
 }
 
 /**

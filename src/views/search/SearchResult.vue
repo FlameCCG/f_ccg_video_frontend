@@ -8,10 +8,14 @@ import VideoCardSkeleton from '@/components/common/VideoCardSkeleton.vue'
 import AuthorCard from '@/components/user/AuthorCard.vue'
 import {
   searchVideos,
+  getSearchSuggest,
+  getHotSearchKeywords,
   VideoSortType,
   type VideoSortValue,
   type FeedItem,
   type SearchVideoHit,
+  type SearchSuggestItem,
+  type HotKeywordItem,
 } from '@/api/video'
 import { searchUsers, UserSortType, type UserSortValue, type SearchUserHit } from '@/api/user'
 import { useSearchHistory } from '@/composables/useSearchHistory'
@@ -26,7 +30,11 @@ const activeTab = ref('video') // 'video', 'user'
 const activeSort = ref<{ sort: number; order: number }>({ sort: 0, order: 0 })
 
 const { history, addHistory, removeHistoryItem, clearHistory } = useSearchHistory()
-const showHistory = ref(false)
+
+// Dropdown state
+const showDropdown = ref(false)
+const searchSuggestions = ref<SearchSuggestItem[]>([])
+const hotKeywords = ref<HotKeywordItem[]>([])
 
 const videoTotal = ref(0)
 const userTotal = ref(0)
@@ -62,22 +70,81 @@ const isLoading = ref(false)
 const searchVideoResults = ref<FeedItem[]>([])
 const searchUserResults = ref<SearchUserHit[]>([])
 
-const handleSearch = () => {
-  if (!keyword.value.trim()) return
-  addHistory(keyword.value)
-  showHistory.value = false
-  void router.push({ name: 'search', query: { keyword: keyword.value } })
+const mapSearchVideoHit = (video: SearchVideoHit): FeedItem => ({
+  id: video.id,
+  title: video.title,
+  cover: video.cover,
+  duration: video.duration,
+  views: video.views,
+  danmuCount: video.danmuCount,
+  author: { id: 0, username: video.authorUsername, avatar: '' },
+  createdAt: video.createdAt,
+  highlight: video.highlight,
+})
+
+// Search input handler – fetch suggestions when typing
+const handleSearchInput = async () => {
+  if (!keyword.value.trim()) {
+    searchSuggestions.value = []
+    showDropdown.value = true
+    return
+  }
+  try {
+    const suggestions = await getSearchSuggest({ prefix: keyword.value })
+    searchSuggestions.value = suggestions
+    showDropdown.value = true
+  } catch (error) {
+    console.error('Failed to fetch suggestions:', error)
+  }
 }
 
-const handleHistoryItemClick = (item: string) => {
-  keyword.value = item
-  handleSearch()
+const handleSearch = (query?: string) => {
+  const q = query ?? keyword.value
+  if (!q.trim()) return
+  keyword.value = q
+  addHistory(q)
+  showDropdown.value = false
+  void router.push({ name: 'search', query: { keyword: q } })
 }
 
 const handleBlur = () => {
   setTimeout(() => {
-    showHistory.value = false
+    showDropdown.value = false
   }, 200)
+}
+
+const fetchVideoResults = async (
+  params: Parameters<typeof searchVideos>[0],
+  options?: { silent?: boolean }
+) => {
+  try {
+    const videoRes = await searchVideos(params)
+    videoTotal.value = videoRes.videoTotal
+    searchVideoResults.value = videoRes.videos.map(mapSearchVideoHit)
+  } catch (error) {
+    videoTotal.value = 0
+    searchVideoResults.value = []
+    if (!options?.silent) {
+      console.error('Video search failed:', error)
+    }
+  }
+}
+
+const fetchUserResults = async (
+  params: Parameters<typeof searchUsers>[0],
+  options?: { silent?: boolean }
+) => {
+  try {
+    const userRes = await searchUsers(params)
+    userTotal.value = userRes.userTotal
+    searchUserResults.value = userRes.users
+  } catch (error) {
+    userTotal.value = 0
+    searchUserResults.value = []
+    if (!options?.silent) {
+      console.error('User search failed:', error)
+    }
+  }
 }
 
 // Full search: fetch both tabs to get accurate tab badge counts
@@ -85,21 +152,10 @@ const fetchFullSearch = async () => {
   if (!keyword.value.trim()) return
   isLoading.value = true
   try {
-    const [videoRes, userRes] = await Promise.all([
-      searchVideos({ keyword: keyword.value, page: 1, pageSize: 20 }),
-      searchUsers({ keyword: keyword.value, page: 1, pageSize: 20 }),
+    await Promise.all([
+      fetchVideoResults({ keyword: keyword.value, page: 1, pageSize: 20 }, { silent: true }),
+      fetchUserResults({ keyword: keyword.value, page: 1, pageSize: 20 }, { silent: true }),
     ])
-
-    videoTotal.value = videoRes.videoTotal
-    userTotal.value = userRes.userTotal
-
-    searchVideoResults.value = videoRes.videos.map((v: SearchVideoHit) => ({
-      ...v,
-      author: { id: 0, username: v.authorUsername, avatar: '' },
-      createdAt: new Date().toISOString(),
-    })) as unknown as FeedItem[]
-
-    searchUserResults.value = userRes.users
   } catch (error) {
     console.error('Search failed:', error)
   } finally {
@@ -114,29 +170,21 @@ const fetchCurrentTab = async () => {
   try {
     const { sort, order } = activeSort.value
     if (activeTab.value === 'video') {
-      const videoRes = await searchVideos({
+      await fetchVideoResults({
         keyword: keyword.value,
         page: 1,
         pageSize: 20,
         videoSort: sort as VideoSortValue,
         videoOrder: order,
       })
-      videoTotal.value = videoRes.videoTotal
-      searchVideoResults.value = videoRes.videos.map((v: SearchVideoHit) => ({
-        ...v,
-        author: { id: 0, username: v.authorUsername, avatar: '' },
-        createdAt: new Date().toISOString(),
-      })) as unknown as FeedItem[]
     } else if (activeTab.value === 'user') {
-      const userRes = await searchUsers({
+      await fetchUserResults({
         keyword: keyword.value,
         page: 1,
         pageSize: 20,
         userSort: sort as UserSortValue,
         userOrder: order,
       })
-      userTotal.value = userRes.userTotal
-      searchUserResults.value = userRes.users
     }
   } catch (error) {
     console.error('Search failed:', error)
@@ -172,7 +220,17 @@ watch(
   }
 )
 
+// Fetch hot keywords on mount
+const fetchHotKeywords = async () => {
+  try {
+    hotKeywords.value = await getHotSearchKeywords()
+  } catch {
+    /* noop */
+  }
+}
+
 onMounted(() => {
+  void fetchHotKeywords()
   if (keyword.value) {
     void fetchFullSearch()
   }
@@ -181,11 +239,10 @@ onMounted(() => {
 
 <template>
   <div class="search-page pb-10">
-    <!-- Top Search Header Layout -->
+    <!-- Top: Centered Search Bar -->
     <div class="w-full bg-white border-b border-[#e3e5e7] py-6 mb-4">
-      <div class="mx-auto flex max-w-[1400px] gap-2 px-4 sm:px-5 lg:px-6">
+      <div class="mx-auto flex w-full max-w-[700px] gap-2 px-4">
         <div class="relative flex-1">
-          <!-- Bilibili style big search bar -->
           <div class="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-4">
             <Search class="h-5 w-5 text-[#00a1d6]" />
           </div>
@@ -194,45 +251,89 @@ onMounted(() => {
             type="text"
             class="h-12 w-full rounded-md border-2 border-[#e3e5e7] bg-[#f6f7f8] pl-12 pr-4 text-base focus:border-[#00a1d6] focus:bg-white focus:outline-none transition-colors"
             placeholder="搜索你感兴趣的视频或 UP 主"
-            @keydown.enter="handleSearch"
-            @focus="showHistory = true"
+            @input="handleSearchInput"
+            @keydown.enter="handleSearch()"
+            @focus="handleSearchInput"
             @blur="handleBlur"
           />
-          <!-- Search History -->
+          <!-- Dropdown: Suggestions / History / Hot Keywords -->
           <div
-            v-if="showHistory && !keyword.trim() && history.length > 0"
-            class="absolute left-0 right-0 top-full z-[100] mt-1 max-h-80 overflow-y-auto overflow-x-hidden rounded-lg border bg-popover text-popover-foreground shadow-lg"
+            v-if="
+              showDropdown &&
+              (searchSuggestions.length > 0 ||
+                (!keyword.trim() && (history.length > 0 || hotKeywords.length > 0)))
+            "
+            class="absolute left-0 right-0 top-full z-[100] mt-1 max-h-[480px] overflow-y-auto overflow-x-hidden rounded-lg border bg-popover text-popover-foreground shadow-lg"
           >
-            <div
-              class="flex items-center justify-between px-4 pt-3 pb-2 text-sm text-muted-foreground"
-            >
-              <span class="font-medium">搜索历史</span>
-              <button
-                class="hover:text-primary flex items-center gap-1 transition-colors"
-                @mousedown.prevent="clearHistory"
-              >
-                <Trash2 class="h-3.5 w-3.5" />清空
-              </button>
-            </div>
-            <div class="flex flex-wrap gap-2 px-4 pb-3">
+            <!-- Suggestions (when typing) -->
+            <template v-if="keyword.trim() && searchSuggestions.length > 0">
               <div
-                v-for="item in history"
-                :key="item"
-                class="group flex items-center gap-1 rounded-sm bg-accent/50 px-2.5 py-1.5 text-xs cursor-pointer transition-colors hover:bg-accent hover:text-primary"
-                @mousedown.prevent="handleHistoryItemClick(item)"
+                v-for="(item, index) in searchSuggestions"
+                :key="index"
+                class="search-suggestion-item cursor-pointer px-4 py-2.5 text-sm hover:bg-accent hover:text-accent-foreground flex items-center gap-2"
+                @mousedown.prevent="handleSearch(item.value)"
               >
-                <span class="max-w-[140px] truncate">{{ item }}</span>
-                <X
-                  class="h-3.5 w-3.5 p-0.5 text-muted-foreground opacity-0 transition-all group-hover:opacity-100 hover:bg-black/10 rounded-full"
-                  @mousedown.prevent.stop="removeHistoryItem(item)"
-                />
+                <span class="truncate" v-html="item.highlight"></span>
               </div>
-            </div>
+            </template>
+
+            <!-- History + Hot Search (when empty) -->
+            <template v-else-if="!keyword.trim()">
+              <!-- Search History -->
+              <template v-if="history.length > 0">
+                <div
+                  class="flex items-center justify-between px-4 pt-3 pb-2 text-sm text-muted-foreground"
+                >
+                  <span class="font-medium">搜索历史</span>
+                  <button
+                    class="hover:text-primary flex items-center gap-1 transition-colors"
+                    @mousedown.prevent="clearHistory"
+                  >
+                    <Trash2 class="h-3.5 w-3.5" />清空
+                  </button>
+                </div>
+                <div class="flex flex-wrap gap-2 px-4 pb-3">
+                  <div
+                    v-for="item in history"
+                    :key="item"
+                    class="group flex items-center gap-1 rounded-md bg-[#f4f5f7] text-[#61666d] px-2.5 py-1.5 text-xs cursor-pointer hover:bg-[#ecedef] hover:text-[#18191c] transition-colors"
+                    @mousedown.prevent="handleSearch(item)"
+                  >
+                    <span class="max-w-[140px] truncate">{{ item }}</span>
+                    <X
+                      class="h-3.5 w-3.5 p-0.5 text-muted-foreground opacity-0 transition-all group-hover:opacity-100 hover:bg-black/10 rounded-full"
+                      @mousedown.prevent.stop="removeHistoryItem(item)"
+                    />
+                  </div>
+                </div>
+              </template>
+
+              <!-- Hot Search Keywords -->
+              <template v-if="hotKeywords.length > 0">
+                <div class="px-4 pt-3 pb-2 text-sm font-medium text-muted-foreground">CCG热搜</div>
+                <div class="grid grid-cols-2 gap-x-2 px-2 pb-3">
+                  <div
+                    v-for="(kw, idx) in hotKeywords.slice(0, 10)"
+                    :key="kw.keyword"
+                    class="hot-keyword-item flex cursor-pointer items-center gap-2.5 rounded-md px-2 py-2 text-sm transition-colors hover:bg-accent"
+                    @mousedown.prevent="handleSearch(kw.keyword)"
+                  >
+                    <span
+                      class="hot-rank inline-flex h-[18px] w-[18px] flex-shrink-0 items-center justify-center rounded text-xs font-bold"
+                      :class="idx < 3 ? 'bg-primary/10 text-primary' : 'text-muted-foreground'"
+                    >
+                      {{ idx + 1 }}
+                    </span>
+                    <span class="truncate text-foreground">{{ kw.keyword }}</span>
+                  </div>
+                </div>
+              </template>
+            </template>
           </div>
         </div>
         <Button
           class="h-12 w-28 rounded-md bg-[#00a1d6] text-base font-medium text-white hover:bg-[#00b5e5]"
-          @click="handleSearch"
+          @click="handleSearch()"
         >
           搜索
         </Button>
@@ -349,5 +450,10 @@ onMounted(() => {
 </template>
 
 <style scoped>
-/* Extra tweaks can be added here */
+/* Search suggestion highlight */
+.search-suggestion-item :deep(em) {
+  color: hsl(var(--primary));
+  font-style: normal;
+  font-weight: 600;
+}
 </style>

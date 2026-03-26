@@ -6,6 +6,7 @@ import ChannelNav from '@/components/layout/ChannelNav.vue'
 
 const route = useRoute()
 const hideChannelNav = computed(() => route.path === '/dynamic' || route.path === '/history')
+const isTrendingPage = computed(() => ['/hot', '/rank'].includes(route.path))
 
 const bannerRef = ref<HTMLDivElement | null>(null)
 const videoRef = ref<HTMLVideoElement | null>(null)
@@ -80,7 +81,7 @@ onBeforeUnmount(() => {
           <Navbar />
         </div>
       </div>
-      <div class="sticky top-0 z-40 w-full bg-background shadow-sm">
+      <div v-if="!isTrendingPage" class="sticky top-0 z-40 w-full bg-background shadow-sm">
         <ChannelNav />
       </div>
     </template>

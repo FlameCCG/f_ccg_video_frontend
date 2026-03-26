@@ -231,7 +231,11 @@ export interface PaginatedResult<T> {
 }
 
 // Creator Analytics Types
-export interface CreatorAnalyticsTotals {
+export type CreatorAnalyticsRange = '7d' | '30d' | 'month'
+
+export type CreatorAnalyticsType = 'fans' | 'views' | 'comments' | 'coins' | 'danmu' | 'favorites'
+
+export interface CreatorOverview {
   fans: number
   views: number
   comments: number
@@ -240,16 +244,17 @@ export interface CreatorAnalyticsTotals {
   favorites: number
 }
 
-export interface CreatorAnalyticsResult {
-  range: string
+export interface CreatorAnalyticsTrendResult {
+  range: CreatorAnalyticsRange
+  type: CreatorAnalyticsType
   x: string[]
-  fans: number[]
-  views: number[]
-  comments: number[]
-  coins: number[]
-  danmu: number[]
-  favorites: number[]
-  total: CreatorAnalyticsTotals
+  values: number[]
+  total: number
+}
+
+export interface CreatorAnalyticsQueryParams {
+  range?: CreatorAnalyticsRange
+  type?: CreatorAnalyticsType
 }
 
 // User Video Types
@@ -526,16 +531,27 @@ export const getCoinRecords = (
 }
 
 /**
+ * 创作者总览
+ * GET /common/user/creator/overview
+ * 认证: 需要登录（客户端全局自动携带 Token）
+ * 依赖接口: 无
+ * 接口说明: 返回播放/粉丝/评论/硬币/弹幕/收藏六项总量（需登录）
+ */
+export const getCreatorOverview = (): Promise<CreatorOverview> => {
+  return request.get('/common/user/creator/overview')
+}
+
+/**
  * 创作者数据分析
  * GET /common/user/creator/analytics
  * 认证: 需要登录（客户端全局自动携带 Token）
  * 依赖接口: 无
- * 接口说明: 返回粉丝/播放/评论/硬币/弹幕/收藏按天统计，支持近 7 天 / 近 30 天 / 自然月（需登录）
+ * 接口说明: 按指标类型返回单个趋势序列，支持近 7 天 / 近 30 天 / 自然月（需登录）
  */
 export const getCreatorAnalytics = (
-  range?: '7d' | '30d' | 'month'
-): Promise<CreatorAnalyticsResult> => {
-  return request.get('/common/user/creator/analytics', { params: { range } })
+  params?: CreatorAnalyticsQueryParams
+): Promise<CreatorAnalyticsTrendResult> => {
+  return request.get('/common/user/creator/analytics', { params })
 }
 
 // ============================================================================

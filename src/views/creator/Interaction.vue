@@ -24,6 +24,7 @@ import {
 } from 'lucide-vue-next'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
+import AppAvatar from '@/components/common/AppAvatar.vue'
 import { toast } from 'vue-sonner'
 
 const router = useRouter()
@@ -268,14 +269,13 @@ const handleMentionClick = (userId?: number) => {
             class="p-6 flex gap-4 group hover:bg-muted/30 transition-colors"
           >
             <!-- Avatar -->
-            <div
-              class="w-10 h-10 rounded-full overflow-hidden shrink-0 bg-muted border cursor-pointer"
-              @click="router.push(`/user/${comment.userId}`)"
-            >
-              <img
+            <div class="shrink-0 cursor-pointer" @click="router.push(`/user/${comment.userId}`)">
+              <AppAvatar
                 :src="comment.avatar"
+                :name="comment.username"
                 :alt="comment.username"
-                class="w-full h-full object-cover"
+                container-class="h-10 w-10 border bg-muted"
+                text-class="text-sm font-semibold"
               />
             </div>
 
@@ -316,12 +316,13 @@ const handleMentionClick = (userId?: number) => {
               >
                 <template v-if="findParentComment(comment)">
                   <div class="flex items-center gap-2 mb-2">
-                    <div class="w-6 h-6 rounded-full bg-muted overflow-hidden">
-                      <img
-                        :src="findParentComment(comment)!.avatar"
-                        class="w-full h-full object-cover"
-                      />
-                    </div>
+                    <AppAvatar
+                      :src="findParentComment(comment)!.avatar"
+                      :name="findParentComment(comment)!.username"
+                      :alt="findParentComment(comment)!.username"
+                      container-class="h-6 w-6 bg-muted"
+                      text-class="text-[10px] font-semibold"
+                    />
                     <span class="font-medium text-muted-foreground">
                       {{ findParentComment(comment)!.username }}
                     </span>

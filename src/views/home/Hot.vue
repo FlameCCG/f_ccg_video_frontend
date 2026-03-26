@@ -4,7 +4,7 @@ import { getHotVideos, type FeedItem } from '@/api/video'
 import VideoCard from '@/components/video/VideoCard.vue'
 import VideoCardSkeleton from '@/components/common/VideoCardSkeleton.vue'
 import InfiniteScroll from '@/components/common/InfiniteScroll.vue'
-import { Flame } from 'lucide-vue-next'
+import TrendingNav from '@/components/navigation/TrendingNav.vue'
 
 // State
 const videos = ref<FeedItem[]>([])
@@ -45,16 +45,12 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="mx-auto mt-6 mb-8 max-w-[1800px] px-4 sm:px-6 lg:px-8">
-    <!-- Page Header -->
-    <div class="mb-6 flex items-center gap-3">
-      <div class="flex h-10 w-10 items-center justify-center rounded-full bg-orange-500/10">
-        <Flame class="h-5 w-5 text-orange-500" />
-      </div>
-      <div>
-        <h1 class="text-xl font-semibold text-foreground">综合热门</h1>
-        <p class="text-sm text-muted-foreground">热度最高的视频，最多保留 Top200</p>
-      </div>
+  <div class="mx-auto mt-6 mb-8 max-w-[1400px] px-4 sm:px-6 lg:px-8">
+    <TrendingNav />
+
+    <!-- Page Header (Optional, but image 1 also has some subtle text "各个领域中新奇好玩的优质内容都在这里~") -->
+    <div class="mb-4 flex items-center justify-between">
+      <p class="text-sm text-muted-foreground mt-4">各个领域中新奇好玩的优质内容都在这里~</p>
     </div>
 
     <!-- Video Grid -->
@@ -62,15 +58,15 @@ onMounted(() => {
       <!-- Skeleton Loading -->
       <div
         v-if="initialLoading"
-        class="grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6"
+        class="grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5"
       >
-        <VideoCardSkeleton v-for="i in 12" :key="i" />
+        <VideoCardSkeleton v-for="i in 10" :key="i" />
       </div>
 
       <!-- Video Cards -->
       <div
         v-else
-        class="grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6"
+        class="grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5"
       >
         <VideoCard v-for="video in videos" :key="video.id" :video="video" />
       </div>

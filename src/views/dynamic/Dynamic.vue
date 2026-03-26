@@ -13,7 +13,9 @@ import {
   type FollowUserItem,
 } from '@/api/dynamic'
 import { uploadImage } from '@/api/upload'
+import { getHotSearchKeywords, type HotKeywordItem } from '@/api/video'
 import CommentSection from '@/components/comment/CommentSection.vue'
+import AppAvatar from '@/components/common/AppAvatar.vue'
 import { toast } from 'vue-sonner'
 import {
   ImagePlus,
@@ -63,6 +65,7 @@ const feedInitLoaded = ref(false)
 
 const followUsers = ref<FollowUserItem[]>([])
 const followUsersLoading = ref(false)
+const hotKeywords = ref<HotKeywordItem[]>([])
 
 // null = "全部动态" (self), otherwise = selected followed user
 const selectedUserId = ref<number | null>(null)
@@ -96,7 +99,11 @@ const fmtDuration = (s: number): string => {
 }
 
 const fmtTime = (dateStr: string): string => {
+  if (!dateStr) return '暂无更新'
+
   const d = new Date(dateStr)
+  if (Number.isNaN(d.getTime())) return '暂无更新'
+
   const now = new Date()
   const diffMs = now.getTime() - d.getTime()
   const diffMin = Math.floor(diffMs / 60000)
@@ -365,10 +372,19 @@ const goUserTab = (id: number, tab: string) =>
 
 const unreadFollowUsers = computed(() => followUsers.value.filter((u) => u.isUnread))
 
+const fetchHotKeywords = async () => {
+  try {
+    hotKeywords.value = await getHotSearchKeywords()
+  } catch {
+    /* noop */
+  }
+}
+
 onMounted(() => {
   document.addEventListener('click', closeEmojiOnOutsideClick)
   void fetchFeed(1)
   void fetchFollowUsers()
+  void fetchHotKeywords()
 })
 
 onBeforeUnmount(() => {
@@ -393,7 +409,12 @@ watch(
       <aside class="dyn-sidebar-left">
         <div v-if="authStore.isLoggedIn && authStore.user" class="dyn-profile-card">
           <div class="dyn-profile-top" @click="goUser(authStore.userId!)">
-            <img :src="authStore.user.avatar" class="dyn-profile-avatar" />
+            <AppAvatar
+              :src="authStore.user.avatar"
+              :name="authStore.user.username"
+              container-class="dyn-profile-avatar"
+              text-class="text-base font-bold"
+            />
             <div class="dyn-profile-info">
               <span class="dyn-profile-name">{{ authStore.user.username }}</span>
               <span
@@ -442,7 +463,12 @@ watch(
               @click="goUser(fu.userId)"
             >
               <div class="dyn-left-follow-aw">
-                <img :src="fu.avatar" />
+                <AppAvatar
+                  :src="fu.avatar"
+                  :name="fu.username"
+                  container-class="dyn-left-follow-avatar"
+                  text-class="text-xs font-semibold"
+                />
                 <span v-if="fu.isUnread" class="dyn-left-follow-dot"></span>
               </div>
               <div class="dyn-left-follow-info">
@@ -459,7 +485,13 @@ watch(
         <!-- Post Editor -->
         <div class="dyn-editor">
           <div class="dyn-editor-inner">
-            <img v-if="authStore.user" :src="authStore.user.avatar" class="dyn-editor-avatar" />
+            <AppAvatar
+              v-if="authStore.user"
+              :src="authStore.user.avatar"
+              :name="authStore.user.username"
+              container-class="dyn-editor-avatar"
+              text-class="text-sm font-semibold"
+            />
             <div class="dyn-editor-body">
               <textarea
                 ref="editorRef"
@@ -545,7 +577,12 @@ watch(
               @click="selectSwiperUser(fu)"
             >
               <div class="dyn-swiper-avatar-wrap">
-                <img :src="fu.avatar" class="dyn-swiper-avatar" />
+                <AppAvatar
+                  :src="fu.avatar"
+                  :name="fu.username"
+                  container-class="dyn-swiper-avatar"
+                  text-class="text-sm font-semibold"
+                />
                 <span v-if="fu.isUnread" class="dyn-swiper-unread"></span>
               </div>
               <span class="dyn-swiper-name">{{ fu.username }}</span>
@@ -580,11 +617,14 @@ watch(
             :key="`${item.workType}-${item.workId}`"
             class="dyn-feed-item"
           >
-            <img
-              :src="item.author.avatar"
-              class="dyn-feed-avatar"
-              @click="goUser(item.author.id)"
-            />
+            <div class="cursor-pointer" @click="goUser(item.author.id)">
+              <AppAvatar
+                :src="item.author.avatar"
+                :name="item.author.username"
+                container-class="dyn-feed-avatar"
+                text-class="text-sm font-semibold"
+              />
+            </div>
             <div class="dyn-feed-body">
               <div class="dyn-feed-header">
                 <span class="dyn-feed-author" @click="goUser(item.author.id)">
@@ -715,12 +755,40 @@ watch(
               class="dyn-recent-item"
               @click="selectSwiperUser(fu)"
             >
-              <img :src="fu.avatar" class="dyn-recent-avatar" />
+              <AppAvatar
+                :src="fu.avatar"
+                :name="fu.username"
+                container-class="dyn-recent-avatar"
+                text-class="text-xs font-semibold"
+              />
               <div class="dyn-recent-info">
                 <span class="dyn-recent-name">{{ fu.username }}</span>
               </div>
               <span class="dyn-recent-type">
                 {{ fu.latestWorkType === 1 ? '视频' : '图文' }}
+              </span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Hot Search Card -->
+        <div v-if="hotKeywords.length > 0" class="dyn-right-card">
+          <div class="dyn-right-card-header">
+            <span>CCG热搜</span>
+          </div>
+          <div class="dyn-hot-list">
+            <div
+              v-for="(kw, idx) in hotKeywords.slice(0, 10)"
+              :key="kw.keyword"
+              class="dyn-hot-item"
+              @click="router.push({ name: 'search', query: { keyword: kw.keyword } })"
+            >
+              <span class="dyn-hot-rank" :class="idx < 3 ? 'dyn-hot-rank-top' : ''">
+                {{ idx + 1 }}
+              </span>
+              <span class="dyn-hot-keyword">{{ kw.keyword }}</span>
+              <span v-if="idx < 3" class="dyn-hot-badge">
+                {{ idx === 0 ? '🔥' : idx === 1 ? '🔥' : '热' }}
               </span>
             </div>
           </div>
@@ -873,13 +941,13 @@ watch(
 .dyn-left-follow-aw {
   position: relative;
   flex-shrink: 0;
-}
-
-.dyn-left-follow-aw img {
   width: 32px;
   height: 32px;
-  border-radius: 50%;
-  object-fit: cover;
+}
+
+.dyn-left-follow-avatar {
+  width: 100%;
+  height: 100%;
 }
 
 .dyn-left-follow-dot {
@@ -1688,6 +1756,60 @@ watch(
   padding: 2px 6px;
   background: #e8f5ff;
   border-radius: 4px;
+}
+
+/* Hot Search */
+.dyn-hot-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.dyn-hot-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 4px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 0.12s;
+}
+
+.dyn-hot-item:hover {
+  background: #f6f7f8;
+}
+
+.dyn-hot-rank {
+  width: 18px;
+  height: 18px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: 700;
+  color: #9499a0;
+  flex-shrink: 0;
+  border-radius: 4px;
+}
+
+.dyn-hot-rank-top {
+  background: #00a1d6;
+  color: #fff;
+}
+
+.dyn-hot-keyword {
+  flex: 1;
+  min-width: 0;
+  font-size: 13px;
+  color: #18191c;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.dyn-hot-badge {
+  font-size: 11px;
+  flex-shrink: 0;
 }
 
 /* ===================== Responsive ===================== */

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, onBeforeUnmount, watch, computed } from 'vue'
+import { ref, onMounted, onBeforeUnmount, watch, computed, toRaw } from 'vue'
 import Artplayer, { type Option, type Setting } from 'artplayer'
 import artplayerPluginDanmuku from 'artplayer-plugin-danmuku'
 import { useVideoStore } from '@/stores/video'
@@ -103,6 +103,14 @@ let heldDanmu: HeldDanmu | null = null
 // Keep a map of danmu id -> metadata for items loaded in batch
 const loadedDanmuMeta = new Map<number, DanmuMeta>()
 
+const getDanmuPlugin = (art: Artplayer | null | undefined = artRef.value) => {
+  if (!art) return undefined
+
+  return toRaw(art).plugins?.artplayerPluginDanmuku as
+    | ReturnType<ReturnType<typeof artplayerPluginDanmuku>>
+    | undefined
+}
+
 const loadDanmuList = async (): Promise<
   { id?: string; text: string; time: number; color: string; mode: 0 | 1 | 2 }[]
 > => {
@@ -144,9 +152,7 @@ const loadDanmuList = async (): Promise<
 
 const emitDanmu = (danmu: PlayerDanmuPayload) => {
   if (!artRef.value) return
-  const plugin = artRef.value.plugins?.artplayerPluginDanmuku as
-    | ReturnType<ReturnType<typeof artplayerPluginDanmuku>>
-    | undefined
+  const plugin = getDanmuPlugin()
   if (plugin) {
     const emitted = {
       text: danmu.text,
@@ -187,9 +193,7 @@ const emitDanmu = (danmu: PlayerDanmuPayload) => {
 const setDanmuVisible = (visible: boolean) => {
   danmuVisible.value = visible
   if (!artRef.value) return
-  const plugin = artRef.value.plugins?.artplayerPluginDanmuku as
-    | ReturnType<ReturnType<typeof artplayerPluginDanmuku>>
-    | undefined
+  const plugin = getDanmuPlugin()
   if (plugin) {
     if (visible) plugin.show()
     else plugin.hide()
@@ -199,9 +203,7 @@ const setDanmuVisible = (visible: boolean) => {
 const setDanmuOpacity = (opacity: number) => {
   danmuOpacity.value = opacity
   if (!artRef.value) return
-  const plugin = artRef.value.plugins?.artplayerPluginDanmuku as
-    | ReturnType<ReturnType<typeof artplayerPluginDanmuku>>
-    | undefined
+  const plugin = getDanmuPlugin()
   if (plugin) {
     plugin.config({ ...plugin.option, opacity })
   }
@@ -613,9 +615,7 @@ const initPlayer = () => {
   })
   emit('ready', art)
 
-  const danmuPlugin = art.plugins?.artplayerPluginDanmuku as
-    | ReturnType<ReturnType<typeof artplayerPluginDanmuku>>
-    | undefined
+  const danmuPlugin = getDanmuPlugin(art)
   if (danmuPlugin) {
     emit('danmuPlugin', danmuPlugin)
   }

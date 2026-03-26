@@ -85,15 +85,14 @@ const handleSend = async () => {
     }
     if (props.partId) sendParams.partId = props.partId
     const result = await sendDanmu(sendParams)
-
-    emit('sent', {
+    const sentDanmu: PlayerDanmuPayload = {
       id: result.id,
       text,
       time: props.currentTime,
       color: selectedColor.value,
       mode: selectedPosition.value as 0 | 1 | 2,
       isSelf: true,
-    })
+    }
 
     inputText.value = ''
     sendSuccess.value = true
@@ -101,6 +100,12 @@ const handleSend = async () => {
       sendSuccess.value = false
     }, 1500)
     toast.success('弹幕发送成功')
+
+    try {
+      emit('sent', sentDanmu)
+    } catch (error) {
+      console.error('Failed to sync sent danmu to player', error)
+    }
   } catch {
     toast.error('弹幕发送失败')
   } finally {

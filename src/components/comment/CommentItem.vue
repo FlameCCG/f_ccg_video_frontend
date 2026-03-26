@@ -9,6 +9,7 @@ import { useTimeAgo } from '@vueuse/core'
 import { onClickOutside } from '@vueuse/core'
 import { toast } from 'vue-sonner'
 import CommentInput from './CommentInput.vue'
+import AppAvatar from '@/components/common/AppAvatar.vue'
 
 const router = useRouter()
 
@@ -169,11 +170,12 @@ const handleReplyDeleted = (id: number) => {
   <div class="flex gap-4 py-4" :class="{ 'py-2': isReply }">
     <!-- Avatar -->
     <div class="shrink-0">
-      <img
+      <AppAvatar
         :src="comment.avatar"
-        class="rounded-full object-cover"
-        :class="isReply ? 'h-6 w-6' : 'h-10 w-10'"
+        :name="comment.username"
         alt="avatar"
+        :container-class="isReply ? 'h-6 w-6' : 'h-10 w-10'"
+        :text-class="isReply ? 'text-[11px] font-semibold' : 'text-sm font-semibold'"
       />
     </div>
 

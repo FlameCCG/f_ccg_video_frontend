@@ -3,6 +3,7 @@ import { ref, nextTick, onMounted } from 'vue'
 import { useAuthStore } from '@/stores/auth'
 import { getMentionSuggest, type MentionUser } from '@/api/user'
 import EmojiPicker from '@/components/common/EmojiPicker.vue'
+import AppAvatar from '@/components/common/AppAvatar.vue'
 import { Smile, AtSign } from 'lucide-vue-next'
 import { useDebounceFn, onClickOutside } from '@vueuse/core'
 
@@ -143,11 +144,13 @@ onMounted(() => {
 <template>
   <div class="flex gap-4">
     <div class="shrink-0">
-      <img
-        v-if="authStore.isLoggedIn && authStore.user?.avatar"
-        :src="authStore.user.avatar"
-        class="h-10 w-10 rounded-full object-cover"
+      <AppAvatar
+        v-if="authStore.isLoggedIn"
+        :src="authStore.user?.avatar"
+        :name="authStore.user?.username"
         alt="avatar"
+        container-class="h-10 w-10"
+        text-class="text-sm font-semibold"
       />
       <div
         v-else
@@ -185,7 +188,12 @@ onMounted(() => {
             class="flex w-full items-center gap-3 px-4 py-2 text-left hover:bg-[#f1f2f3] transition-colors"
             @click="selectMention(user)"
           >
-            <img :src="user.avatar" class="h-8 w-8 rounded-full object-cover shrink-0" />
+            <AppAvatar
+              :src="user.avatar"
+              :name="user.username"
+              container-class="h-8 w-8 shrink-0"
+              text-class="text-xs font-semibold"
+            />
             <div class="flex flex-col overflow-hidden">
               <span class="truncate text-sm text-[#18191c]">{{ user.username }}</span>
               <span class="truncate text-xs text-[#9499a0]">{{ user.followerCount }}粉丝</span>

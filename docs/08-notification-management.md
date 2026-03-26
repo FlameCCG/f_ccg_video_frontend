@@ -34,8 +34,8 @@ Base URL：/v1
 | data.list[].title | string | 通知标题 |
 | data.list[].content | string | 通知内容 |
 | data.list[].link | string | 外部链接 |
-| data.list[].articleID | integer(uint) | 视频ID |
-| data.list[].articleTitle | string | 视频标题 |
+| data.list[].videoID | integer(uint) | 视频ID |
+| data.list[].videoTitle | string | 视频标题 |
 | data.list[].commentID | integer(uint) | 评论ID |
 | data.list[].isRead | boolean | 是否已读 |
 
@@ -55,8 +55,8 @@ Base URL：/v1
         "title": "示例标题",
         "content": "示例内容",
         "link": "https://example.com/page",
-        "articleID": 2001,
-        "articleTitle": "示例标题",
+        "videoID": 2001,
+        "videoTitle": "示例标题",
         "commentID": 3001,
         "isRead": true
       }

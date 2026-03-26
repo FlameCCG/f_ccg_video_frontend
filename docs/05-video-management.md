@@ -181,6 +181,40 @@ Base URL：/v1
 }
 ```
 
+## [GET] 首页搜索关键词前十
+
+- 接口路径: GET /common/video/home/search/top
+- 认证: 无需登录
+- 依赖接口: GET /common/video/search（搜索成功后累计关键词热度）
+- 接口说明: 获取首页搜索关键词前十列表，用于展示热搜；当暂无搜索热度时，会回退为热门视频标题推荐
+- HTTP 状态码: 200（业务码 code 判断成功/失败）
+- 响应结构: code=0 成功，code=1 失败；msg 为提示信息
+
+响应字段:
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| data | array<HotKeywordItem> | 热搜关键词前十列表 |
+| data[].keyword | string | 热搜关键词 |
+| data[].score | integer(int64) | 关键词热度分值/累计次数 |
+
+响应示例:
+```json
+{
+  "code": 0,
+  "data": [
+    {
+      "keyword": "原神",
+      "score": 128
+    },
+    {
+      "keyword": "崩坏：星穹铁道",
+      "score": 96
+    }
+  ],
+  "msg": "ok"
+}
+```
+
 ## [POST] 举报视频
 
 - 接口路径: POST /common/video/report
@@ -684,7 +718,7 @@ Base URL：/v1
 - 接口路径: POST /common/video/coin
 - 认证: 需要登录（客户端全局自动携带 Token）
 - 依赖接口: 无
-- 接口说明: 给视频投币（需登录，每个视频最多投2个币）
+- 接口说明: 给视频投币（需登录，每个视频最多投2个币；会扣除当前用户等额硬币，作者获得投币数 `10%` 的硬币奖励，余额不足时返回失败）
 - HTTP 状态码: 200（业务码 code 判断成功/失败）
 - 响应结构: code=0 成功，code=1 失败；msg 为提示信息
 
@@ -693,6 +727,10 @@ Base URL：/v1
 | --- | --- | --- | --- | --- |
 | videoId | body | integer | 是 | 视频ID |
 | coins | body | integer | 否 | 投币数量（1-2） |
+
+说明:
+- 投 `1` 币时，当前用户扣 `1.0` 硬币，作者获得 `0.1` 硬币
+- 投 `2` 币时，当前用户扣 `2.0` 硬币，作者获得 `0.2` 硬币
 
 响应字段:
 | 字段 | 类型 | 说明 |
@@ -716,7 +754,7 @@ Base URL：/v1
 - 接口路径: POST /common/video/favorite
 - 认证: 需要登录（客户端全局自动携带 Token）
 - 依赖接口: 无
-- 接口说明: 切换视频在指定收藏夹内的收藏状态（需登录）；同一视频可同时存在于多个收藏夹中，再次传入同一 `folderId` 则取消该收藏夹内的收藏
+- 接口说明: 切换视频在指定收藏夹内的收藏状态（需登录）；同一视频可同时存在于多个收藏夹中，再次传入同一 `folderId` 则取消该收藏夹内的收藏；当某用户首次收藏某视频时，作者获得 `0.1` 硬币奖励
 - HTTP 状态码: 200（业务码 code 判断成功/失败）
 - 响应结构: code=0 成功，code=1 失败；msg 为提示信息
 
@@ -725,6 +763,9 @@ Base URL：/v1
 | --- | --- | --- | --- | --- |
 | videoId | body | integer | 是 | 视频ID |
 | folderId | body | integer | 否 | 收藏夹ID（可选，不填使用默认收藏夹） |
+
+说明:
+- 只有“该用户第一次收藏这个视频”时才会给作者增加 `0.1` 硬币
 
 响应字段:
 | 字段 | 类型 | 说明 |
@@ -748,7 +789,7 @@ Base URL：/v1
 - 接口路径: POST /common/video/triple
 - 认证: 需要登录（客户端全局自动携带 Token）
 - 依赖接口: 无
-- 接口说明: 同时点赞/投币/收藏（需登录）
+- 接口说明: 同时点赞/投币/收藏（需登录）；若本次需要投币，会先校验硬币余额，不足则直接返回失败
 - HTTP 状态码: 200（业务码 code 判断成功/失败）
 - 响应结构: code=0 成功，code=1 失败；msg 为提示信息
 
@@ -758,6 +799,11 @@ Base URL：/v1
 | videoId | body | integer | 是 | 视频ID |
 | folderId | body | integer | 否 | 收藏夹ID（可选，默认使用默认收藏夹） |
 | coins | body | integer | 否 | 投币数量（1-2，可选） |
+
+说明:
+- 若本次三连包含投币，会按投币数量扣除当前用户等额硬币
+- 若本次三连包含首次收藏，会给作者增加 `0.1` 硬币
+- 若本次三连包含投币，会给作者增加投币数 `10%` 的硬币奖励
 
 响应字段:
 | 字段 | 类型 | 说明 |
@@ -1693,6 +1739,74 @@ Base URL：/v1
         "position": 1,
         "likeCount": 1,
         "isLiked": true,
+        "createdAt": "2024-06-01T12:00:00Z"
+      }
+    ],
+    "total": 1
+  },
+  "msg": "获取成功"
+}
+```
+
+## [GET] 创作者弹幕列表
+
+- 接口路径: GET /common/video/danmu/creator/list
+- 认证: 需要登录（客户端全局自动携带 Token）
+- 依赖接口: 无
+- 接口说明: 获取自己视频下的弹幕列表（需登录）
+- HTTP 状态码: 200（业务码 code 判断成功/失败）
+- 响应结构: code=0 成功，code=1 失败；msg 为提示信息
+
+请求参数:
+| 名称 | 位置 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- | --- |
+| page | query | integer | 否 | 页码 |
+| pageSize | query | integer | 否 | 每页数量 |
+| sort | query | integer | 否 | 排序方式（0最近 1点赞最多） 可选: 0/1 |
+| keyword | query | string | 否 | 关键字搜索，支持匹配弹幕内容、发送用户、视频标题 |
+
+响应字段:
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| data | object | - |
+| data.list | array<CreatorDanmuItem> | - |
+| data.list[].id | integer(uint) | 弹幕ID |
+| data.list[].userId | integer(uint) | 用户ID |
+| data.list[].username | string | 用户名 |
+| data.list[].avatar | string | 用户头像 |
+| data.list[].videoId | integer(uint) | 视频ID |
+| data.list[].videoTitle | string | 视频标题 |
+| data.list[].videoCover | string | 视频封面 |
+| data.list[].videoPartId | integer(uint) | 分P ID |
+| data.list[].content | string | 弹幕内容 |
+| data.list[].timeOffset | integer | 弹幕时间偏移（秒） |
+| data.list[].color | string | 弹幕颜色 |
+| data.list[].fontSize | integer | 字体大小 |
+| data.list[].position | integer | 弹幕位置（0滚动 1顶部 2底部） |
+| data.list[].likeCount | integer(int64) | 点赞数 |
+| data.list[].createdAt | string(date-time) | 创建时间 |
+
+响应示例:
+```json
+{
+  "code": 0,
+  "data": {
+    "list": [
+      {
+        "id": 9001,
+        "userId": 1001,
+        "username": "alice",
+        "avatar": "https://cdn.example.com/avatar/1001.png",
+        "videoId": 2001,
+        "videoTitle": "测试视频",
+        "videoCover": "https://cdn.example.com/video/2001-cover.png",
+        "videoPartId": 20011,
+        "content": "示例内容",
+        "timeOffset": 12,
+        "color": "#FFFFFF",
+        "fontSize": 25,
+        "position": 0,
+        "likeCount": 3,
         "createdAt": "2024-06-01T12:00:00Z"
       }
     ],

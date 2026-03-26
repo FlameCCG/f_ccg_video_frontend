@@ -8,26 +8,13 @@ Base URL：/v1
 
 - 接口路径: POST /common/user/register/email
 - 认证: 可选登录（客户端可携带 Token）
-- 依赖接口: 邮箱验证码接口、滑块验证码接口（启用时）
+- 依赖接口: 无
 - 接口说明: 通过邮箱注册新用户，需要先通过滑块验证码和邮箱验证码
 - HTTP 状态码: 200（业务码 code 判断成功/失败）
 - 响应结构: code=0 成功，code=1 失败；msg 为提示信息
 
 请求参数:
-| 名称 | 位置 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- | --- |
-| username | body | string | 是 | 用户名 |
-| password | body | string | 是 | 密码 |
-| email | body | string | 是 | 邮箱地址（需与邮箱验证码一致） |
-| emailID | body | string | 否 | 邮箱验证码ID（启用邮箱验证码时必填，来自 /common/captcha/email） |
-| emailCode | body | string | 否 | 邮箱验证码（启用邮箱验证码时必填） |
-| slideCaptchaToken | body | string | 否 | 滑块验证码Token（启用滑块验证码时必填，来自 /common/captcha/slide） |
-| slideCaptchaX | body | integer | 否 | 滑块验证码X坐标（启用滑块验证码时必填） |
-| slideCaptchaY | body | integer | 否 | 滑块验证码Y坐标（启用滑块验证码时必填） |
-
-说明:
-- 是否需要邮箱验证码字段，应根据 `GET /common/site/config` 返回的 `data.site.register.emailCaptcha` 判断
-- 是否需要滑块验证码字段，应根据 `GET /common/site/config` 返回的 `data.site.register.slideCaptcha` 判断
+- 无
 
 响应字段:
 | 字段 | 类型 | 说明 |
@@ -47,7 +34,7 @@ Base URL：/v1
 
 - 接口路径: POST /common/user/login/pwd
 - 认证: 可选登录（客户端可携带 Token）
-- 依赖接口: 点击验证码接口（启用时）
+- 依赖接口: 图形/滑块/点选验证码接口
 - 接口说明: 使用用户名/邮箱和密码登录，需要先通过点击验证码
 - HTTP 状态码: 200（业务码 code 判断成功/失败）
 - 响应结构: code=0 成功，code=1 失败；msg 为提示信息
@@ -57,14 +44,11 @@ Base URL：/v1
 | --- | --- | --- | --- | --- |
 | username | body | string | 是 | 用户名或邮箱 |
 | password | body | string | 是 | 密码 |
-| captchaToken | body | string | 否 | 点击验证码token（启用点击验证码时必填，来自 /common/captcha/click） |
-| captchaDots | body | array<ClickCaptchaPoint> | 否 | 点击点位列表（启用点击验证码时必填，按顺序） |
-| captchaDots[].index | body | integer | 否 | 点击顺序索引（从0开始） |
-| captchaDots[].x | body | integer | 否 | 点击的X坐标 |
-| captchaDots[].y | body | integer | 否 | 点击的Y坐标 |
-
-说明:
-- 是否需要点击验证码字段，应根据 `GET /common/site/config` 返回的 `data.site.login.textClickCaptcha` 判断
+| captchaToken | body | string | 是 | 点击验证码token（来自 /common/captcha/click） |
+| captchaDots | body | array<ClickCaptchaPoint> | 是 | 点击点位列表（按顺序） |
+| captchaDots[].index | body | integer | 是 | 点击顺序索引（从0开始） |
+| captchaDots[].x | body | integer | 是 | 点击的X坐标 |
+| captchaDots[].y | body | integer | 是 | 点击的Y坐标 |
 
 响应字段:
 | 字段 | 类型 | 说明 |
@@ -288,7 +272,7 @@ Base URL：/v1
 | data.birthday | string | 生日（YYYY-MM-DD格式） |
 | data.level | integer | 用户等级 |
 | data.exp | integer(int64) | 经验值 |
-| data.coinCount | integer(int64) | 硬币数量 |
+| data.coinCount | number(double) | 硬币数量（支持1位小数） |
 | data.followCount | integer(int64) | 关注数 |
 | data.fansCount | integer(int64) | 粉丝数 |
 | data.dynamicCount | integer(int64) | 动态数量 |
@@ -309,7 +293,7 @@ Base URL：/v1
     "birthday": "2024-06-01",
     "level": 3,
     "exp": 120,
-    "coinCount": 1,
+    "coinCount": 1.23,
     "followCount": 1,
     "fansCount": 1,
     "dynamicCount": 1,
@@ -367,9 +351,6 @@ Base URL：/v1
 | emailCode | body | string | 是 | 邮箱验证码 |
 | email | body | string | 是 | 邮箱 |
 
-说明:
-- 当前实现始终校验邮箱验证码，不受 `GET /common/site/config` 返回的 `data.site.register.emailCaptcha` 影响
-
 响应字段:
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
@@ -400,9 +381,6 @@ Base URL：/v1
 | emailCode | body | string | 是 | 邮箱验证码 |
 | email | body | string | 是 | 邮箱 |
 | newPassword | body | string | 是 | 新密码 |
-
-说明:
-- 当前实现始终校验邮箱验证码，不受 `GET /common/site/config` 返回的 `data.site.register.emailCaptcha` 影响
 
 响应字段:
 | 字段 | 类型 | 说明 |
@@ -462,40 +440,13 @@ Base URL：/v1
 响应字段:
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
-| data | UserConf | - |
-| data.likeTags | array<string> | 喜欢的标签列表 |
-| data.bannerId | integer(uint) | 预制横幅ID |
-| data.bannerUrl | string | 自定义横幅URL |
-| data.openCollect | boolean | 是否公开收藏 |
-| data.openFans | boolean | 是否公开粉丝 |
-| data.openFollow | boolean | 是否公开关注 |
-| data.openLike | boolean | 是否公开最近点赞的视频 |
-| data.openLikeArticle | boolean | 是否公开点赞文章 |
-| data.openCoinVideo | boolean | 是否公开投币视频 |
-| data.openCoinArticle | boolean | 是否公开投币文章 |
-| data.openFollowAnime | boolean | 是否公开追番 |
-| data.homeStyleID | integer(uint) | 首页风格ID |
+| data | object | - |
 
 响应示例:
 ```json
 {
   "code": 0,
-  "data": {
-    "likeTags": [
-      "示例标签"
-    ],
-    "bannerId": 0,
-    "bannerUrl": "https://example.com/page",
-    "openCollect": true,
-    "openFans": true,
-    "openFollow": true,
-    "openLike": true,
-    "openLikeArticle": true,
-    "openCoinVideo": true,
-    "openCoinArticle": true,
-    "openFollowAnime": true,
-    "homeStyleID": 1
-  },
+  "data": {},
   "msg": "获取成功"
 }
 ```
@@ -525,9 +476,6 @@ Base URL：/v1
 | bannerUrl | body | string | 否 | 自定义横幅URL（可选） |
 | likeTags | body | array<string> | 否 | 喜欢的标签列表（可选） |
 
-说明:
-- `bannerId` 与 `bannerUrl` 不能同时传
-
 响应字段:
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
@@ -554,8 +502,8 @@ Base URL：/v1
 请求参数:
 | 名称 | 位置 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- | --- |
-| fileHash | form | string | 是 | 文件哈希值 |
-| banner | form | string(binary) | 是 | 横幅图片文件 |
+| fileHash | body | string | 是 | 文件哈希值 |
+| banner | body | string(binary) | 是 | 横幅图片文件 |
 
 响应字段:
 | 字段 | 类型 | 说明 |
@@ -589,6 +537,8 @@ Base URL：/v1
 | keyword | query | string | 否 | 搜索关键词（可选） |
 | page | query | integer | 否 | 页码 |
 | pageSize | query | integer | 否 | 每页数量 |
+| keyword | query | string | 否 | 关键字搜索，仅匹配用户名 |
+| partitionId | query | integer | 否 | 分区ID（可选） |
 
 响应字段:
 | 字段 | 类型 | 说明 |
@@ -736,7 +686,7 @@ Base URL：/v1
 | data | object | - |
 | data.list | array<UserCoinRecordItem> | - |
 | data.list[].id | integer(uint) | 记录ID |
-| data.list[].delta | integer(int64) | 硬币数量变化（可为负） |
+| data.list[].delta | number(double) | 硬币数量变化（支持1位小数，可为负） |
 | data.list[].reason | string | 原因 |
 | data.list[].createdAt | string(date-time) | 变更时间 |
 | data.total | integer(int64) | - |
@@ -749,7 +699,7 @@ Base URL：/v1
     "list": [
       {
         "id": 1,
-        "delta": 1,
+        "delta": 1.23,
         "reason": "示例原因",
         "createdAt": "2024-06-01T12:00:00Z"
       }
@@ -765,7 +715,7 @@ Base URL：/v1
 - 接口路径: GET /common/user/creator/analytics
 - 认证: 需要登录（客户端全局自动携带 Token）
 - 依赖接口: 无
-- 接口说明: 返回粉丝/播放/评论/硬币/弹幕/收藏按天统计，支持近7天/近30天/自然月（需登录）
+- 接口说明: 按指标类型返回单个趋势序列，支持近7天/近30天/自然月（需登录）
 - HTTP 状态码: 200（业务码 code 判断成功/失败）
 - 响应结构: code=0 成功，code=1 失败；msg 为提示信息
 
@@ -773,62 +723,78 @@ Base URL：/v1
 | 名称 | 位置 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- | --- |
 | range | query | string | 否 | 时间范围 可选: 7d/30d/month |
+| type | query | string | 否 | 指标类型 可选: fans/views/comments/coins/danmu/favorites，默认 views |
 
 响应字段:
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
-| data | CreatorAnalyticsResult | - |
+| data | CreatorAnalyticsTrendResult | - |
 | data.range | string | 时间范围（7d/30d/month） |
+| data.type | string | 指标类型（fans/views/comments/coins/danmu/favorites） |
 | data.x | array<string> | 日期轴（YYYY-MM-DD） |
-| data.fans | array<integer(int64)> | 粉丝净增 |
-| data.views | array<integer(int64)> | 播放量增量 |
-| data.comments | array<integer(int64)> | 评论增量 |
-| data.coins | array<integer(int64)> | 硬币增量 |
-| data.danmu | array<integer(int64)> | 弹幕增量 |
-| data.favorites | array<integer(int64)> | 收藏增量 |
-| data.total | CreatorAnalyticsTotals | - |
-| data.total.fans | integer(int64) | 粉丝净增 |
-| data.total.views | integer(int64) | 播放量增量 |
-| data.total.comments | integer(int64) | 评论增量 |
-| data.total.coins | integer(int64) | 硬币增量 |
-| data.total.danmu | integer(int64) | 弹幕增量 |
-| data.total.favorites | integer(int64) | 收藏增量 |
+| data.values | array<integer(int64)> | 对应指标的按天增量值 |
+| data.total | integer(int64) | 当前时间范围内该指标总增量 |
 
 响应示例:
 ```json
 {
   "code": 0,
   "data": {
-    "range": "2024-06-01T12:00:00Z",
+    "range": "7d",
+    "type": "views",
     "x": [
-      "2024-06-01"
+      "2026-03-18",
+      "2026-03-19",
+      "2026-03-20",
+      "..."
     ],
-    "fans": [
-      1
+    "values": [
+      3,
+      8,
+      5,
+      "..."
     ],
-    "views": [
-      1
-    ],
-    "comments": [
-      1
-    ],
-    "coins": [
-      5
-    ],
-    "danmu": [
-      1
-    ],
-    "favorites": [
-      1
-    ],
-    "total": {
-      "fans": 1,
-      "views": 1,
-      "comments": 1,
-      "coins": 1,
-      "danmu": 1,
-      "favorites": 1
-    }
+    "total": 16
+  },
+  "msg": "获取成功"
+}
+```
+
+## [GET] 创作中心总览
+
+- 接口路径: GET /common/user/creator/overview
+- 认证: 需要登录（客户端全局自动携带 Token）
+- 依赖接口: 无
+- 接口说明: 返回播放/粉丝/评论/硬币/弹幕/收藏六项总量（需登录）
+- HTTP 状态码: 200（业务码 code 判断成功/失败）
+- 响应结构: code=0 成功，code=1 失败；msg 为提示信息
+
+请求参数:
+
+无
+
+响应字段:
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| data | CreatorOverview | - |
+| data.fans | integer(int64) | 粉丝总量 |
+| data.views | integer(int64) | 播放总量 |
+| data.comments | integer(int64) | 评论总量 |
+| data.coins | integer(int64) | 硬币总量 |
+| data.danmu | integer(int64) | 弹幕总量 |
+| data.favorites | integer(int64) | 收藏总量 |
+
+响应示例:
+```json
+{
+  "code": 0,
+  "data": {
+    "fans": 0,
+    "views": 26,
+    "comments": 4,
+    "coins": 0,
+    "danmu": 11,
+    "favorites": 0
   },
   "msg": "获取成功"
 }
@@ -849,8 +815,9 @@ Base URL：/v1
 | userId | query | integer | 是 | 用户ID |
 | page | query | integer | 否 | 页码 |
 | pageSize | query | integer | 否 | 每页数量 |
+| keyword | query | string | 否 | 关键字搜索，仅匹配用户名 |
 | sort | query | integer | 否 | 排序方式（0最新 1最多播放 2最多收藏） 可选: 0/1/2 |
-| auditStatus | query | integer | 否 | 审核状态筛选（1已发布 2私密 3已删除 4审核中，仅本人查看自己的视频列表时生效；不传时本人默认查看全部状态，非本人访问时会被忽略） 可选: 1/2/3 |
+| auditStatus | query | integer | 否 | 状态筛选（1已发布 2私密 3已删除 4审核中，仅本人查看自己的视频列表时生效；不传时本人默认查看全部状态，非本人访问时会被忽略） 可选: 1/2/3/4 |
 
 响应字段:
 | 字段 | 类型 | 说明 |
@@ -867,8 +834,8 @@ Base URL：/v1
 | data.list[].createdAt | string(date-time) | 创建时间 |
 | data.list[].status | integer | 视频状态（1已发布 2私密 3已删除 4审核中） |
 | data.list[].statusText | string | 视频状态文案 |
-| data.list[].auditStatus | integer | 审核状态（1已发布 2私密 3已删除 4审核中，仅本人查看自己的视频列表时返回） |
-| data.list[].auditStatusText | string | 审核状态文案，仅本人查看自己的视频列表时返回 |
+| data.list[].auditStatus | integer | 状态（1已发布 2私密 3已删除 4审核中，仅本人查看自己的视频列表时返回） |
+| data.list[].auditStatusText | string | 状态文案，仅本人查看自己的视频列表时返回 |
 | data.list[].authorId | integer(uint) | 作者ID |
 | data.list[].authorName | string | 作者名称 |
 
@@ -888,9 +855,9 @@ Base URL：/v1
         "progress": 1,
         "createdAt": "2024-06-01T12:00:00Z",
         "status": 1,
-        "statusText": "已发布",
+        "statusText": "enabled",
         "auditStatus": 1,
-        "auditStatusText": "已通过",
+        "auditStatusText": "enabled",
         "authorId": 1001,
         "authorName": "示例名称"
       }
@@ -928,6 +895,10 @@ Base URL：/v1
 | data.list[].duration | integer | 时长（秒） |
 | data.list[].progress | integer | 播放进度（秒） |
 | data.list[].createdAt | string(date-time) | 创建时间 |
+| data.list[].status | integer | 视频状态（1已发布 2私密 3已删除 4审核中） |
+| data.list[].statusText | string | 视频状态文案 |
+| data.list[].auditStatus | integer | 状态（1已发布 2私密 3已删除 4审核中，仅本人查看自己的视频列表时返回） |
+| data.list[].auditStatusText | string | 状态文案，仅本人查看自己的视频列表时返回 |
 | data.list[].authorId | integer(uint) | 作者ID |
 | data.list[].authorName | string | 作者名称 |
 
@@ -946,6 +917,10 @@ Base URL：/v1
         "duration": 60,
         "progress": 1,
         "createdAt": "2024-06-01T12:00:00Z",
+        "status": 1,
+        "statusText": "enabled",
+        "auditStatus": 1,
+        "auditStatusText": "enabled",
         "authorId": 2001,
         "authorName": "示例名称"
       }
@@ -983,6 +958,10 @@ Base URL：/v1
 | data.list[].duration | integer | 时长（秒） |
 | data.list[].progress | integer | 播放进度（秒） |
 | data.list[].createdAt | string(date-time) | 创建时间 |
+| data.list[].status | integer | 视频状态（1已发布 2私密 3已删除 4审核中） |
+| data.list[].statusText | string | 视频状态文案 |
+| data.list[].auditStatus | integer | 状态（1已发布 2私密 3已删除 4审核中，仅本人查看自己的视频列表时返回） |
+| data.list[].auditStatusText | string | 状态文案，仅本人查看自己的视频列表时返回 |
 | data.list[].authorId | integer(uint) | 作者ID |
 | data.list[].authorName | string | 作者名称 |
 
@@ -1001,6 +980,10 @@ Base URL：/v1
         "duration": 60,
         "progress": 1,
         "createdAt": "2024-06-01T12:00:00Z",
+        "status": 1,
+        "statusText": "enabled",
+        "auditStatus": 1,
+        "auditStatusText": "enabled",
         "authorId": 2001,
         "authorName": "示例名称"
       }

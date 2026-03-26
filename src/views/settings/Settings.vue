@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import {
@@ -8,12 +8,19 @@ import {
   getUserConfig,
   updateUserConfig,
   changePassword,
+  getLoginIpRecords,
+  getExpRecords,
+  getCoinRecords,
   type UserInfo,
   type UserConfig,
   type UpdateUserInfoParams,
   type UpdateUserConfigParams,
+  type UserLoginRecordItem,
+  type UserExpRecordItem,
+  type UserCoinRecordItem,
 } from '@/api/user'
 import { uploadImage, type ImageUploadResult } from '@/api/upload'
+import AppAvatar from '@/components/common/AppAvatar.vue'
 import { toast } from 'vue-sonner'
 import {
   Home,
@@ -25,13 +32,20 @@ import {
   Save,
   Eye,
   EyeOff,
+  History,
+  Clock3,
+  Coins,
+  ChevronLeft,
+  ChevronRight,
 } from 'lucide-vue-next'
 
 const router = useRouter()
 const authStore = useAuthStore()
 
-type SideTab = 'profile' | 'privacy' | 'security'
+type SideTab = 'profile' | 'privacy' | 'security' | 'records'
+type RecordTab = 'login' | 'exp' | 'coin'
 const activeTab = ref<SideTab>('profile')
+const activeRecordTab = ref<RecordTab>('login')
 
 const userInfo = ref<UserInfo | null>(null)
 const userConfig = ref<UserConfig | null>(null)
@@ -50,6 +64,23 @@ const confirmPassword = ref('')
 const showOldPwd = ref(false)
 const showNewPwd = ref(false)
 const changingPwd = ref(false)
+
+const RECORD_PAGE_SIZE = 8
+
+const loginRecords = ref<UserLoginRecordItem[]>([])
+const loginRecordTotal = ref(0)
+const loginRecordPage = ref(1)
+const loginRecordLoading = ref(false)
+
+const expRecords = ref<UserExpRecordItem[]>([])
+const expRecordTotal = ref(0)
+const expRecordPage = ref(1)
+const expRecordLoading = ref(false)
+
+const coinRecords = ref<UserCoinRecordItem[]>([])
+const coinRecordTotal = ref(0)
+const coinRecordPage = ref(1)
+const coinRecordLoading = ref(false)
 
 const levelColor = (level: number): string => {
   if (level >= 6) return '#ff6699'
@@ -85,8 +116,15 @@ const genderOptions = [
 
 const sideItems: { key: SideTab; label: string; icon: typeof Home }[] = [
   { key: 'profile', label: '我的信息', icon: User },
+  { key: 'records', label: '记录中心', icon: History },
   { key: 'privacy', label: '隐私设置', icon: ShieldCheck },
   { key: 'security', label: '账号安全', icon: Lock },
+]
+
+const recordTabs: { key: RecordTab; label: string; icon: typeof Clock3 }[] = [
+  { key: 'login', label: '登录 IP', icon: Clock3 },
+  { key: 'exp', label: '经验记录', icon: History },
+  { key: 'coin', label: '硬币记录', icon: Coins },
 ]
 
 const fetchData = async () => {
@@ -103,6 +141,128 @@ const fetchData = async () => {
     toast.error('获取用户信息失败')
   } finally {
     loading.value = false
+  }
+}
+
+const formatDateTime = (value: string) => {
+  if (!value) return '--'
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return value
+
+  return new Intl.DateTimeFormat('zh-CN', {
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(date)
+}
+
+const formatLoginType = (value: string) => {
+  if (value === 'pwd') return '密码登录'
+  if (value === 'qq') return 'QQ 登录'
+  return value || '未知方式'
+}
+
+const loadLoginRecords = async (page = 1) => {
+  loginRecordLoading.value = true
+  try {
+    const result = await getLoginIpRecords({ page, pageSize: RECORD_PAGE_SIZE })
+    loginRecords.value = result.list ?? []
+    loginRecordTotal.value = result.total ?? 0
+    loginRecordPage.value = page
+  } catch {
+    toast.error('获取登录记录失败')
+  } finally {
+    loginRecordLoading.value = false
+  }
+}
+
+const loadExpRecords = async (page = 1) => {
+  expRecordLoading.value = true
+  try {
+    const result = await getExpRecords({ page, pageSize: RECORD_PAGE_SIZE })
+    expRecords.value = result.list ?? []
+    expRecordTotal.value = result.total ?? 0
+    expRecordPage.value = page
+  } catch {
+    toast.error('获取经验记录失败')
+  } finally {
+    expRecordLoading.value = false
+  }
+}
+
+const loadCoinRecords = async (page = 1) => {
+  coinRecordLoading.value = true
+  try {
+    const result = await getCoinRecords({ page, pageSize: RECORD_PAGE_SIZE })
+    coinRecords.value = result.list ?? []
+    coinRecordTotal.value = result.total ?? 0
+    coinRecordPage.value = page
+  } catch {
+    toast.error('获取硬币记录失败')
+  } finally {
+    coinRecordLoading.value = false
+  }
+}
+
+const ensureRecordLoaded = (tab: RecordTab) => {
+  if (tab === 'login' && !loginRecords.value.length && !loginRecordLoading.value) {
+    void loadLoginRecords()
+  }
+  if (tab === 'exp' && !expRecords.value.length && !expRecordLoading.value) {
+    void loadExpRecords()
+  }
+  if (tab === 'coin' && !coinRecords.value.length && !coinRecordLoading.value) {
+    void loadCoinRecords()
+  }
+}
+
+const currentDeltaRecords = computed(() =>
+  activeRecordTab.value === 'exp' ? expRecords.value : coinRecords.value
+)
+
+const currentRecordLoading = computed(() => {
+  if (activeRecordTab.value === 'login') return loginRecordLoading.value
+  if (activeRecordTab.value === 'exp') return expRecordLoading.value
+  return coinRecordLoading.value
+})
+
+const currentRecordPage = computed(() => {
+  if (activeRecordTab.value === 'login') return loginRecordPage.value
+  if (activeRecordTab.value === 'exp') return expRecordPage.value
+  return coinRecordPage.value
+})
+
+const currentRecordTotal = computed(() => {
+  if (activeRecordTab.value === 'login') return loginRecordTotal.value
+  if (activeRecordTab.value === 'exp') return expRecordTotal.value
+  return coinRecordTotal.value
+})
+
+const currentRecordTotalPages = computed(() =>
+  Math.max(1, Math.ceil(currentRecordTotal.value / RECORD_PAGE_SIZE))
+)
+
+const currentRecordEmptyText = computed(() => {
+  if (activeRecordTab.value === 'login') return '还没有登录 IP 记录'
+  if (activeRecordTab.value === 'exp') return '还没有经验变动记录'
+  return '还没有硬币变动记录'
+})
+
+const switchRecordTab = (tab: RecordTab) => {
+  activeRecordTab.value = tab
+}
+
+const changeRecordPage = (delta: number) => {
+  const nextPage = currentRecordPage.value + delta
+  if (nextPage < 1 || nextPage > currentRecordTotalPages.value) return
+
+  if (activeRecordTab.value === 'login') {
+    void loadLoginRecords(nextPage)
+  } else if (activeRecordTab.value === 'exp') {
+    void loadExpRecords(nextPage)
+  } else {
+    void loadCoinRecords(nextPage)
   }
 }
 
@@ -205,6 +365,18 @@ const handleChangePwd = async () => {
 }
 
 onMounted(fetchData)
+
+watch(activeTab, (tab) => {
+  if (tab === 'records') {
+    ensureRecordLoaded(activeRecordTab.value)
+  }
+})
+
+watch(activeRecordTab, (tab) => {
+  if (activeTab.value === 'records') {
+    ensureRecordLoaded(tab)
+  }
+})
 </script>
 
 <template>
@@ -247,7 +419,13 @@ onMounted(fetchData)
           <!-- Overview card -->
           <div class="ov-card">
             <div class="ov-avatar-wrap">
-              <img :src="userInfo.avatar" :alt="userInfo.username" class="ov-avatar" />
+              <AppAvatar
+                :src="userInfo.avatar"
+                :name="userInfo.username"
+                :alt="userInfo.username"
+                container-class="ov-avatar"
+                text-class="text-xl font-bold"
+              />
               <label class="ov-avatar-mask">
                 <Camera :size="18" />
                 <span>{{ avatarUploading ? '上传中' : '更换' }}</span>
@@ -316,6 +494,100 @@ onMounted(fetchData)
             <button class="btn-pri" :disabled="saving" @click="handleSaveProfile">
               <Save :size="14" /> {{ saving ? '保存中...' : '保存修改' }}
             </button>
+          </div>
+        </section>
+
+        <!-- Records -->
+        <section v-else-if="activeTab === 'records'" class="sec-anim">
+          <h3 class="form-title">记录中心</h3>
+          <p class="form-sub">查看最近登录轨迹、经验变化与硬币流水</p>
+
+          <div class="record-tabs">
+            <button
+              v-for="item in recordTabs"
+              :key="item.key"
+              class="record-tab"
+              :class="{ active: activeRecordTab === item.key }"
+              @click="switchRecordTab(item.key)"
+            >
+              <component :is="item.icon" :size="14" />
+              {{ item.label }}
+            </button>
+          </div>
+
+          <div class="record-panel">
+            <div v-if="currentRecordLoading" class="record-loading">
+              <div class="spinner small"></div>
+            </div>
+
+            <template v-else-if="activeRecordTab === 'login'">
+              <div v-if="loginRecords.length" class="record-list">
+                <div v-for="item in loginRecords" :key="item.id" class="record-item">
+                  <div class="record-main">
+                    <div class="record-title-row">
+                      <strong>{{ item.ip }}</strong>
+                      <span class="record-tag">{{ formatLoginType(item.loginType) }}</span>
+                    </div>
+                    <p class="record-sub">{{ item.addr || '未知归属地' }}</p>
+                    <p class="record-sub record-ua">{{ item.userAgent || '未知设备' }}</p>
+                  </div>
+                  <div class="record-time">{{ formatDateTime(item.createdAt) }}</div>
+                </div>
+              </div>
+              <div v-else class="record-empty">{{ currentRecordEmptyText }}</div>
+            </template>
+
+            <template v-else>
+              <div v-if="currentDeltaRecords.length" class="record-list">
+                <div
+                  v-for="item in currentDeltaRecords"
+                  :key="item.id"
+                  class="record-item record-item-compact"
+                >
+                  <div class="record-main">
+                    <div class="record-title-row">
+                      <strong>{{ item.reason || '系统变更' }}</strong>
+                      <span
+                        class="record-delta"
+                        :class="(item.delta ?? 0) >= 0 ? 'is-positive' : 'is-negative'"
+                      >
+                        {{ (item.delta ?? 0) >= 0 ? '+' : '' }}{{ item.delta }}
+                      </span>
+                    </div>
+                    <p class="record-sub">
+                      {{ activeRecordTab === 'exp' ? '经验值变动' : '硬币余额变动' }}
+                    </p>
+                  </div>
+                  <div class="record-time">{{ formatDateTime(item.createdAt) }}</div>
+                </div>
+              </div>
+              <div v-else class="record-empty">{{ currentRecordEmptyText }}</div>
+            </template>
+
+            <div class="record-footer">
+              <span class="record-summary">
+                第 {{ currentRecordPage }} / {{ currentRecordTotalPages }} 页，共
+                {{ currentRecordTotal }} 条
+              </span>
+              <div class="record-pager">
+                <button
+                  class="pager-btn"
+                  :disabled="currentRecordPage <= 1 || currentRecordLoading"
+                  @click="changeRecordPage(-1)"
+                >
+                  <ChevronLeft :size="14" />
+                  上一页
+                </button>
+                <button
+                  class="pager-btn"
+                  :disabled="currentRecordPage >= currentRecordTotalPages || currentRecordLoading"
+                  @click="changeRecordPage(1)"
+                >
+                  下一页
+                  <ChevronRight :size="14" />
+                </button>
+              </div>
+            </div>
           </div>
         </section>
 
@@ -539,6 +811,12 @@ onMounted(fetchData)
   animation: spin 0.6s linear infinite;
 }
 
+.spinner.small {
+  width: 22px;
+  height: 22px;
+  border-width: 2px;
+}
+
 @keyframes spin {
   to {
     transform: rotate(360deg);
@@ -580,8 +858,6 @@ onMounted(fetchData)
 .ov-avatar {
   width: 60px;
   height: 60px;
-  border-radius: 50%;
-  object-fit: cover;
   border: 2px solid #fff;
   box-shadow: 0 1px 6px rgb(0 0 0 / 0.1);
 }
@@ -683,6 +959,189 @@ onMounted(fetchData)
 .ov-space-btn:hover {
   border-color: #00a1d6;
   color: #00a1d6;
+}
+
+/* Records */
+.record-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.record-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid #e3e5e7;
+  background: #fff;
+  color: #61666d;
+  padding: 8px 12px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition:
+    border-color 0.12s,
+    color 0.12s,
+    background 0.12s;
+}
+
+.record-tab:hover {
+  border-color: #00a1d6;
+  color: #00a1d6;
+}
+
+.record-tab.active {
+  background: rgb(0 161 214 / 0.08);
+  border-color: rgb(0 161 214 / 0.18);
+  color: #00a1d6;
+}
+
+.record-panel {
+  border: 1px solid #f1f2f3;
+  border-radius: 10px;
+  background: linear-gradient(180deg, #fbfbfc 0%, #fff 100%);
+  overflow: hidden;
+}
+
+.record-loading,
+.record-empty {
+  min-height: 220px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #9499a0;
+  font-size: 13px;
+}
+
+.record-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.record-item {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 16px 18px;
+  border-bottom: 1px solid #f1f2f3;
+}
+
+.record-item:last-child {
+  border-bottom: none;
+}
+
+.record-item-compact {
+  align-items: center;
+}
+
+.record-main {
+  min-width: 0;
+  flex: 1;
+}
+
+.record-title-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.record-title-row strong {
+  min-width: 0;
+  font-size: 13px;
+  color: #18191c;
+}
+
+.record-tag {
+  flex-shrink: 0;
+  border-radius: 999px;
+  background: #f1f2f3;
+  color: #61666d;
+  padding: 2px 8px;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.record-sub {
+  margin-top: 4px;
+  font-size: 12px;
+  color: #9499a0;
+}
+
+.record-ua {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.record-delta {
+  flex-shrink: 0;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.record-delta.is-positive {
+  color: #00a1d6;
+}
+
+.record-delta.is-negative {
+  color: #f25d8e;
+}
+
+.record-time {
+  flex-shrink: 0;
+  font-size: 12px;
+  color: #9499a0;
+  white-space: nowrap;
+}
+
+.record-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 18px;
+  background: #fafbfc;
+  border-top: 1px solid #f1f2f3;
+}
+
+.record-summary {
+  font-size: 12px;
+  color: #9499a0;
+}
+
+.record-pager {
+  display: flex;
+  gap: 8px;
+}
+
+.pager-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 7px 10px;
+  border: 1px solid #e3e5e7;
+  border-radius: 8px;
+  background: #fff;
+  color: #61666d;
+  font-size: 12px;
+  cursor: pointer;
+  transition:
+    border-color 0.12s,
+    color 0.12s,
+    background 0.12s;
+}
+
+.pager-btn:hover:not(:disabled) {
+  border-color: #00a1d6;
+  color: #00a1d6;
+}
+
+.pager-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
 }
 
 /* Form */
@@ -947,5 +1406,48 @@ onMounted(fetchData)
   clip-path: inset(50%);
   white-space: nowrap;
   border-width: 0;
+}
+
+@media (width <= 900px) {
+  .center-body {
+    flex-direction: column;
+  }
+
+  .center-side {
+    width: 100%;
+  }
+
+  .center-main {
+    padding: 18px;
+  }
+
+  .ov-card {
+    flex-wrap: wrap;
+  }
+
+  .ov-space-btn {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .record-item,
+  .record-footer {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .record-time,
+  .record-summary {
+    white-space: normal;
+  }
+
+  .record-pager {
+    width: 100%;
+  }
+
+  .pager-btn {
+    flex: 1;
+    justify-content: center;
+  }
 }
 </style>

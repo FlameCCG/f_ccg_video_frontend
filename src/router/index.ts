@@ -5,6 +5,7 @@ const MainLayout = () => import('@/layouts/MainLayout.vue')
 const VideoLayout = () => import('@/layouts/VideoLayout.vue')
 const CreatorLayout = () => import('@/layouts/CreatorLayout.vue')
 const UserLayout = () => import('@/layouts/UserLayout.vue')
+const MessageLayout = () => import('@/layouts/MessageLayout.vue')
 
 const routes: RouteRecordRaw[] = [
   // Routes with VideoLayout (white header, no banner, no channel nav)
@@ -91,22 +92,52 @@ const routes: RouteRecordRaw[] = [
         meta: { requiresAuth: true },
       },
       {
-        path: 'notifications',
-        name: 'notifications',
-        component: () => import('@/views/notifications/Notifications.vue'),
+        path: 'favorites',
+        name: 'favorites',
+        component: () => import('@/views/favorites/Favorites.vue'),
         meta: { requiresAuth: true },
+      },
+    ],
+  },
+  // Message Center Layout
+  {
+    path: '/message',
+    component: MessageLayout,
+    meta: { requiresAuth: true },
+    children: [
+      {
+        path: '',
+        redirect: '/message/chat',
       },
       {
         path: 'chat',
-        name: 'chat',
-        component: () => import('@/views/chat/Chat.vue'),
-        meta: { requiresAuth: true },
+        name: 'message-chat',
+        component: () => import('@/views/message/Chat.vue'),
       },
       {
         path: 'chat/:peerId',
-        name: 'chat-room',
-        component: () => import('@/views/chat/Chat.vue'),
-        meta: { requiresAuth: true },
+        name: 'message-chat-room',
+        component: () => import('@/views/message/Chat.vue'),
+      },
+      {
+        path: 'reply',
+        name: 'message-reply',
+        component: () => import('@/views/message/Reply.vue'),
+      },
+      {
+        path: 'at',
+        name: 'message-at',
+        component: () => import('@/views/message/At.vue'),
+      },
+      {
+        path: 'love',
+        name: 'message-love',
+        component: () => import('@/views/message/Love.vue'),
+      },
+      {
+        path: 'system',
+        name: 'message-system',
+        component: () => import('@/views/message/System.vue'),
       },
     ],
   },
@@ -139,6 +170,11 @@ const routes: RouteRecordRaw[] = [
         path: 'interaction',
         name: 'creator-interaction',
         component: () => import('@/views/creator/Interaction.vue'),
+      },
+      {
+        path: 'danmu',
+        name: 'creator-danmu',
+        component: () => import('@/views/creator/Danmu.vue'),
       },
     ],
   },

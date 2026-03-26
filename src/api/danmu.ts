@@ -62,6 +62,31 @@ export interface DanmuListParams {
   date?: string // YYYY-MM-DD
 }
 
+export interface CreatorDanmuItem {
+  id: number
+  userId: number
+  username: string
+  avatar: string
+  videoId: number
+  videoTitle: string
+  videoCover: string
+  videoPartId: number
+  content: string
+  timeOffset: number // seconds (for creator danmaku, the docs say it's seconds, but verify if milliseconds. Docs say '弹幕时间偏移（秒）')
+  color: string
+  fontSize: number
+  position: DanmuPositionType
+  likeCount: number
+  createdAt: string
+}
+
+export interface CreatorDanmuListParams {
+  page?: number
+  pageSize?: number
+  sort?: 0 | 1 // 0: 最近, 1: 点赞最多
+  keyword?: string
+}
+
 export interface ReportDanmuParams {
   danmuId: number
   reason: string
@@ -144,6 +169,19 @@ export const getDanmuHistory = (
  */
 export const getDanmuList = (params: DanmuListParams): Promise<PaginatedResult<DanmuItem>> => {
   return request.get('/common/video/danmu/room/list', { params })
+}
+
+/**
+ * 创作者弹幕列表
+ * GET /common/video/danmu/creator/list
+ * 认证: 需要登录（客户端全局自动携带 Token）
+ * 依赖接口: 无
+ * 接口说明: 获取自己视频下的弹幕列表（需登录）
+ */
+export const getCreatorDanmuList = (
+  params: CreatorDanmuListParams
+): Promise<PaginatedResult<CreatorDanmuItem>> => {
+  return request.get('/common/video/danmu/creator/list', { params })
 }
 
 /**

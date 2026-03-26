@@ -6,6 +6,7 @@ import {
   Home,
   FileVideo,
   MessageSquare,
+  MessageCircle,
   LogOut,
   Settings,
   User,
@@ -20,6 +21,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
+import AppAvatar from '@/components/common/AppAvatar.vue'
 
 const router = useRouter()
 const route = useRoute()
@@ -34,6 +36,7 @@ const navItems = [
   { name: '首页', icon: Home, path: '/creator/home' },
   { name: '视频管理', icon: FileVideo, path: '/creator/content' },
   { name: '评论管理', icon: MessageSquare, path: '/creator/interaction' },
+  { name: '弹幕管理', icon: MessageCircle, path: '/creator/danmu' },
 ]
 </script>
 
@@ -69,10 +72,12 @@ const navItems = [
                   <div
                     class="h-8 w-8 rounded-full border-2 border-transparent group-hover:border-primary transition-colors overflow-hidden"
                   >
-                    <img
-                      :src="authStore.user?.avatar || '/placeholder-avatar.png'"
+                    <AppAvatar
+                      :src="authStore.user?.avatar"
+                      :name="authStore.user?.username"
                       alt="Avatar"
-                      class="h-full w-full object-cover"
+                      container-class="h-full w-full border-0"
+                      text-class="text-xs font-bold"
                     />
                   </div>
                 </div>

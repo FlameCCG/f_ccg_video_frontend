@@ -34,8 +34,8 @@ export interface NotificationItem {
   title: string
   content: string
   link: string
-  articleID: number
-  articleTitle: string
+  videoID: number
+  videoTitle: string
   commentID: number
   isRead: boolean
 }

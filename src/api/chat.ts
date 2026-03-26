@@ -7,7 +7,7 @@ import request from './request'
 /**
  * 消息类型
  */
-export type MessageType = 'text' | 'emoji' | 'image' | 'video'
+export type MessageType = 'text' | 'emoji' | 'image' | 'sticker'
 
 /**
  * 消息媒体信息
@@ -38,7 +38,7 @@ export interface ChatConversationItem {
   id: string // 会话ID（minUserId_maxUserId）
   peerId: number // 对方用户ID
   unread: number // 未读数
-  lastMessage: ChatConversationLastMessage
+  lastMessage?: ChatConversationLastMessage
   updatedAt: number // 更新时间（Unix秒）
 }
 
@@ -53,9 +53,73 @@ export interface ChatMessage {
   type: MessageType // 消息类型
   text?: string // 文本内容（type=text）
   emoji?: string // emoji（type=emoji）
-  media?: ChatMessageMedia // 媒体信息（type=image/video）
+  media?: ChatMessageMedia // 媒体信息（type=image/sticker）
   createdAt: string // 创建时间
 }
+
+export interface ChatSendTextEvent {
+  type: 'send'
+  to: number
+  msgType: 'text'
+  text: string
+  clientMsgId?: string
+}
+
+export interface ChatSendEmojiEvent {
+  type: 'send'
+  to: number
+  msgType: 'emoji'
+  emoji: string
+  text?: string
+  clientMsgId?: string
+}
+
+export interface ChatSendMediaEvent {
+  type: 'send'
+  to: number
+  msgType: 'image' | 'sticker'
+  media: ChatMessageMedia
+  clientMsgId?: string
+}
+
+export interface ChatReadEvent {
+  type: 'read'
+  peerId: number
+}
+
+export type ChatClientEvent =
+  | { type: 'ping' }
+  | ChatSendTextEvent
+  | ChatSendEmojiEvent
+  | ChatSendMediaEvent
+  | ChatReadEvent
+
+export interface ChatAckWSEvent {
+  type: 'ack'
+  clientMsgId?: string
+  message: ChatMessage
+}
+
+export interface ChatMessageWSEvent {
+  type: 'message'
+  message: ChatMessage
+}
+
+export interface ChatReadAckWSEvent {
+  type: 'read_ack'
+  peerId: number
+}
+
+export interface ChatSystemWSEvent {
+  type: 'system'
+  system: string
+}
+
+export type ChatWSEvent =
+  | ChatAckWSEvent
+  | ChatMessageWSEvent
+  | ChatReadAckWSEvent
+  | ChatSystemWSEvent
 
 /**
  * 会话列表请求参数
@@ -123,10 +187,15 @@ export interface MarkChatReadParams {
  * 依赖接口: 无
  * 接口说明: 私信实时推送 WebSocket 连接（支持 Authorization header 传递 token或者 query 传递 token）
  */
-export const getChatWebSocketUrl = (): string => {
-  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-  const host = window.location.host
-  return `${protocol}//${host}/v1/common/chat/ws`
+export const getChatWebSocketUrl = (token?: string): string => {
+  const baseUrl = import.meta.env.DEV
+    ? `ws://${window.location.hostname}:8080/v1`
+    : `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}/v1`
+  const url = new URL(`${baseUrl}/common/chat/ws`)
+  if (token) {
+    url.searchParams.set('token', token)
+  }
+  return url.toString()
 }
 
 /**

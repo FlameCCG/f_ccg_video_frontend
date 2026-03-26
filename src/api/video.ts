@@ -55,6 +55,7 @@ export interface VideoPartItem {
 export interface PaginationParams {
   page?: number
   pageSize?: number
+  partitionId?: number
 }
 
 export interface PaginatedResult<T> {
@@ -75,6 +76,7 @@ export interface FeedItem {
   danmuCount: number
   author: AuthorBrief
   createdAt: string
+  highlight?: SearchHighlight
 }
 
 export interface SearchHighlight {
@@ -86,6 +88,7 @@ export interface SearchVideoHit {
   title: string
   cover: string
   authorUsername: string
+  createdAt: string
   highlight: SearchHighlight
   views: number
   danmuCount: number
@@ -125,6 +128,11 @@ export interface SearchSuggestItem {
 export interface SearchSuggestParams {
   prefix: string
   size?: number
+}
+
+export interface HotKeywordItem {
+  keyword: string
+  score: number
 }
 
 export interface RecommendParams {
@@ -384,6 +392,17 @@ export const searchVideos = (params: SearchVideoParams): Promise<VideoSearchResu
  */
 export const getSearchSuggest = (params: SearchSuggestParams): Promise<SearchSuggestItem[]> => {
   return request.get('/common/video/search/suggest', { params })
+}
+
+/**
+ * 首页搜索关键词前十
+ * GET /common/video/home/search/top
+ * 认证: 无需登录
+ * 依赖接口: GET /common/video/search（搜索成功后累计关键词热度）
+ * 接口说明: 获取首页搜索关键词前十列表，用于展示热搜；当暂无搜索热度时，会回退为热门视频标题推荐
+ */
+export const getHotSearchKeywords = (): Promise<HotKeywordItem[]> => {
+  return request.get('/common/video/home/search/top')
 }
 
 /**

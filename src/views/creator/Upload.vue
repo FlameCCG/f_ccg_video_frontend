@@ -13,7 +13,13 @@ import {
   DialogTitle,
   DialogFooter,
 } from '@/components/ui/dialog'
-import { uploadChunk, getUploadStatus, completeUpload, uploadImage } from '@/api/upload'
+import {
+  uploadChunk,
+  getUploadStatus,
+  completeUpload,
+  uploadImage,
+  type UploadStatusResult,
+} from '@/api/upload'
 import { publishVideo, getPartitions, type Partition } from '@/api/video'
 import { getSiteConfig, type StorageConfig } from '@/api/site'
 
@@ -87,48 +93,130 @@ const recommendedCovers = ref<string[]>([])
 const isExtractingFrames = ref(false)
 const tempCoverPreview = ref('')
 const tempCoverFile = ref<File | null>(null)
+const UPLOAD_STATUS_TIMEOUT = 6000
+const UPLOAD_CHUNK_TIMEOUT = 60000
+const COMPLETE_UPLOAD_TIMEOUT = 5 * 60 * 1000
+const COVER_EXTRACT_TIMEOUT = 8000
+
+let coverExtractJobId = 0
+
+const emptyUploadStatus = (fileHash: string): UploadStatusResult => ({
+  fileHash,
+  completed: false,
+  filePath: '',
+  uploadedChunks: [],
+})
+
+const waitForVideoEvent = (
+  video: HTMLVideoElement,
+  successEvent: 'loadedmetadata' | 'seeked',
+  timeoutMs: number,
+  ready?: () => boolean
+): Promise<void> => {
+  if (ready?.()) {
+    return Promise.resolve()
+  }
+
+  return new Promise((resolve, reject) => {
+    const timer = window.setTimeout(() => {
+      cleanup()
+      reject(new Error(`wait for ${successEvent} timed out`))
+    }, timeoutMs)
+
+    const onSuccess = () => {
+      cleanup()
+      resolve()
+    }
+
+    const onError = () => {
+      cleanup()
+      reject(new Error(`video ${successEvent} failed`))
+    }
+
+    const cleanup = () => {
+      window.clearTimeout(timer)
+      video.removeEventListener(successEvent, onSuccess)
+      video.removeEventListener('error', onError)
+    }
+
+    video.addEventListener(successEvent, onSuccess, { once: true })
+    video.addEventListener('error', onError, { once: true })
+  })
+}
 
 const extractFrames = async (file: File) => {
+  const currentJobId = ++coverExtractJobId
   isExtractingFrames.value = true
   recommendedCovers.value = []
 
   const video = document.createElement('video')
-  video.src = URL.createObjectURL(file)
+  const objectUrl = URL.createObjectURL(file)
+  video.src = objectUrl
   video.muted = true
-  video.crossOrigin = 'anonymous'
+  video.playsInline = true
+  video.preload = 'metadata'
+  video.load()
 
-  await new Promise((resolve) => {
-    video.onloadedmetadata = resolve
-  })
+  try {
+    await waitForVideoEvent(
+      video,
+      'loadedmetadata',
+      COVER_EXTRACT_TIMEOUT,
+      () => video.readyState >= 1
+    )
+    if (currentJobId !== coverExtractJobId) return
 
-  const duration = video.duration
-  const numFrames = 6
-  const timestamps = Array.from(
-    { length: numFrames },
-    (_, i) => (duration / (numFrames + 1)) * (i + 1)
-  )
+    const duration = Number.isFinite(video.duration) ? video.duration : 0
+    if (duration <= 0 || video.videoWidth <= 0 || video.videoHeight <= 0) {
+      throw new Error('invalid video metadata')
+    }
 
-  const canvas = document.createElement('canvas')
-  const ctx = canvas.getContext('2d')
+    const numFrames = 6
+    const timestamps = Array.from(
+      { length: numFrames },
+      (_, i) => (duration / (numFrames + 1)) * (i + 1)
+    )
 
-  for (const time of timestamps) {
-    video.currentTime = time
-    await new Promise((resolve) => {
-      video.onseeked = resolve
-    })
+    const canvas = document.createElement('canvas')
+    const ctx = canvas.getContext('2d')
+    if (!ctx) {
+      throw new Error('canvas context unavailable')
+    }
 
-    canvas.width = video.videoWidth
-    canvas.height = video.videoHeight
-    ctx?.drawImage(video, 0, 0, canvas.width, canvas.height)
+    for (const time of timestamps) {
+      if (currentJobId !== coverExtractJobId) return
 
-    recommendedCovers.value.push(canvas.toDataURL('image/jpeg'))
-  }
+      const safeTime = Math.min(time, Math.max(duration - 0.1, 0))
+      video.currentTime = safeTime
+      await waitForVideoEvent(video, 'seeked', COVER_EXTRACT_TIMEOUT)
+      if (currentJobId !== coverExtractJobId) return
 
-  URL.revokeObjectURL(video.src)
-  isExtractingFrames.value = false
+      canvas.width = video.videoWidth
+      canvas.height = video.videoHeight
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height)
+      recommendedCovers.value.push(canvas.toDataURL('image/jpeg', 0.9))
+    }
 
-  if (!coverPreview.value && recommendedCovers.value.length > 0 && recommendedCovers.value[0]) {
-    void selectRecommendedCover(recommendedCovers.value[0])
+    if (
+      currentJobId === coverExtractJobId &&
+      !coverPreview.value &&
+      recommendedCovers.value.length > 0 &&
+      recommendedCovers.value[0]
+    ) {
+      await selectRecommendedCover(recommendedCovers.value[0])
+    }
+  } catch (error) {
+    if (currentJobId !== coverExtractJobId) return
+    recommendedCovers.value = []
+    console.error('Extract recommended covers failed', error)
+    toast({ title: '推荐封面生成失败，请手动上传或截取封面', variant: 'destructive' })
+  } finally {
+    if (currentJobId === coverExtractJobId) {
+      isExtractingFrames.value = false
+    }
+    URL.revokeObjectURL(objectUrl)
+    video.removeAttribute('src')
+    video.load()
   }
 }
 
@@ -431,7 +519,16 @@ const uploadPart = async (part: VideoPart) => {
 
     // Phase 2: check status (秒传 / 断点续传)
     part.status = 'checking'
-    const status = await withRetry(() => getUploadStatus(part.hash, { signal }), 3, signal)
+    let status = emptyUploadStatus(part.hash)
+    try {
+      status = await withRetry(
+        () => getUploadStatus(part.hash, { signal, timeout: UPLOAD_STATUS_TIMEOUT, silent: true }),
+        2,
+        signal
+      )
+    } catch (error) {
+      console.warn('Get upload status failed, fallback to full upload', error)
+    }
 
     if (status.completed) {
       part.filePath = status.filePath
@@ -459,7 +556,15 @@ const uploadPart = async (part: VideoPart) => {
       const chunk = part.file.slice(start, end)
 
       await withRetry(
-        () => uploadChunk({ fileHash: part.hash, index: i, chunk }, { signal }),
+        () =>
+          uploadChunk(
+            { fileHash: part.hash, index: i, chunk },
+            {
+              signal,
+              timeout: UPLOAD_CHUNK_TIMEOUT,
+              silent: true,
+            }
+          ),
         3,
         signal
       )
@@ -468,18 +573,9 @@ const uploadPart = async (part: VideoPart) => {
       part.progress = Math.round((uploadedCount / totalChunks) * 100)
     }
 
-    // Phase 4: verify all chunks uploaded
-    part.status = 'checking'
-    const finalStatus = await withRetry(() => getUploadStatus(part.hash, { signal }), 3, signal)
-    if (!finalStatus.completed) {
-      const finalUploaded = new Set(finalStatus.uploadedChunks || [])
-      if (finalUploaded.size < totalChunks) {
-        throw new Error(`分片未全部上传完成 (${finalUploaded.size}/${totalChunks})`)
-      }
-    }
-
-    // Phase 5: merge (serialized)
+    // Phase 4: merge (serialized)
     part.status = 'merging'
+    part.progress = 100
     await acquireCompleteLock()
     try {
       if (signal.aborted) throw new Error('canceled')
@@ -487,7 +583,7 @@ const uploadPart = async (part: VideoPart) => {
         () =>
           completeUpload(
             { fileHash: part.hash, fileName: part.file.name, totalChunks },
-            { signal, timeout: 5 * 60 * 1000 }
+            { signal, timeout: COMPLETE_UPLOAD_TIMEOUT, silent: true }
           ),
         2,
         signal
@@ -511,14 +607,26 @@ const uploadPart = async (part: VideoPart) => {
 
 const removePart = (index: number) => {
   const part = parts.value[index]
+  const removedFirst = index === 0
   if (part?.abortController) {
     part.abortController.abort()
   }
   parts.value.splice(index, 1)
+  if (removedFirst) {
+    coverExtractJobId++
+    isExtractingFrames.value = false
+    recommendedCovers.value = []
+    const nextFirstPart = parts.value[0]
+    if (nextFirstPart) {
+      void extractFrames(nextFirstPart.file)
+    }
+  }
   processUploadQueue()
 }
 
 onBeforeUnmount(() => {
+  coverExtractJobId++
+  isExtractingFrames.value = false
   parts.value.forEach((p) => p.abortController?.abort())
 })
 
@@ -1034,13 +1142,7 @@ const handlePublish = async () => {
             <div
               class="relative aspect-video bg-black rounded-lg overflow-hidden flex items-center justify-center"
             >
-              <video
-                ref="frameVideoRef"
-                :src="videoUrl"
-                controls
-                class="w-full h-full"
-                crossorigin="anonymous"
-              ></video>
+              <video ref="frameVideoRef" :src="videoUrl" controls class="w-full h-full"></video>
             </div>
             <div class="flex justify-between items-center bg-muted/50 p-3 rounded-lg">
               <span class="text-sm text-muted-foreground"

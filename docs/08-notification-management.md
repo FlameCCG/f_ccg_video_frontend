@@ -36,10 +36,12 @@ Base URL：/v1
 | data.list[].link | string | 外部链接 |
 | data.list[].videoID | integer(uint) | 视频ID |
 | data.list[].videoTitle | string | 视频标题 |
+| data.list[].dynamicID | integer(uint) | 动态ID |
 | data.list[].commentID | integer(uint) | 评论ID |
 | data.list[].isRead | boolean | 是否已读 |
 
 响应示例:
+
 ```json
 {
   "code": 0,
@@ -57,6 +59,7 @@ Base URL：/v1
         "link": "https://example.com/page",
         "videoID": 2001,
         "videoTitle": "示例标题",
+        "dynamicID": 4001,
         "commentID": 3001,
         "isRead": true
       }
@@ -87,6 +90,7 @@ Base URL：/v1
 | data | object | 响应数据 |
 
 响应示例:
+
 ```json
 {
   "code": 0,
@@ -100,24 +104,26 @@ Base URL：/v1
 - 接口路径: GET /common/notification/counts
 - 认证: 需要登录（客户端全局自动携带 Token）
 - 依赖接口: 无
-- 接口说明: 获取各类型通知数量统计（需登录，包含未读私信总数 message）
+- 接口说明: 获取各类型未读通知数量统计（需登录，包含未读私信总数 message）
 - HTTP 状态码: 200（业务码 code 判断成功/失败）
 - 响应结构: code=0 成功，code=1 失败；msg 为提示信息
 
 请求参数:
+
 - 无
 
 响应字段:
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
 | data | NotificationCountSummary | - |
-| data.reply | integer(int64) | 回复通知数量 |
-| data.like | integer(int64) | 点赞通知数量 |
-| data.at | integer(int64) | @我通知数量 |
-| data.system | integer(int64) | 系统通知数量 |
+| data.reply | integer(int64) | 未读回复通知数量 |
+| data.like | integer(int64) | 未读点赞通知数量 |
+| data.at | integer(int64) | 未读@我通知数量 |
+| data.system | integer(int64) | 未读系统通知数量 |
 | data.message | integer(int64) | 未读私信总数 |
 
 响应示例:
+
 ```json
 {
   "code": 0,
@@ -152,6 +158,7 @@ Base URL：/v1
 | data | object | 响应数据 |
 
 响应示例:
+
 ```json
 {
   "code": 0,

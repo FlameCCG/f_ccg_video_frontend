@@ -2,7 +2,7 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { onClickOutside } from '@vueuse/core'
 import { toast } from 'vue-sonner'
-import { ImagePlus, Loader2, SmilePlus, Wifi, WifiOff, X } from 'lucide-vue-next'
+import { ImagePlus, Loader2, MoreVertical, SmilePlus, X } from 'lucide-vue-next'
 import { useRoute, useRouter } from 'vue-router'
 import {
   getConversationList,
@@ -62,12 +62,7 @@ const fileInputRef = ref<HTMLInputElement | null>(null)
 const messageScrollerRef = ref<HTMLElement | null>(null)
 
 const currentUserId = computed(() => authStore.user?.id ?? 0)
-const currentConversation = computed(
-  () => conversations.value.find((item) => item.peerId === currentPeerId.value) ?? null
-)
-const currentPeerProfile = computed(() =>
-  currentPeerId.value ? (peerProfiles.value[currentPeerId.value] ?? null) : null
-)
+
 const currentPeerDisplayName = computed(() =>
   currentPeerId.value
     ? (peerProfiles.value[currentPeerId.value]?.username ?? `UID ${currentPeerId.value}`)
@@ -537,6 +532,36 @@ const sendEvent = (payload: ChatClientEvent) => {
 const composerDisabled = computed(() => !currentPeerId.value)
 const connectionLabel = computed(() => (connected.value ? '消息实时连接中' : '消息重连中'))
 
+const MAX_TEXT_LENGTH = 500
+const charCount = computed(() => draftText.value.length)
+
+const formatMessageTime = (dateStr: string): string => {
+  const date = new Date(dateStr)
+  const now = new Date()
+  const pad = (n: number) => String(n).padStart(2, '0')
+  const timeStr = `${pad(date.getHours())}:${pad(date.getMinutes())}`
+
+  if (
+    date.getFullYear() === now.getFullYear() &&
+    date.getMonth() === now.getMonth() &&
+    date.getDate() === now.getDate()
+  ) {
+    return `今天 ${timeStr}`
+  }
+
+  return `${date.getFullYear()}年${date.getMonth() + 1}月${date.getDate()}日 ${timeStr}`
+}
+
+const shouldShowTimeSeparator = (index: number): boolean => {
+  if (index === 0) return true
+  const currentMsg = messages.value[index]
+  const prevMsg = messages.value[index - 1]
+  if (!currentMsg || !prevMsg) return false
+  const current = new Date(currentMsg.createdAt).getTime()
+  const prev = new Date(prevMsg.createdAt).getTime()
+  return current - prev > 5 * 60 * 1000
+}
+
 const handleEditorKeydown = (event: KeyboardEvent) => {
   if (event.key === 'Enter' && !event.shiftKey) {
     event.preventDefault()
@@ -578,15 +603,15 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div class="flex h-full flex-col overflow-hidden bg-background lg:flex-row">
+  <div class="flex h-full flex-col overflow-hidden bg-card lg:flex-row">
+    <!-- Conversation List Panel -->
     <div
-      class="flex w-full shrink-0 flex-col border-b border-border/60 bg-background lg:w-[280px] lg:border-b-0 lg:border-r"
+      class="flex w-full shrink-0 flex-col border-b border-border/60 bg-card lg:w-[280px] lg:border-b-0 lg:border-r"
     >
-      <div class="flex h-[52px] shrink-0 items-center justify-between border-b px-4">
-        <div>
-          <h2 class="text-[14px] font-medium text-foreground">近期消息</h2>
-          <p class="mt-0.5 text-[11px] text-muted-foreground">点击会话后立即同步已读</p>
-        </div>
+      <div
+        class="flex h-[52px] shrink-0 items-center justify-between border-b border-border/40 px-4"
+      >
+        <h2 class="text-[14px] font-medium text-foreground">我的消息</h2>
         <span
           class="rounded-full px-2 py-1 text-[11px]"
           :class="
@@ -597,7 +622,13 @@ onBeforeUnmount(() => {
         </span>
       </div>
 
-      <div class="max-h-[240px] flex-1 overflow-y-auto py-2 lg:max-h-none">
+      <div class="flex h-[38px] shrink-0 items-center border-b border-border/30 px-4">
+        <span class="text-[12px] text-muted-foreground">最近消息</span>
+      </div>
+
+      <div
+        class="max-h-[240px] flex-1 overflow-y-auto lg:max-h-none [&::-webkit-scrollbar-thumb]:rounded-[6px] [&::-webkit-scrollbar-thumb]:bg-border hover:[&::-webkit-scrollbar-thumb]:bg-muted-foreground/30 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar]:w-1.5"
+      >
         <div v-if="loadingConversations" class="p-4 text-center text-xs text-muted-foreground">
           加载中...
         </div>
@@ -611,11 +642,11 @@ onBeforeUnmount(() => {
           <div
             v-for="conversation in conversations"
             :key="conversation.id"
-            class="group mx-2 flex w-[calc(100%-16px)] items-center gap-3 rounded-xl p-3 text-left transition-colors"
+            class="group flex items-center gap-3 px-4 py-3 text-left transition-colors"
             :class="
               currentPeerId === conversation.peerId
-                ? 'bg-muted text-foreground'
-                : 'text-muted-foreground hover:bg-muted/50 hover:text-foreground'
+                ? 'bg-muted/80 text-foreground'
+                : 'text-muted-foreground hover:bg-muted/40 hover:text-foreground'
             "
             role="button"
             tabindex="0"
@@ -635,18 +666,18 @@ onBeforeUnmount(() => {
               />
               <span
                 v-if="conversation.unread > 0"
-                class="absolute -right-1 -top-1 flex h-5 min-w-[20px] items-center justify-center rounded-full border-2 border-background bg-destructive px-1 text-[10px] text-destructive-foreground"
+                class="absolute -right-0.5 -top-0.5 flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-[#fb7299] px-1 text-[10px] font-medium text-white"
               >
                 {{ conversation.unread > 99 ? '99+' : conversation.unread }}
               </span>
             </button>
 
             <div class="min-w-0 flex-1">
-              <div class="mb-1 flex items-center justify-between gap-3">
+              <div class="mb-0.5 flex items-center justify-between gap-2">
                 <span class="truncate text-[13px] font-medium text-foreground">
                   {{ resolvePeerName(conversation.peerId) }}
                 </span>
-                <span class="shrink-0 text-[11px] text-muted-foreground">
+                <span class="shrink-0 text-[11px] text-muted-foreground/70">
                   {{ formatTimeAgo(conversation.updatedAt * 1000) }}
                 </span>
               </div>
@@ -659,39 +690,31 @@ onBeforeUnmount(() => {
       </div>
     </div>
 
-    <div class="relative min-w-0 flex-1 bg-background/90">
+    <!-- Chat Area -->
+    <div class="relative min-w-0 flex-1 bg-card">
       <template v-if="currentPeerId">
         <div class="flex h-full flex-col">
-          <div class="flex h-[52px] shrink-0 items-center justify-between border-b px-6">
-            <div class="flex min-w-0 items-center gap-3">
-              <button type="button" class="shrink-0" @click="openUserHome(currentPeerId)">
-                <AppAvatar
-                  :src="currentPeerProfile?.avatar"
-                  :name="currentPeerDisplayName"
-                  container-class="h-10 w-10 text-sm"
-                />
-              </button>
-              <div class="min-w-0">
-                <h2 class="text-[15px] font-medium text-foreground">
-                  与 {{ currentPeerDisplayName }} 的对话
-                </h2>
-                <p class="mt-0.5 text-[12px] text-muted-foreground">
-                  {{
-                    currentConversation?.unread
-                      ? `还有 ${currentConversation.unread} 条未读`
-                      : '当前会话已读'
-                  }}
-                </p>
-              </div>
-            </div>
-            <div class="flex items-center gap-2 text-[12px] text-muted-foreground">
-              <Wifi v-if="connected" class="h-4 w-4 text-emerald-500" />
-              <WifiOff v-else class="h-4 w-4 text-amber-500" />
-              <span>{{ connected ? '实时同步中' : '重连中' }}</span>
-            </div>
+          <!-- Chat Header -->
+          <div
+            class="flex h-[52px] shrink-0 items-center justify-between border-b border-border/40 px-6"
+          >
+            <h2 class="text-[15px] font-medium text-foreground">
+              {{ currentPeerDisplayName }}
+            </h2>
+            <button
+              type="button"
+              class="rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+              @click="openUserHome(currentPeerId)"
+            >
+              <MoreVertical class="h-[18px] w-[18px]" />
+            </button>
           </div>
 
-          <div ref="messageScrollerRef" class="flex-1 overflow-y-auto px-5 py-4">
+          <!-- Messages -->
+          <div
+            ref="messageScrollerRef"
+            class="flex-1 overflow-y-auto bg-muted/10 px-5 py-4 [&::-webkit-scrollbar-thumb]:rounded-[6px] [&::-webkit-scrollbar-thumb]:bg-muted-foreground/20 hover:[&::-webkit-scrollbar-thumb]:bg-muted-foreground/40 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar]:w-1.5"
+          >
             <div v-if="loadingMessages" class="mt-4 text-center text-xs text-muted-foreground">
               加载中...
             </div>
@@ -700,93 +723,99 @@ onBeforeUnmount(() => {
               v-else-if="messages.length === 0"
               class="flex h-full items-center justify-center text-sm text-muted-foreground"
             >
-              还没有消息，发一句打个招呼吧。
+              还没有消息，发一句打个招呼吧
             </div>
 
-            <div v-else class="space-y-4">
-              <div
-                v-for="message in messages"
+            <div v-else class="space-y-3">
+              <template
+                v-for="(message, index) in messages"
                 :key="message.clientMsgId || message.id"
-                class="flex items-end gap-2"
-                :class="message.senderId === currentUserId ? 'flex-row-reverse' : ''"
               >
-                <button type="button" class="shrink-0" @click="openUserHome(message.senderId)">
-                  <AppAvatar
-                    :src="resolveMessageAvatar(message)"
-                    :name="resolveMessageName(message)"
-                    container-class="h-[36px] w-[36px] shrink-0 text-xs"
-                  />
-                </button>
-
+                <!-- Time Separator -->
                 <div
-                  class="max-w-[72%] rounded-3xl px-4 py-3 text-[14px] shadow-sm transition-opacity"
-                  :class="
-                    message.senderId === currentUserId
-                      ? 'rounded-tr-sm bg-primary text-primary-foreground'
-                      : 'rounded-tl-sm bg-muted text-foreground'
-                  "
-                  :style="{ opacity: message.pending ? '0.72' : '1' }"
+                  v-if="shouldShowTimeSeparator(index)"
+                  class="flex items-center justify-center py-2"
                 >
-                  <div v-if="message.type === 'emoji'" class="text-[30px] leading-none">
-                    {{ message.emoji || message.text }}
-                  </div>
+                  <span
+                    class="rounded-full bg-muted/60 px-3 py-1 text-[11px] text-muted-foreground"
+                  >
+                    {{ formatMessageTime(message.createdAt) }}
+                  </span>
+                </div>
 
-                  <div v-else-if="message.type === 'image' || message.type === 'sticker'">
-                    <img
-                      :src="message.media?.url"
-                      :alt="message.type === 'sticker' ? '表情包消息' : '图片消息'"
-                      class="rounded-2xl object-cover"
-                      :class="
-                        message.type === 'sticker'
-                          ? 'max-h-[220px] max-w-[220px]'
-                          : 'max-h-[320px] max-w-full'
-                      "
+                <!-- Message Bubble -->
+                <div
+                  class="flex items-end gap-2"
+                  :class="message.senderId === currentUserId ? 'flex-row-reverse' : ''"
+                >
+                  <button
+                    type="button"
+                    class="shrink-0 self-start"
+                    @click="openUserHome(message.senderId)"
+                  >
+                    <AppAvatar
+                      :src="resolveMessageAvatar(message)"
+                      :name="resolveMessageName(message)"
+                      container-class="h-[34px] w-[34px] shrink-0 text-xs"
                     />
-                    <div
-                      v-if="message.type === 'sticker'"
-                      class="mt-2 text-[11px] text-primary-foreground/70"
-                    >
-                      表情包
-                    </div>
-                  </div>
-
-                  <div v-else class="whitespace-pre-wrap break-words">
-                    {{ message.text }}
-                  </div>
+                  </button>
 
                   <div
-                    class="mt-2 text-[11px]"
+                    class="chat-bubble max-w-[65%] text-[14px] transition-opacity"
                     :class="
-                      message.senderId === currentUserId
-                        ? 'text-primary-foreground/70'
-                        : 'text-muted-foreground'
+                      message.senderId === currentUserId ? 'chat-bubble-self' : 'chat-bubble-peer'
                     "
+                    :style="{ opacity: message.pending ? '0.65' : '1' }"
                   >
-                    {{ formatTimeAgo(new Date(message.createdAt).getTime()) }}
-                    <span v-if="message.pending"> · 发送中</span>
+                    <div v-if="message.type === 'emoji'" class="text-[30px] leading-none">
+                      {{ message.emoji || message.text }}
+                    </div>
+
+                    <div v-else-if="message.type === 'image' || message.type === 'sticker'">
+                      <img
+                        :src="message.media?.url"
+                        :alt="message.type === 'sticker' ? '表情包消息' : '图片消息'"
+                        class="rounded-xl object-cover"
+                        :class="
+                          message.type === 'sticker'
+                            ? 'max-h-[200px] max-w-[200px]'
+                            : 'max-h-[280px] max-w-full'
+                        "
+                      />
+                    </div>
+
+                    <div v-else class="whitespace-pre-wrap break-words leading-relaxed">
+                      {{ message.text }}
+                    </div>
+
+                    <span v-if="message.pending" class="mt-1 block text-[11px] opacity-60">
+                      发送中...
+                    </span>
                   </div>
                 </div>
-              </div>
+              </template>
             </div>
           </div>
 
-          <div class="shrink-0 border-t bg-background p-4">
+          <!-- Composer -->
+          <div class="shrink-0 border-t border-border/40 bg-card px-4 py-3">
+            <!-- Pending Media Preview -->
             <div
               v-if="pendingMedia"
-              class="mb-3 rounded-2xl border border-border/60 bg-muted/40 p-3"
+              class="mb-3 rounded-xl border border-border/50 bg-muted/30 p-3"
             >
-              <div class="mb-3 flex items-start justify-between gap-3">
+              <div class="mb-2 flex items-start justify-between gap-3">
                 <div class="flex items-center gap-3">
                   <img
                     :src="pendingMedia.previewUrl"
                     alt="待发送图片预览"
-                    class="h-16 w-16 rounded-xl object-cover"
+                    class="h-14 w-14 rounded-lg object-cover"
                   />
                   <div>
-                    <div class="text-sm font-medium text-foreground">
+                    <div class="text-[13px] font-medium text-foreground">
                       {{ pendingMedia.file.name }}
                     </div>
-                    <div class="mt-1 text-xs text-muted-foreground">
+                    <div class="mt-0.5 text-[11px] text-muted-foreground">
                       {{ Math.max(1, Math.round(pendingMedia.file.size / 1024)) }} KB
                     </div>
                   </div>
@@ -799,96 +828,102 @@ onBeforeUnmount(() => {
                 </button>
               </div>
 
-              <div class="flex flex-wrap items-center justify-between gap-3">
-                <div class="flex items-center gap-2">
+              <div class="flex items-center justify-between gap-3">
+                <div class="flex items-center gap-1.5">
                   <button
-                    class="rounded-full px-3 py-1 text-xs transition-colors"
+                    class="rounded-full px-2.5 py-1 text-[11px] transition-colors"
                     :class="
                       pendingMedia.msgType === 'image'
-                        ? 'bg-primary text-primary-foreground'
-                        : 'bg-background text-muted-foreground'
+                        ? 'bg-[#00aeec] text-white'
+                        : 'bg-muted text-muted-foreground hover:text-foreground'
                     "
                     @click="updatePendingMediaType('image')"
                   >
-                    图片消息
+                    图片
                   </button>
                   <button
-                    class="rounded-full px-3 py-1 text-xs transition-colors"
+                    class="rounded-full px-2.5 py-1 text-[11px] transition-colors"
                     :class="
                       pendingMedia.msgType === 'sticker'
-                        ? 'bg-primary text-primary-foreground'
-                        : 'bg-background text-muted-foreground'
+                        ? 'bg-[#00aeec] text-white'
+                        : 'bg-muted text-muted-foreground hover:text-foreground'
                     "
                     @click="updatePendingMediaType('sticker')"
                   >
-                    表情包消息
+                    表情包
                   </button>
                 </div>
 
                 <button
-                  class="inline-flex items-center gap-2 rounded-full bg-primary px-4 py-2 text-sm text-primary-foreground transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
+                  class="inline-flex items-center gap-1.5 rounded-lg bg-[#00aeec] px-3 py-1.5 text-[12px] text-white transition-colors hover:bg-[#00aeec]/90 disabled:cursor-not-allowed disabled:opacity-50"
                   :disabled="uploadingMedia || !connected"
                   @click="sendPendingMedia"
                 >
-                  <Loader2 v-if="uploadingMedia" class="h-4 w-4 animate-spin" />
-                  <span>{{ uploadingMedia ? '上传中...' : '发送媒体消息' }}</span>
+                  <Loader2 v-if="uploadingMedia" class="h-3.5 w-3.5 animate-spin" />
+                  <span>{{ uploadingMedia ? '上传中...' : '发送' }}</span>
                 </button>
               </div>
             </div>
 
-            <div class="rounded-3xl border border-border/60 bg-background px-4 py-3 shadow-sm">
+            <!-- Tool bar -->
+            <div class="mb-2 flex items-center gap-1">
+              <div ref="emojiPickerRef" class="relative">
+                <button
+                  class="rounded-lg p-2 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
+                  :disabled="composerDisabled"
+                  title="表情"
+                  @click="showEmojiPicker = !showEmojiPicker"
+                >
+                  <SmilePlus class="h-5 w-5" />
+                </button>
+
+                <div v-if="showEmojiPicker" class="absolute bottom-[calc(100%+8px)] left-0 z-20">
+                  <EmojiPicker @select="sendEmojiMessage" />
+                </div>
+              </div>
+
+              <button
+                class="rounded-lg p-2 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
+                :disabled="composerDisabled"
+                title="图片/表情包"
+                @click="openMediaPicker"
+              >
+                <ImagePlus class="h-5 w-5" />
+              </button>
+
+              <input
+                ref="fileInputRef"
+                type="file"
+                class="hidden"
+                accept="image/*"
+                @change="handleFileChange"
+              />
+            </div>
+
+            <!-- Text input + Send -->
+            <div
+              class="rounded-xl border border-border/50 bg-muted/30 px-3 py-2 transition-colors focus-within:border-primary/50 focus-within:bg-background shadow-sm"
+            >
               <textarea
                 v-model="draftText"
-                class="min-h-[84px] w-full resize-none border-0 bg-transparent text-sm leading-6 outline-none"
+                class="min-h-[36px] w-full resize-none border-0 bg-transparent text-[13px] leading-5 text-foreground outline-none placeholder:text-muted-foreground/60"
                 :disabled="composerDisabled"
-                placeholder="输入文字消息，Enter 发送，Shift + Enter 换行"
+                :maxlength="MAX_TEXT_LENGTH"
+                placeholder="请输入消息内容"
+                rows="1"
                 @keydown="handleEditorKeydown"
               ></textarea>
 
-              <div class="mt-3 flex flex-wrap items-center justify-between gap-3">
-                <div class="flex items-center gap-2">
-                  <div ref="emojiPickerRef" class="relative">
-                    <button
-                      class="inline-flex items-center gap-2 rounded-full border border-border/60 px-3 py-2 text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
-                      :disabled="composerDisabled"
-                      @click="showEmojiPicker = !showEmojiPicker"
-                    >
-                      <SmilePlus class="h-4 w-4" />
-                      <span>emoji</span>
-                    </button>
-
-                    <div
-                      v-if="showEmojiPicker"
-                      class="absolute bottom-[calc(100%+12px)] left-0 z-20"
-                    >
-                      <EmojiPicker @select="sendEmojiMessage" />
-                    </div>
-                  </div>
-
-                  <button
-                    class="inline-flex items-center gap-2 rounded-full border border-border/60 px-3 py-2 text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
-                    :disabled="composerDisabled"
-                    @click="openMediaPicker"
-                  >
-                    <ImagePlus class="h-4 w-4" />
-                    <span>图片/表情包</span>
-                  </button>
-
-                  <input
-                    ref="fileInputRef"
-                    type="file"
-                    class="hidden"
-                    accept="image/*"
-                    @change="handleFileChange"
-                  />
-                </div>
-
+              <div class="mt-1 flex items-center justify-end gap-2">
+                <span class="text-[11px] text-muted-foreground/60">
+                  {{ charCount }}/{{ MAX_TEXT_LENGTH }}
+                </span>
                 <button
-                  class="rounded-full bg-primary px-5 py-2 text-sm text-primary-foreground transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
+                  class="rounded-lg bg-[#00aeec] px-4 py-1.5 text-[12px] font-medium text-white transition-colors hover:bg-[#00aeec]/90 disabled:cursor-not-allowed disabled:bg-muted disabled:text-muted-foreground"
                   :disabled="composerDisabled || !draftText.trim() || !connected"
                   @click="sendTextMessage"
                 >
-                  发送文字消息
+                  发送
                 </button>
               </div>
             </div>
@@ -896,19 +931,36 @@ onBeforeUnmount(() => {
         </div>
       </template>
 
+      <!-- Empty State -->
       <template v-else>
-        <div
-          class="absolute inset-0 flex flex-col items-center justify-center gap-4 p-6 text-center"
-        >
-          <div class="rounded-full bg-muted px-4 py-2 text-sm text-muted-foreground">
-            从左侧选择会话后，会自动拉取消息并标记已读
-          </div>
-          <div class="max-w-sm text-[13px] leading-6 text-muted-foreground">
-            当前私信支持文字消息、emoji
-            消息，以及图片/表情包消息。媒体发送前会先上传并允许你切换成“图片”或“表情包”类型。
-          </div>
+        <div class="absolute inset-0 flex flex-col items-center justify-center gap-2 p-6">
+          <img
+            src="https://s1.hdslb.com/bfs/seed/jinkela/short/message/img/gochat.png"
+            alt="开始聊天"
+            class="mb-2 h-auto w-[280px] opacity-90"
+          />
+          <p class="text-[13px] text-muted-foreground">快找小伙伴聊天吧！（＾▽＾）ﾉ</p>
         </div>
       </template>
     </div>
   </div>
 </template>
+
+<style scoped>
+.chat-bubble {
+  border-radius: 18px;
+  padding: 10px 16px;
+}
+
+.chat-bubble-self {
+  background-color: #00aeec;
+  color: #fff;
+  border-top-right-radius: 4px;
+}
+
+.chat-bubble-peer {
+  background-color: var(--color-muted);
+  color: var(--color-foreground);
+  border-top-left-radius: 4px;
+}
+</style>

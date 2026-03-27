@@ -29,8 +29,14 @@ export interface AuthorBrief {
 export interface VideoBrief {
   id: number
   title: string
+  description: string
   cover: string
   duration: number
+  views: number
+  danmuCount: number
+  likeCount: number
+  commentCount: number
+  isLiked: boolean
   isPinned: boolean
   pinnedAt: string | null
 }
@@ -42,6 +48,9 @@ export interface DynamicBrief {
   id: number
   content: string
   imageUrl: string
+  likeCount: number
+  commentCount: number
+  isLiked: boolean
   isPinned: boolean
   pinnedAt: string | null
 }
@@ -63,11 +72,19 @@ export interface DynamicItem {
  */
 export interface WorkFeedItem {
   workType: WorkTypeValue
-  workId: number
   createdAt: string
   author: AuthorBrief
   video: VideoBrief | null
   dynamic: DynamicBrief | null
+}
+
+/**
+ * 从作品流项中获取作品 ID（视频 ID 或动态 ID）
+ */
+export const getWorkId = (item: WorkFeedItem): number => {
+  if (item.workType === WorkType.VIDEO && item.video) return item.video.id
+  if (item.workType === WorkType.DYNAMIC && item.dynamic) return item.dynamic.id
+  return 0
 }
 
 /**
@@ -245,4 +262,20 @@ export const getDynamicCounts = (): Promise<DynamicCountsResult> => {
  */
 export const markDynamicRead = (params: MarkDynamicReadParams): Promise<MarkDynamicReadResult> => {
   return request.post('/common/dynamic/read', params)
+}
+
+/**
+ * 动态点赞响应
+ */
+export interface LikeDynamicResult {
+  likeCount: number
+  isLiked: boolean
+}
+
+/**
+ * 点赞/取消点赞动态
+ * POST /common/dynamic/like
+ */
+export const toggleDynamicLike = (dynamicId: number): Promise<LikeDynamicResult> => {
+  return request.post('/common/dynamic/like', { dynamicId })
 }

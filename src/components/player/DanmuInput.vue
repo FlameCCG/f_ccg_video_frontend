@@ -280,7 +280,7 @@ const handleKeydown = (e: KeyboardEvent) => {
 }
 
 .icon-btn:hover {
-  color: #18191c;
+  color: var(--color-foreground);
   background: rgb(0 0 0 / 0.05);
   transform: scale(1.05);
 }
@@ -290,13 +290,13 @@ const handleKeydown = (e: KeyboardEvent) => {
 }
 
 .icon-btn.is-active {
-  color: #00a1d6;
-  background: rgb(0 161 214 / 0.1);
+  color: var(--color-primary);
+  background: oklch(var(--primary) / 0.1);
 }
 
 :deep(.dark) .icon-btn,
 .dark .icon-btn {
-  color: #9499a0;
+  color: var(--color-muted-foreground);
 }
 
 :deep(.dark) .icon-btn:hover,
@@ -307,35 +307,35 @@ const handleKeydown = (e: KeyboardEvent) => {
 
 :deep(.dark) .icon-btn.is-active,
 .dark .icon-btn.is-active {
-  color: #00a1d6;
-  background: rgb(0 161 214 / 0.15);
+  color: var(--color-primary);
+  background: oklch(var(--primary) / 0.15);
 }
 
 /* --- Input Field --- */
 .danmu-input {
   height: 32px;
   border-radius: 16px;
-  background: #f1f2f3;
+  background-color: var(--color-secondary);
   border: 1px solid transparent;
   padding: 0 16px;
   font-size: 13px;
-  color: #18191c;
+  color: var(--color-foreground);
   transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
   outline: none;
 }
 
 .danmu-input::placeholder {
-  color: #9499a0;
+  color: var(--color-muted-foreground);
 }
 
 .danmu-input:hover:not(:disabled) {
-  background: #e3e5e7;
+  background-color: var(--color-secondary);
 }
 
 .danmu-input:focus {
-  background: #ffffff;
-  border-color: #00a1d6;
-  box-shadow: 0 0 0 2px rgb(0 161 214 / 0.2);
+  background-color: var(--color-card);
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 2px oklch(var(--primary) / 0.2);
 }
 
 .danmu-input:disabled {
@@ -362,8 +362,8 @@ const handleKeydown = (e: KeyboardEvent) => {
 :deep(.dark) .danmu-input:focus,
 .dark .danmu-input:focus {
   background: #18191c;
-  border-color: #00a1d6;
-  box-shadow: 0 0 0 2px rgb(0 161 214 / 0.3);
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 2px oklch(var(--primary) / 0.3);
 }
 
 /* --- Send Button --- */
@@ -378,34 +378,34 @@ const handleKeydown = (e: KeyboardEvent) => {
   font-size: 13px;
   font-weight: 500;
   color: #ffffff;
-  background: #00a1d6;
+  background-color: var(--color-primary);
   border: none;
   cursor: pointer;
   transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
-  box-shadow: 0 2px 6px rgb(0 161 214 / 0.3);
+  box-shadow: 0 2px 6px oklch(var(--primary) / 0.3);
 }
 
 .send-btn:hover:not(:disabled) {
-  background: #00b5e5;
+  background-color: var(--color-primary);
   transform: translateY(-1px);
-  box-shadow: 0 4px 12px rgb(0 161 214 / 0.4);
+  box-shadow: 0 4px 12px oklch(var(--primary) / 0.4);
 }
 
 .send-btn:active:not(:disabled) {
   transform: translateY(0) scale(0.96);
-  box-shadow: 0 2px 4px rgb(0 161 214 / 0.3);
+  box-shadow: 0 2px 4px oklch(var(--primary) / 0.3);
 }
 
 .send-btn:disabled {
-  background: #e3e5e7;
-  color: #9499a0;
+  background-color: var(--color-secondary);
+  color: var(--color-muted-foreground);
   box-shadow: none;
   cursor: not-allowed;
 }
 
 .send-btn.is-success {
   background: #00b578;
-  box-shadow: 0 2px 6px rgb(0 181 120 / 0.3);
+  box-shadow: 0 2px 6px oklch(var(--primary) / 0.3);
   cursor: default;
 }
 
@@ -448,7 +448,7 @@ const handleKeydown = (e: KeyboardEvent) => {
 .setting-title {
   font-size: 13px;
   font-weight: 600;
-  color: #18191c;
+  color: var(--color-foreground);
   margin-bottom: 12px;
   letter-spacing: 0.02em;
 }
@@ -487,7 +487,7 @@ const handleKeydown = (e: KeyboardEvent) => {
   border-color: #ffffff;
   box-shadow:
     0 0 0 2px #00a1d6,
-    0 4px 12px rgb(0 161 214 / 0.3);
+    0 4px 12px oklch(var(--primary) / 0.3);
   z-index: 1;
 }
 
@@ -513,28 +513,28 @@ const handleKeydown = (e: KeyboardEvent) => {
   border-radius: 8px;
   font-size: 12px;
   color: #757575;
-  background: #f1f2f3;
+  background-color: var(--color-secondary);
   border: 1px solid transparent;
   cursor: pointer;
   transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .position-btn:hover {
-  background: #e3e5e7;
-  color: #18191c;
+  background-color: var(--color-secondary);
+  color: var(--color-foreground);
 }
 
 .position-btn.is-active {
-  color: #00a1d6;
-  background: rgb(0 161 214 / 0.1);
-  border-color: rgb(0 161 214 / 0.3);
+  color: var(--color-primary);
+  background: oklch(var(--primary) / 0.1);
+  border-color: oklch(var(--primary) / 0.3);
   font-weight: 500;
 }
 
 :deep(.dark) .position-btn,
 .dark .position-btn {
   background: #2f3134;
-  color: #9499a0;
+  color: var(--color-muted-foreground);
 }
 
 :deep(.dark) .position-btn:hover,
@@ -545,27 +545,27 @@ const handleKeydown = (e: KeyboardEvent) => {
 
 :deep(.dark) .position-btn.is-active,
 .dark .position-btn.is-active {
-  color: #00a1d6;
-  background: rgb(0 161 214 / 0.15);
-  border-color: rgb(0 161 214 / 0.4);
+  color: var(--color-primary);
+  background: oklch(var(--primary) / 0.15);
+  border-color: oklch(var(--primary) / 0.4);
 }
 
 /* --- Historical Danmu --- */
 .history-date-input {
   height: 30px;
   border-radius: 6px;
-  background: #f1f2f3;
+  background-color: var(--color-secondary);
   border: 1px solid transparent;
   padding: 0 8px;
   font-size: 12px;
-  color: #18191c;
+  color: var(--color-foreground);
   outline: none;
   transition: all 0.2s ease;
 }
 
 .history-date-input:focus {
-  border-color: #00a1d6;
-  background: #fff;
+  border-color: var(--color-primary);
+  background-color: var(--color-card);
 }
 
 :deep(.dark) .history-date-input,
@@ -579,7 +579,7 @@ const handleKeydown = (e: KeyboardEvent) => {
   border-radius: 6px;
   font-size: 12px;
   font-weight: 500;
-  background: #00a1d6;
+  background-color: var(--color-primary);
   color: white;
   border: none;
   cursor: pointer;

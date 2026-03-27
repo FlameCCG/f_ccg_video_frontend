@@ -100,7 +100,8 @@ onBeforeUnmount(() => {
 }
 
 .slim-header {
-  background: #fff;
-  border-bottom: 1px solid #e3e5e7;
+  background-color: var(--glass-bg);
+  backdrop-filter: blur(var(--glass-blur));
+  border-bottom: 1px solid var(--border-color);
 }
 </style>

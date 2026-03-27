@@ -45,7 +45,7 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="mx-auto mt-6 mb-8 max-w-[1400px] px-4 sm:px-6 lg:px-8">
+  <div class="mx-auto mt-6 pb-8 max-w-[1400px] px-4 sm:px-6 lg:px-8">
     <TrendingNav />
 
     <!-- Page Header (Optional, but image 1 also has some subtle text "各个领域中新奇好玩的优质内容都在这里~") -->

@@ -56,7 +56,7 @@ const fixedLinks = [
           v-for="partition in partitions"
           :key="partition.id"
           :to="`/partition/${partition.id}`"
-          class="flex h-[26px] items-center justify-center rounded-md bg-[#F6F7F8] px-2 text-[13px] tracking-wide text-[#61666D] transition-colors hover:bg-[#E3E5E7] hover:text-[#18191C] cursor-pointer"
+          class="flex h-[26px] items-center justify-center rounded-md bg-secondary px-2 text-[13px] tracking-wide text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground cursor-pointer"
         >
           {{ partition.name }}
         </router-link>

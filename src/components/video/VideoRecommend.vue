@@ -126,8 +126,8 @@ watch(() => props.videoId, fetchRecommend)
 }
 
 .skeleton-box {
-  --shimmer-color-base: hsl(var(--muted));
-  --shimmer-color-peak: hsl(var(--muted) / 0.5);
+  --shimmer-color-base: oklch(var(--muted));
+  --shimmer-color-peak: oklch(var(--muted) / 0.5);
 
   background: linear-gradient(
     110deg,
@@ -166,8 +166,8 @@ watch(() => props.videoId, fetchRecommend)
 }
 
 .video-card:hover {
-  background: hsl(var(--muted) / 0.4);
-  border-color: hsl(var(--border) / 0.5);
+  background: oklch(var(--muted) / 0.4);
+  border-color: oklch(var(--border) / 0.5);
   transform: translateX(4px);
   box-shadow: -4px 4px 12px rgb(0 0 0 / 0.02);
 }

@@ -342,14 +342,14 @@ onUnmounted(() => {
         <button
           v-if="mode !== 'login'"
           type="button"
-          class="absolute left-4 top-4 rounded-full p-1.5 text-white/80 transition-colors hover:bg-white/20 hover:text-white"
+          class="absolute left-4 top-4 rounded-full p-1.5 text-white/80 transition-colors hover:bg-card/20 hover:text-white"
           @click="switchMode('login')"
         >
           <ArrowLeft class="h-5 w-5" />
         </button>
         <div class="flex flex-col items-center">
           <div
-            class="mb-3 flex h-16 w-16 items-center justify-center rounded-2xl bg-white/20 backdrop-blur-sm"
+            class="mb-3 flex h-16 w-16 items-center justify-center rounded-2xl bg-card/20 backdrop-blur-sm"
           >
             <svg class="h-10 w-10 text-white" viewBox="0 0 24 24" fill="currentColor">
               <path
@@ -463,7 +463,7 @@ onUnmounted(() => {
             </button>
             <button
               type="button"
-              class="flex h-11 w-11 cursor-pointer items-center justify-center rounded-full bg-white text-gray-700 shadow-md ring-1 ring-gray-200 transition-all hover:scale-105 hover:shadow-lg dark:bg-gray-800 dark:text-white dark:ring-gray-700"
+              class="flex h-11 w-11 cursor-pointer items-center justify-center rounded-full bg-card text-gray-700 shadow-md ring-1 ring-gray-200 transition-all hover:scale-105 hover:shadow-lg dark:bg-gray-800 dark:text-white dark:ring-gray-700"
               title="Google 登录"
               @click="handleGoogleLogin"
             >
@@ -488,7 +488,7 @@ onUnmounted(() => {
             </button>
             <button
               type="button"
-              class="flex h-11 w-11 cursor-pointer items-center justify-center rounded-full bg-[#24292F] text-white transition-all hover:scale-105 hover:shadow-lg dark:bg-white dark:text-[#24292F]"
+              class="flex h-11 w-11 cursor-pointer items-center justify-center rounded-full bg-[#24292F] text-white transition-all hover:scale-105 hover:shadow-lg dark:bg-card dark:text-[#24292F]"
               title="GitHub 登录"
               @click="handleGithubLogin"
             >
@@ -500,7 +500,7 @@ onUnmounted(() => {
             </button>
             <button
               type="button"
-              class="flex h-11 w-11 cursor-pointer items-center justify-center rounded-full bg-black text-white transition-all hover:scale-105 hover:shadow-lg dark:bg-white dark:text-black"
+              class="flex h-11 w-11 cursor-pointer items-center justify-center rounded-full bg-black text-white transition-all hover:scale-105 hover:shadow-lg dark:bg-card dark:text-black"
               title="X 登录"
               @click="handleXLogin"
             >

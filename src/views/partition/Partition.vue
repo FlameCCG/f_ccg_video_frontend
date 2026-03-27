@@ -112,7 +112,7 @@ onMounted(async () => {
 </script>
 
 <template>
-  <div class="mx-auto mt-6 mb-8 max-w-[1800px] px-4 sm:px-6 lg:px-8">
+  <div class="mx-auto mt-6 pb-8 max-w-[1800px] px-4 sm:px-6 lg:px-8">
     <!-- Partition Header -->
     <div v-if="activePartition && !initialLoading" class="mb-8 flex items-center gap-3 sm:gap-4">
       <div class="flex items-center justify-center text-primary">

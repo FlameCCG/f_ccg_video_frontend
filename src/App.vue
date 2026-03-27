@@ -3,9 +3,11 @@ import { ref, onMounted, onUnmounted } from 'vue'
 import { RouterView } from 'vue-router'
 import { Toaster } from '@/components/ui/sonner'
 import { useAuthStore } from '@/stores/auth'
+import { useThemeStore } from '@/stores/theme'
 import AuthDialog from '@/components/auth/AuthDialog.vue'
 
 const authStore = useAuthStore()
+useThemeStore()
 const showAuthDialog = ref(false)
 
 const handleLoginRequired = () => {

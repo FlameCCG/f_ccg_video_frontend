@@ -76,7 +76,7 @@ onMounted(async () => {
 </script>
 
 <template>
-  <div class="mx-auto mt-6 mb-8 max-w-[1800px] px-4 sm:px-6 lg:px-8">
+  <div class="mx-auto mt-6 pb-8 max-w-[1800px] px-4 sm:px-6 lg:px-8">
     <!-- Hero Section: Carousel + Featured Videos using same grid as below -->
     <div
       class="mb-6 grid auto-rows-fr grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5"

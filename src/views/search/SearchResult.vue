@@ -240,16 +240,16 @@ onMounted(() => {
 <template>
   <div class="search-page pb-10">
     <!-- Top: Centered Search Bar -->
-    <div class="w-full bg-white border-b border-[#e3e5e7] py-6 mb-4">
+    <div class="w-full bg-card border-b border-border py-6 mb-4">
       <div class="mx-auto flex w-full max-w-[700px] gap-2 px-4">
         <div class="relative flex-1">
           <div class="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-4">
-            <Search class="h-5 w-5 text-[#00a1d6]" />
+            <Search class="h-5 w-5 text-primary" />
           </div>
           <input
             v-model="keyword"
             type="text"
-            class="h-12 w-full rounded-md border-2 border-[#e3e5e7] bg-[#f6f7f8] pl-12 pr-4 text-base focus:border-[#00a1d6] focus:bg-white focus:outline-none transition-colors"
+            class="h-12 w-full rounded-md border-2 border-border bg-secondary pl-12 pr-4 text-base focus:border-[#00a1d6] focus:bg-card focus:outline-none transition-colors"
             placeholder="搜索你感兴趣的视频或 UP 主"
             @input="handleSearchInput"
             @keydown.enter="handleSearch()"
@@ -296,7 +296,7 @@ onMounted(() => {
                   <div
                     v-for="item in history"
                     :key="item"
-                    class="group flex items-center gap-1 rounded-md bg-[#f4f5f7] text-[#61666d] px-2.5 py-1.5 text-xs cursor-pointer hover:bg-[#ecedef] hover:text-[#18191c] transition-colors"
+                    class="group flex items-center gap-1 rounded-md bg-secondary text-muted-foreground px-2.5 py-1.5 text-xs cursor-pointer hover:bg-[#ecedef] hover:text-foreground transition-colors"
                     @mousedown.prevent="handleSearch(item)"
                   >
                     <span class="max-w-[140px] truncate">{{ item }}</span>
@@ -332,7 +332,7 @@ onMounted(() => {
           </div>
         </div>
         <Button
-          class="h-12 w-28 rounded-md bg-[#00a1d6] text-base font-medium text-white hover:bg-[#00b5e5]"
+          class="h-12 w-28 rounded-md bg-primary text-base font-medium text-white hover:bg-[#00b5e5]"
           @click="handleSearch()"
         >
           搜索
@@ -346,30 +346,28 @@ onMounted(() => {
           v-for="tab in tabs"
           :key="tab.value"
           class="group relative pb-2 text-[15px] font-medium transition-colors"
-          :class="
-            activeTab === tab.value ? 'text-[#00a1d6]' : 'text-[#18191c] hover:text-[#00a1d6]'
-          "
+          :class="activeTab === tab.value ? 'text-primary' : 'text-foreground hover:text-primary'"
           @click="activeTab = tab.value"
         >
           {{ tab.label }}
           <span
             v-if="tab.value === 'video'"
-            class="ml-1 rounded-sm bg-[#f1f2f3] px-1 py-[1px] text-[11px] font-normal text-[#61666d] group-hover:text-[#00a1d6] group-hover:bg-[#e6f7fc]"
-            :class="activeTab === tab.value ? 'text-[#00a1d6] bg-[#e6f7fc]' : ''"
+            class="ml-1 rounded-sm bg-secondary px-1 py-[1px] text-[11px] font-normal text-muted-foreground group-hover:text-primary group-hover:bg-[#e6f7fc]"
+            :class="activeTab === tab.value ? 'text-primary bg-[#e6f7fc]' : ''"
           >
             {{ videoTotal > 99 ? '99+' : videoTotal }}
           </span>
           <span
             v-else-if="tab.value === 'user'"
-            class="ml-1 rounded-sm bg-[#f1f2f3] px-1 py-[1px] text-[11px] font-normal text-[#61666d] group-hover:text-[#00a1d6] group-hover:bg-[#e6f7fc]"
-            :class="activeTab === tab.value ? 'text-[#00a1d6] bg-[#e6f7fc]' : ''"
+            class="ml-1 rounded-sm bg-secondary px-1 py-[1px] text-[11px] font-normal text-muted-foreground group-hover:text-primary group-hover:bg-[#e6f7fc]"
+            :class="activeTab === tab.value ? 'text-primary bg-[#e6f7fc]' : ''"
           >
             {{ userTotal > 99 ? '99+' : userTotal }}
           </span>
           <!-- Active Indicator -->
           <div
             v-if="activeTab === tab.value"
-            class="absolute bottom-0 left-1/2 h-[3px] w-full -translate-x-1/2 rounded-t bg-[#00a1d6]"
+            class="absolute bottom-0 left-1/2 h-[3px] w-full -translate-x-1/2 rounded-t bg-primary"
           ></div>
         </button>
       </div>
@@ -383,8 +381,8 @@ onMounted(() => {
             class="rounded-full px-4 py-1.5 text-[13px] transition-colors"
             :class="
               activeSortKey === `${sort.sort}_${sort.order}`
-                ? 'bg-[#e6f7fc] text-[#00a1d6]'
-                : 'text-[#61666d] hover:text-[#00a1d6]'
+                ? 'bg-[#e6f7fc] text-primary'
+                : 'text-muted-foreground hover:text-primary'
             "
             @click="activeSort = { sort: sort.sort, order: sort.order }"
           >
@@ -395,7 +393,7 @@ onMounted(() => {
           v-show="activeTab === 'video'"
           variant="outline"
           size="sm"
-          class="h-8 rounded text-[13px] text-[#61666d]"
+          class="h-8 rounded text-[13px] text-muted-foreground"
         >
           更多筛选 <span class="ml-1 text-[10px]">▼</span>
         </Button>
@@ -441,7 +439,10 @@ onMounted(() => {
       </div>
 
       <!-- Empty State -->
-      <div v-else class="flex min-h-[400px] flex-col items-center justify-center text-[#9499a0]">
+      <div
+        v-else
+        class="flex min-h-[400px] flex-col items-center justify-center text-muted-foreground/80"
+      >
         <div class="mb-4 text-6xl">🔍</div>
         <p>没有找到相关结果，换个词试试吧</p>
       </div>
@@ -452,7 +453,7 @@ onMounted(() => {
 <style scoped>
 /* Search suggestion highlight */
 .search-suggestion-item :deep(em) {
-  color: hsl(var(--primary));
+  color: oklch(var(--primary));
   font-style: normal;
   font-weight: 600;
 }

@@ -33,20 +33,20 @@ const props = withDefaults(defineProps<{ light?: boolean }>(), { light: false })
 
 const navActionTextClass = computed(() =>
   props.light
-    ? 'text-[#61666d] transition-colors hover:text-[#18191c]'
+    ? 'text-muted-foreground transition-colors hover:text-foreground'
     : 'text-white/90 transition-colors hover:text-white'
 )
 
 const avatarBorderClass = computed(() =>
   props.light
-    ? 'border-[#e3e5e7] group-hover:border-[#00a1d6]'
+    ? 'border-border group-hover:border-primary'
     : 'border-white/50 group-hover:border-white'
 )
 
 const searchBgClass = computed(() =>
   props.light
-    ? 'bg-[#f4f5f7] text-foreground ring-1 ring-[#e3e5e7] focus-visible:ring-primary/50'
-    : 'bg-white/95 text-foreground focus-visible:ring-primary/50'
+    ? 'glass-panel text-foreground focus-visible:ring-primary/50'
+    : 'bg-background/20 backdrop-blur-md text-white placeholder:text-white/70 focus-visible:ring-primary/50 ring-1 ring-white/20'
 )
 
 const router = useRouter()
@@ -269,7 +269,7 @@ const navActions = [
                 <div
                   v-for="item in history"
                   :key="item"
-                  class="group flex items-center gap-1 rounded-md bg-[#f4f5f7] text-[#61666d] px-2.5 py-1.5 text-xs cursor-pointer hover:bg-[#ecedef] hover:text-[#18191c] transition-colors"
+                  class="group flex items-center gap-1 rounded-md bg-secondary text-secondary-foreground px-2.5 py-1.5 text-xs cursor-pointer hover:bg-accent hover:text-accent-foreground transition-colors"
                   @mousedown.prevent="handleSearch(item)"
                 >
                   <span class="truncate max-w-[140px]">{{ item }}</span>
@@ -501,7 +501,7 @@ const navActions = [
 <style scoped>
 /* Search suggestion highlight */
 .search-suggestion-item :deep(em) {
-  color: hsl(var(--primary));
+  color: oklch(var(--primary));
   font-style: normal;
   font-weight: 600;
 }

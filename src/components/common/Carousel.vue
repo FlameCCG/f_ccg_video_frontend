@@ -106,7 +106,7 @@ onUnmounted(() => {
         v-for="(_, index) in items"
         :key="index"
         class="h-2 w-2 rounded-full transition-all"
-        :class="[index === currentIndex ? 'w-6 bg-white' : 'bg-white/50 hover:bg-white/70']"
+        :class="[index === currentIndex ? 'w-6 bg-card' : 'bg-card/50 hover:bg-card/70']"
         @click="goTo(index)"
       />
     </div>

@@ -509,7 +509,7 @@ onBeforeUnmount(() => {
   display: flex;
   flex-direction: column;
   padding: 14px 20px 20px;
-  background: #f8fafe;
+  background-color: var(--color-secondary);
   border-radius: 4px;
   border: 0;
   text-align: left;
@@ -525,9 +525,9 @@ onBeforeUnmount(() => {
 }
 
 .flat-card.is-active {
-  background: #fb7299;
+  background-color: var(--color-accent);
   transform: translateY(-2px);
-  box-shadow: 0 6px 16px rgb(251, 114, 153, 0.25);
+  box-shadow: 0 6px 16px oklch(var(--accent) / 0.25);
 }
 
 .flat-card__top {
@@ -542,7 +542,7 @@ onBeforeUnmount(() => {
   align-items: center;
   gap: 6px;
   font-size: 14px;
-  color: #61666d;
+  color: var(--color-muted-foreground);
 }
 
 .flat-card.is-active .flat-card__label {
@@ -551,7 +551,7 @@ onBeforeUnmount(() => {
 
 .flat-card__growth {
   font-size: 12px;
-  color: #fb7299;
+  color: var(--color-accent);
 }
 
 .flat-card__growth.is-negative {
@@ -569,7 +569,7 @@ onBeforeUnmount(() => {
 .flat-card__value {
   font-size: 24px;
   font-weight: 700;
-  color: #00aeec; /* Default blue for values */
+  color: var(--color-primary); /* Default blue for values */
   line-height: 1;
 }
 
@@ -582,7 +582,7 @@ onBeforeUnmount(() => {
 .flat-range-picker {
   display: inline-flex;
   gap: 4px;
-  background: #f1f2f3;
+  background-color: var(--color-secondary);
   padding: 3px;
   border-radius: 4px;
 }
@@ -590,7 +590,7 @@ onBeforeUnmount(() => {
 .flat-range-btn {
   padding: 4px 12px;
   font-size: 13px;
-  color: #61666d;
+  color: var(--color-muted-foreground);
   border-radius: 2px;
   border: 0;
   background: transparent;
@@ -598,8 +598,8 @@ onBeforeUnmount(() => {
 }
 
 .flat-range-btn.is-active {
-  background: #ffffff;
-  color: #18191c;
+  background-color: var(--color-card);
+  color: var(--color-foreground);
   box-shadow: 0 1px 2px rgb(0, 0, 0, 0.05);
   font-weight: 500;
 }
@@ -625,7 +625,7 @@ onBeforeUnmount(() => {
   align-items: center;
   justify-content: center;
   font-size: 14px;
-  color: #61666d;
+  color: var(--color-muted-foreground);
 }
 
 .flat-action {
@@ -633,7 +633,7 @@ onBeforeUnmount(() => {
   align-items: center;
   gap: 6px;
   padding: 6px 12px;
-  background: #00aeec;
+  background-color: var(--color-primary);
   color: #fff;
   border: 0;
   border-radius: 4px;
@@ -669,7 +669,7 @@ onBeforeUnmount(() => {
 }
 
 :global(.dark) .flat-card.is-active {
-  background: #fb7299;
+  background-color: var(--color-accent);
 }
 
 :global(.dark) .flat-card__label {

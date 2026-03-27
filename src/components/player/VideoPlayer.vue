@@ -745,12 +745,12 @@ onBeforeUnmount(() => {
 }
 
 :deep(.art-progress-played) {
-  background: #00a1d6 !important;
+  background-color: var(--color-primary) !important;
   border-radius: inherit !important;
 }
 
 :deep(.art-progress-indicator) {
-  background: #00a1d6 !important;
+  background-color: var(--color-primary) !important;
   border: 2px solid #fff !important;
   width: 14px !important;
   height: 14px !important;
@@ -802,7 +802,7 @@ onBeforeUnmount(() => {
   width: 36px;
   height: 36px;
   border: 3px solid rgb(255 255 255 / 0.2);
-  border-top-color: #00a1d6;
+  border-top-color: var(--color-primary);
   border-radius: 50%;
   animation: quality-spin 0.8s cubic-bezier(0.37, 0, 0.63, 1) infinite;
 }

@@ -232,11 +232,7 @@ watch(searchKeyword, (val) => {
                     class="hist-checkbox"
                     @click.stop="toggleSelect(item.videoId)"
                   >
-                    <CheckSquare
-                      v-if="isSelected(item.videoId)"
-                      :size="18"
-                      class="text-[#00a1d6]"
-                    />
+                    <CheckSquare v-if="isSelected(item.videoId)" :size="18" class="text-primary" />
                     <Square v-else :size="18" class="text-[#c9ccd0]" />
                   </button>
                   <div class="hist-item-cover" @click="goVideo(item.videoId)">
@@ -290,7 +286,7 @@ watch(searchKeyword, (val) => {
 
         <!-- Loading -->
         <div v-if="historyLoading && historyItems.length === 0" class="hist-loading">
-          <Loader2 :size="24" class="animate-spin text-[#00a1d6]" />
+          <Loader2 :size="24" class="animate-spin text-primary" />
           <span>加载中...</span>
         </div>
 
@@ -330,13 +326,13 @@ watch(searchKeyword, (val) => {
 }
 
 .hist-header-icon {
-  color: #00a1d6;
+  color: var(--color-primary);
 }
 
 .hist-title {
   font-size: 20px;
   font-weight: 700;
-  color: #18191c;
+  color: var(--color-foreground);
 }
 
 /* ===================== Toolbar ===================== */
@@ -356,7 +352,7 @@ watch(searchKeyword, (val) => {
 .hist-search-icon {
   position: absolute;
   left: 10px;
-  color: #9499a0;
+  color: var(--color-muted-foreground);
   pointer-events: none;
 }
 
@@ -364,18 +360,18 @@ watch(searchKeyword, (val) => {
   width: 220px;
   height: 34px;
   padding: 0 32px;
-  border: 1px solid #e3e5e7;
+  border: 1px solid var(--color-border);
   border-radius: 8px;
   font-size: 13px;
-  color: #18191c;
+  color: var(--color-foreground);
   outline: none;
   transition: border-color 0.2s;
-  background: #f6f7f8;
+  background-color: var(--color-secondary);
 }
 
 .hist-search-input:focus {
-  border-color: #00a1d6;
-  background: #fff;
+  border-color: var(--color-primary);
+  background-color: var(--color-card);
 }
 
 .hist-search-input::placeholder {
@@ -391,24 +387,24 @@ watch(searchKeyword, (val) => {
   width: 20px;
   height: 20px;
   border-radius: 50%;
-  background: #e3e5e7;
+  background-color: var(--color-secondary);
   border: none;
   cursor: pointer;
-  color: #61666d;
+  color: var(--color-muted-foreground);
   transition: background 0.12s;
 }
 
 .hist-search-clear:hover {
-  background: #d3d5d7;
+  background-color: var(--color-muted);
 }
 
 .hist-batch-btn {
   padding: 6px 16px;
   border-radius: 6px;
   font-size: 13px;
-  color: #61666d;
+  color: var(--color-muted-foreground);
   background: none;
-  border: 1px solid #e3e5e7;
+  border: 1px solid var(--color-border);
   cursor: pointer;
   transition:
     color 0.12s,
@@ -416,8 +412,8 @@ watch(searchKeyword, (val) => {
 }
 
 .hist-batch-btn:hover {
-  color: #00a1d6;
-  border-color: #00a1d6;
+  color: var(--color-primary);
+  border-color: var(--color-primary);
 }
 
 /* ===================== Batch Bar ===================== */
@@ -434,7 +430,7 @@ watch(searchKeyword, (val) => {
 
 .hist-batch-count {
   font-size: 13px;
-  color: #00a1d6;
+  color: var(--color-primary);
   font-weight: 500;
 }
 
@@ -446,7 +442,7 @@ watch(searchKeyword, (val) => {
   border-radius: 6px;
   font-size: 13px;
   color: #fff;
-  background: #fb7299;
+  background-color: var(--color-accent);
   border: none;
   cursor: pointer;
   transition: background 0.15s;
@@ -484,7 +480,7 @@ watch(searchKeyword, (val) => {
   width: 10px;
   height: 10px;
   border-radius: 50%;
-  background: #00a1d6;
+  background-color: var(--color-primary);
   border: 2px solid #d3ecff;
   flex-shrink: 0;
 }
@@ -492,7 +488,7 @@ watch(searchKeyword, (val) => {
 .hist-time-text {
   font-size: 14px;
   font-weight: 600;
-  color: #18191c;
+  color: var(--color-foreground);
 }
 
 .hist-time-line {
@@ -515,7 +511,7 @@ watch(searchKeyword, (val) => {
   display: flex;
   flex-direction: column;
   border-radius: 8px;
-  background: #fff;
+  background-color: var(--color-card);
   overflow: hidden;
   transition:
     box-shadow 0.18s,
@@ -538,7 +534,7 @@ watch(searchKeyword, (val) => {
   top: 8px;
   left: 8px;
   z-index: 3;
-  background: #fff;
+  background-color: var(--color-card);
   border-radius: 4px;
   border: none;
   cursor: pointer;
@@ -551,7 +547,7 @@ watch(searchKeyword, (val) => {
   aspect-ratio: 16 / 10;
   overflow: hidden;
   cursor: pointer;
-  background: #e3e5e7;
+  background-color: var(--color-secondary);
 }
 
 .hist-item-cover img {
@@ -590,7 +586,7 @@ watch(searchKeyword, (val) => {
 
 .hist-item-progress-fill {
   height: 100%;
-  background: #fb7299;
+  background-color: var(--color-accent);
   border-radius: 0 2px 2px 0;
   transition: width 0.3s;
 }
@@ -622,7 +618,7 @@ watch(searchKeyword, (val) => {
 .hist-item-title {
   font-size: 13px;
   font-weight: 500;
-  color: #18191c;
+  color: var(--color-foreground);
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
@@ -633,7 +629,7 @@ watch(searchKeyword, (val) => {
 }
 
 .hist-item:hover .hist-item-title {
-  color: #00a1d6;
+  color: var(--color-primary);
 }
 
 .hist-item-meta {
@@ -644,18 +640,18 @@ watch(searchKeyword, (val) => {
 
 .hist-item-author {
   font-size: 12px;
-  color: #9499a0;
+  color: var(--color-muted-foreground);
   cursor: pointer;
   transition: color 0.12s;
 }
 
 .hist-item-author:hover {
-  color: #00a1d6;
+  color: var(--color-primary);
 }
 
 .hist-item-progress-text {
   font-size: 11px;
-  color: #9499a0;
+  color: var(--color-muted-foreground);
   margin-top: auto;
 }
 
@@ -685,7 +681,7 @@ watch(searchKeyword, (val) => {
 }
 
 .hist-item-delete:hover {
-  background: #fb7299;
+  background-color: var(--color-accent);
 }
 
 /* ===================== States ===================== */
@@ -700,7 +696,7 @@ watch(searchKeyword, (val) => {
 
 .hist-empty p {
   font-size: 14px;
-  color: #9499a0;
+  color: var(--color-muted-foreground);
 }
 
 .hist-loading {
@@ -711,7 +707,7 @@ watch(searchKeyword, (val) => {
   justify-content: center;
   gap: 8px;
   font-size: 13px;
-  color: #9499a0;
+  color: var(--color-muted-foreground);
 }
 
 .hist-loadmore {
@@ -722,9 +718,9 @@ watch(searchKeyword, (val) => {
 .hist-loadmore-btn {
   padding: 8px 32px;
   border-radius: 20px;
-  border: 1px solid #e3e5e7;
-  background: #fff;
-  color: #61666d;
+  border: 1px solid var(--color-border);
+  background-color: var(--color-card);
+  color: var(--color-muted-foreground);
   font-size: 13px;
   cursor: pointer;
   transition:
@@ -733,8 +729,8 @@ watch(searchKeyword, (val) => {
 }
 
 .hist-loadmore-btn:hover:not(:disabled) {
-  color: #00a1d6;
-  border-color: #00a1d6;
+  color: var(--color-primary);
+  border-color: var(--color-primary);
 }
 
 .hist-loadmore-btn:disabled {

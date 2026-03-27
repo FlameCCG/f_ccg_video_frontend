@@ -271,14 +271,14 @@ const handleOpenChange = (val: boolean) => {
 
 .folder-dialog-header {
   padding: 18px 24px 14px;
-  border-bottom: 1px solid hsl(var(--border));
+  border-bottom: 1px solid oklch(var(--border));
 }
 
 .folder-dialog-title {
   font-size: 16px;
   font-weight: 600;
   text-align: center;
-  color: hsl(var(--foreground));
+  color: oklch(var(--foreground));
 }
 
 .folder-list {
@@ -301,7 +301,7 @@ const handleOpenChange = (val: boolean) => {
 }
 
 .folder-row:hover {
-  background: hsl(var(--muted) / 0.5);
+  background: oklch(var(--muted) / 0.5);
 }
 
 .folder-checkbox {
@@ -311,14 +311,14 @@ const handleOpenChange = (val: boolean) => {
   width: 20px;
   height: 20px;
   border-radius: 50%;
-  border: 2px solid hsl(var(--muted-foreground) / 0.3);
+  border: 2px solid oklch(var(--muted-foreground) / 0.3);
   flex-shrink: 0;
   transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .folder-checkbox.is-checked {
-  background: #00a1d6;
-  border-color: #00a1d6;
+  background-color: var(--color-primary);
+  border-color: var(--color-primary);
 }
 
 .check-icon {
@@ -329,7 +329,7 @@ const handleOpenChange = (val: boolean) => {
   flex: 1;
   min-width: 0;
   font-size: 14px;
-  color: hsl(var(--foreground));
+  color: oklch(var(--foreground));
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -338,13 +338,13 @@ const handleOpenChange = (val: boolean) => {
 .folder-count {
   flex-shrink: 0;
   font-size: 13px;
-  color: hsl(var(--muted-foreground));
+  color: oklch(var(--muted-foreground));
   font-variant-numeric: tabular-nums;
 }
 
 .folder-create-area {
   padding: 4px 24px 8px;
-  border-top: 1px solid hsl(var(--border) / 0.5);
+  border-top: 1px solid oklch(var(--border) / 0.5);
 }
 
 .folder-create-btn {
@@ -353,7 +353,7 @@ const handleOpenChange = (val: boolean) => {
   gap: 8px;
   padding: 10px 0;
   font-size: 14px;
-  color: hsl(var(--muted-foreground));
+  color: oklch(var(--muted-foreground));
   background: none;
   border: none;
   cursor: pointer;
@@ -362,7 +362,7 @@ const handleOpenChange = (val: boolean) => {
 }
 
 .folder-create-btn:hover {
-  color: #00a1d6;
+  color: var(--color-primary);
 }
 
 .folder-create-form {
@@ -376,21 +376,21 @@ const handleOpenChange = (val: boolean) => {
   flex: 1;
   height: 36px;
   padding: 0 12px;
-  border: 1px solid hsl(var(--border));
+  border: 1px solid oklch(var(--border));
   border-radius: 6px;
   font-size: 13px;
-  color: hsl(var(--foreground));
-  background: hsl(var(--background));
+  color: oklch(var(--foreground));
+  background: oklch(var(--background));
   outline: none;
   transition: border-color 0.2s ease;
 }
 
 .folder-create-input:focus {
-  border-color: #00a1d6;
+  border-color: var(--color-primary);
 }
 
 .folder-create-input::placeholder {
-  color: hsl(var(--muted-foreground) / 0.6);
+  color: oklch(var(--muted-foreground) / 0.6);
 }
 
 .folder-create-confirm {
@@ -400,7 +400,7 @@ const handleOpenChange = (val: boolean) => {
   font-size: 13px;
   font-weight: 500;
   color: #fff;
-  background: #00a1d6;
+  background-color: var(--color-primary);
   border: none;
   cursor: pointer;
   transition: all 0.15s ease;
@@ -427,7 +427,7 @@ const handleOpenChange = (val: boolean) => {
   border-radius: 6px;
   font-size: 14px;
   font-weight: 500;
-  color: #00a1d6;
+  color: var(--color-primary);
   background: transparent;
   border: none;
   cursor: pointer;
@@ -435,7 +435,7 @@ const handleOpenChange = (val: boolean) => {
 }
 
 .folder-confirm-btn:hover:not(:disabled) {
-  background: hsl(var(--muted) / 0.5);
+  background: oklch(var(--muted) / 0.5);
 }
 
 .folder-confirm-btn:disabled {

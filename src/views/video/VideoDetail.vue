@@ -369,28 +369,30 @@ onBeforeUnmount(() => {
     <!-- Video Detail Content (Bilibili Layout) -->
     <div v-else-if="video">
       <!-- Title (above player, bilibili style) -->
-      <h1 class="text-xl font-bold leading-snug text-[#18191c]">
+      <h1 class="text-xl font-bold leading-snug text-foreground">
         {{ video.title }}
       </h1>
 
       <!-- Stats Row (below title, above player) -->
-      <div class="mt-2 mb-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-[13px] text-[#9499a0]">
+      <div
+        class="mt-2 mb-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-[13px] text-muted-foreground/80"
+      >
         <span class="flex items-center gap-1">
           <Eye :size="14" />
           {{ formatCount(video.views) }}
         </span>
-        <span class="text-[#9499a0]/40">·</span>
+        <span class="text-muted-foreground/80/40">·</span>
         <span class="flex items-center gap-1">
           <MessageSquare :size="14" />
           {{ formatCount(video.danmuCount) }}弹幕
         </span>
-        <span class="text-[#9499a0]/40">·</span>
+        <span class="text-muted-foreground/80/40">·</span>
         <span class="flex items-center gap-1">
           <Clock :size="14" />
           {{ formatDate(video.createdAt) }}
         </span>
-        <span v-if="video.isOriginal" class="flex items-center gap-1 text-[#9499a0]/60">
-          <span class="text-[#9499a0]/40">·</span>
+        <span v-if="video.isOriginal" class="flex items-center gap-1 text-muted-foreground/80/60">
+          <span class="text-muted-foreground/80/40">·</span>
           <Copyright :size="12" />
           未经作者授权，禁止转载
         </span>
@@ -420,23 +422,23 @@ onBeforeUnmount(() => {
           />
 
           <!-- Interaction Buttons (like bilibili: 点赞 投 收藏 分享) -->
-          <div class="mt-3 border-b border-[#e3e5e7] pb-3">
+          <div class="mt-3 border-b border-border pb-3">
             <VideoActions />
           </div>
 
           <!-- Description & Tags -->
-          <div class="mt-4 border-b border-[#e3e5e7] pb-4">
+          <div class="mt-4 border-b border-border pb-4">
             <!-- Description -->
             <div v-if="video.description">
               <p
-                class="whitespace-pre-wrap text-[15px] leading-relaxed text-[#18191c]"
+                class="whitespace-pre-wrap text-[15px] leading-relaxed text-foreground"
                 :class="{ 'line-clamp-3': !descExpanded }"
               >
                 {{ video.description }}
               </p>
               <button
                 v-if="video.description.length > 120"
-                class="mt-1 flex items-center gap-0.5 text-sm text-[#61666d] hover:text-[#00a1d6] transition-colors"
+                class="mt-1 flex items-center gap-0.5 text-sm text-muted-foreground hover:text-primary transition-colors"
                 @click="descExpanded = !descExpanded"
               >
                 {{ descExpanded ? '收起' : '展开更多' }}
@@ -448,7 +450,7 @@ onBeforeUnmount(() => {
               <span
                 v-for="tag in video.tags"
                 :key="tag.id"
-                class="cursor-pointer rounded-full bg-[#f1f2f3] px-3 py-1.5 text-[13px] text-[#61666d] transition-colors hover:bg-[#e3e5e7]"
+                class="cursor-pointer rounded-full bg-secondary px-3 py-1.5 text-[13px] text-muted-foreground transition-colors hover:bg-accent"
               >
                 {{ tag.name }}
               </span>
@@ -485,7 +487,7 @@ onBeforeUnmount(() => {
     <div v-else class="flex min-h-[400px] items-center justify-center">
       <div class="text-center">
         <div class="text-5xl">🎬</div>
-        <p class="mt-3 text-[#9499a0]">视频不存在或已删除</p>
+        <p class="mt-3 text-muted-foreground/80">视频不存在或已删除</p>
       </div>
     </div>
 
@@ -527,18 +529,18 @@ onBeforeUnmount(() => {
     </Teleport>
 
     <Dialog :open="reportDialogOpen" @update:open="reportDialogOpen = $event">
-      <DialogContent class="max-w-md gap-0 border-[#e3e5e7] bg-white p-0">
+      <DialogContent class="max-w-md gap-0 border-border bg-card p-0">
         <form @submit.prevent="submitDanmuReport" @keydown.capture="handleReportKeydown">
-          <div class="border-b border-[#f1f2f3] px-5 py-4">
-            <DialogTitle class="text-base font-semibold text-[#18191c]">举报弹幕</DialogTitle>
-            <DialogDescription class="mt-1 break-all line-clamp-2 text-sm text-[#61666d]">
+          <div class="border-b border-border/50 px-5 py-4">
+            <DialogTitle class="text-base font-semibold text-foreground">举报弹幕</DialogTitle>
+            <DialogDescription class="mt-1 break-all line-clamp-2 text-sm text-muted-foreground">
               {{ reportingDanmu?.text }}
             </DialogDescription>
           </div>
 
           <div class="space-y-4 px-5 py-4">
             <div>
-              <p class="mb-2 text-sm font-medium text-[#18191c]">举报原因</p>
+              <p class="mb-2 text-sm font-medium text-foreground">举报原因</p>
               <div class="flex flex-wrap gap-2">
                 <button
                   v-for="reason in REPORT_REASONS"
@@ -547,8 +549,8 @@ onBeforeUnmount(() => {
                   class="rounded-full border px-3 py-1 text-xs transition-colors"
                   :class="
                     reportReason === reason
-                      ? 'border-[#00a1d6] bg-[#e6f7fc] text-[#00a1d6]'
-                      : 'border-[#e3e5e7] bg-white text-[#61666d] hover:border-[#c9ccd0] hover:text-[#18191c]'
+                      ? 'border-[#00a1d6] bg-[#e6f7fc] text-primary'
+                      : 'border-border bg-card text-muted-foreground hover:border-[#c9ccd0] hover:text-foreground'
                   "
                   @click="reportReason = reason"
                 >
@@ -558,28 +560,28 @@ onBeforeUnmount(() => {
             </div>
 
             <div>
-              <p class="mb-2 text-sm font-medium text-[#18191c]">补充说明</p>
+              <p class="mb-2 text-sm font-medium text-foreground">补充说明</p>
               <textarea
                 v-model="reportDetail"
                 rows="4"
                 maxlength="200"
-                class="w-full resize-none rounded-xl border border-[#e3e5e7] bg-[#fafafa] px-3 py-2 text-sm text-[#18191c] outline-none transition-colors focus:border-[#00a1d6] focus:bg-white"
+                class="w-full resize-none rounded-xl border border-border bg-[#fafafa] px-3 py-2 text-sm text-foreground outline-none transition-colors focus:border-[#00a1d6] focus:bg-card"
                 placeholder="选填，补充举报说明"
               />
             </div>
           </div>
 
-          <div class="flex items-center justify-end gap-3 border-t border-[#f1f2f3] px-5 py-4">
+          <div class="flex items-center justify-end gap-3 border-t border-border/50 px-5 py-4">
             <button
               type="button"
-              class="rounded-full border border-[#e3e5e7] px-4 py-2 text-sm text-[#61666d] transition-colors hover:border-[#c9ccd0] hover:text-[#18191c]"
+              class="rounded-full border border-border px-4 py-2 text-sm text-muted-foreground transition-colors hover:border-[#c9ccd0] hover:text-foreground"
               @click="reportDialogOpen = false"
             >
               取消
             </button>
             <button
               type="submit"
-              class="rounded-full bg-[#fb7299] px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-[#fc8bab] disabled:cursor-not-allowed disabled:opacity-60"
+              class="rounded-full bg-accent px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-[#fc8bab] disabled:cursor-not-allowed disabled:opacity-60"
               :disabled="submittingReport"
             >
               {{ submittingReport ? '提交中...' : '提交举报' }}
@@ -664,7 +666,7 @@ onBeforeUnmount(() => {
 }
 
 .danmu-hover-btn.is-active {
-  color: #00a1d6; /* Active color */
+  color: var(--color-primary); /* Active color */
 }
 
 .danmu-hover-btn.is-danger {
@@ -672,7 +674,7 @@ onBeforeUnmount(() => {
 }
 
 .danmu-hover-btn.is-danger:hover {
-  color: #fb7299;
+  color: var(--color-accent);
   background: rgb(251 114 153 / 15%);
 }
 

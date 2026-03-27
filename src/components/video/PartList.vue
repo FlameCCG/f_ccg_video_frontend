@@ -89,7 +89,7 @@ const hasParts = computed(() => props.parts.length > 1)
 
 .part-scroll-area {
   scrollbar-width: thin;
-  scrollbar-color: hsl(var(--muted-foreground) / 0.3) transparent;
+  scrollbar-color: oklch(var(--muted-foreground) / 0.3) transparent;
 }
 
 .part-scroll-area::-webkit-scrollbar {
@@ -101,12 +101,12 @@ const hasParts = computed(() => props.parts.length > 1)
 }
 
 .part-scroll-area::-webkit-scrollbar-thumb {
-  background: hsl(var(--muted-foreground) / 0.3);
+  background: oklch(var(--muted-foreground) / 0.3);
   border-radius: 4px;
 }
 
 .part-scroll-area::-webkit-scrollbar-thumb:hover {
-  background: hsl(var(--muted-foreground) / 0.5);
+  background: oklch(var(--muted-foreground) / 0.5);
 }
 
 .part-item {
@@ -117,14 +117,14 @@ const hasParts = computed(() => props.parts.length > 1)
   cursor: pointer;
   border: 1px solid transparent;
   background: transparent;
-  color: hsl(var(--foreground));
+  color: oklch(var(--foreground));
   transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
   text-align: left;
 }
 
 .part-item:hover {
   transform: translateX(2px);
-  border-color: hsl(var(--border) / 0.5);
+  border-color: oklch(var(--border) / 0.5);
 }
 
 .part-item:active {
@@ -133,14 +133,14 @@ const hasParts = computed(() => props.parts.length > 1)
 }
 
 .part-item.is-active {
-  background: rgb(0 161 214 / 0.08);
-  border-color: rgb(0 161 214 / 0.2);
-  color: #00a1d6;
-  box-shadow: 0 2px 8px rgb(0 161 214 / 0.1);
+  background: oklch(var(--primary) / 0.08);
+  border-color: oklch(var(--primary) / 0.2);
+  color: var(--color-primary);
+  box-shadow: 0 2px 8px oklch(var(--primary) / 0.1);
 }
 
 .part-item.is-active span {
-  color: #00a1d6 !important;
+  color: var(--color-primary) !important;
 }
 
 .playing-icon {

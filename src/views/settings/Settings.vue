@@ -742,7 +742,7 @@ watch(activeRecordTab, (tab) => {
 .center-side {
   width: 200px;
   flex-shrink: 0;
-  background: #fff;
+  background-color: var(--color-card);
   border-radius: 8px;
   padding: 16px 0;
 }
@@ -750,7 +750,7 @@ watch(activeRecordTab, (tab) => {
 .side-header {
   font-size: 15px;
   font-weight: 600;
-  color: #18191c;
+  color: var(--color-foreground);
   padding: 0 16px 12px;
 }
 
@@ -767,7 +767,7 @@ watch(activeRecordTab, (tab) => {
   padding: 10px 16px;
   font-size: 13px;
   font-weight: 500;
-  color: #61666d;
+  color: var(--color-muted-foreground);
   cursor: pointer;
   border: none;
   background: none;
@@ -776,13 +776,13 @@ watch(activeRecordTab, (tab) => {
 }
 
 .side-item:hover {
-  background: #f6f7f8;
-  color: #18191c;
+  background-color: var(--color-secondary);
+  color: var(--color-foreground);
 }
 
 .side-item.active {
-  background: rgb(0 161 214 / 0.08);
-  color: #00a1d6;
+  background: oklch(var(--primary) / 0.08);
+  color: var(--color-primary);
   font-weight: 600;
 }
 
@@ -790,7 +790,7 @@ watch(activeRecordTab, (tab) => {
 .center-main {
   flex: 1;
   min-width: 0;
-  background: #fff;
+  background-color: var(--color-card);
   border-radius: 8px;
   padding: 24px;
 }
@@ -806,7 +806,7 @@ watch(activeRecordTab, (tab) => {
   width: 30px;
   height: 30px;
   border: 3px solid #e3e5e7;
-  border-top-color: #00a1d6;
+  border-top-color: var(--color-primary);
   border-radius: 50%;
   animation: spin 0.6s linear infinite;
 }
@@ -846,7 +846,7 @@ watch(activeRecordTab, (tab) => {
   gap: 16px;
   padding: 20px;
   border-radius: 10px;
-  background: #f6f7f8;
+  background-color: var(--color-secondary);
   margin-bottom: 28px;
 }
 
@@ -897,7 +897,7 @@ watch(activeRecordTab, (tab) => {
 .ov-name-row h3 {
   font-size: 16px;
   font-weight: 700;
-  color: #18191c;
+  color: var(--color-foreground);
 }
 
 .lv {
@@ -920,7 +920,7 @@ watch(activeRecordTab, (tab) => {
   width: 160px;
   height: 5px;
   border-radius: 3px;
-  background: #e3e5e7;
+  background-color: var(--color-secondary);
   overflow: hidden;
 }
 
@@ -933,14 +933,14 @@ watch(activeRecordTab, (tab) => {
 
 .exp-txt {
   font-size: 11px;
-  color: #9499a0;
+  color: var(--color-muted-foreground);
 }
 
 .ov-meta {
   display: flex;
   gap: 14px;
   font-size: 12px;
-  color: #9499a0;
+  color: var(--color-muted-foreground);
 }
 
 .ov-space-btn {
@@ -950,15 +950,15 @@ watch(activeRecordTab, (tab) => {
   font-size: 12px;
   font-weight: 500;
   cursor: pointer;
-  border: 1px solid #e3e5e7;
-  background: #fff;
-  color: #61666d;
+  border: 1px solid var(--color-border);
+  background-color: var(--color-card);
+  color: var(--color-muted-foreground);
   transition: all 0.12s;
 }
 
 .ov-space-btn:hover {
-  border-color: #00a1d6;
-  color: #00a1d6;
+  border-color: var(--color-primary);
+  color: var(--color-primary);
 }
 
 /* Records */
@@ -973,9 +973,9 @@ watch(activeRecordTab, (tab) => {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  border: 1px solid #e3e5e7;
-  background: #fff;
-  color: #61666d;
+  border: 1px solid var(--color-border);
+  background-color: var(--color-card);
+  color: var(--color-muted-foreground);
   padding: 8px 12px;
   border-radius: 999px;
   font-size: 12px;
@@ -988,18 +988,18 @@ watch(activeRecordTab, (tab) => {
 }
 
 .record-tab:hover {
-  border-color: #00a1d6;
-  color: #00a1d6;
+  border-color: var(--color-primary);
+  color: var(--color-primary);
 }
 
 .record-tab.active {
-  background: rgb(0 161 214 / 0.08);
-  border-color: rgb(0 161 214 / 0.18);
-  color: #00a1d6;
+  background: oklch(var(--primary) / 0.08);
+  border-color: oklch(var(--primary) / 0.18);
+  color: var(--color-primary);
 }
 
 .record-panel {
-  border: 1px solid #f1f2f3;
+  border: 1px solid var(--color-border);
   border-radius: 10px;
   background: linear-gradient(180deg, #fbfbfc 0%, #fff 100%);
   overflow: hidden;
@@ -1011,7 +1011,7 @@ watch(activeRecordTab, (tab) => {
   display: flex;
   align-items: center;
   justify-content: center;
-  color: #9499a0;
+  color: var(--color-muted-foreground);
   font-size: 13px;
 }
 
@@ -1051,14 +1051,14 @@ watch(activeRecordTab, (tab) => {
 .record-title-row strong {
   min-width: 0;
   font-size: 13px;
-  color: #18191c;
+  color: var(--color-foreground);
 }
 
 .record-tag {
   flex-shrink: 0;
   border-radius: 999px;
-  background: #f1f2f3;
-  color: #61666d;
+  background-color: var(--color-secondary);
+  color: var(--color-muted-foreground);
   padding: 2px 8px;
   font-size: 11px;
   font-weight: 600;
@@ -1067,7 +1067,7 @@ watch(activeRecordTab, (tab) => {
 .record-sub {
   margin-top: 4px;
   font-size: 12px;
-  color: #9499a0;
+  color: var(--color-muted-foreground);
 }
 
 .record-ua {
@@ -1083,7 +1083,7 @@ watch(activeRecordTab, (tab) => {
 }
 
 .record-delta.is-positive {
-  color: #00a1d6;
+  color: var(--color-primary);
 }
 
 .record-delta.is-negative {
@@ -1093,7 +1093,7 @@ watch(activeRecordTab, (tab) => {
 .record-time {
   flex-shrink: 0;
   font-size: 12px;
-  color: #9499a0;
+  color: var(--color-muted-foreground);
   white-space: nowrap;
 }
 
@@ -1109,7 +1109,7 @@ watch(activeRecordTab, (tab) => {
 
 .record-summary {
   font-size: 12px;
-  color: #9499a0;
+  color: var(--color-muted-foreground);
 }
 
 .record-pager {
@@ -1122,10 +1122,10 @@ watch(activeRecordTab, (tab) => {
   align-items: center;
   gap: 4px;
   padding: 7px 10px;
-  border: 1px solid #e3e5e7;
+  border: 1px solid var(--color-border);
   border-radius: 8px;
-  background: #fff;
-  color: #61666d;
+  background-color: var(--color-card);
+  color: var(--color-muted-foreground);
   font-size: 12px;
   cursor: pointer;
   transition:
@@ -1135,8 +1135,8 @@ watch(activeRecordTab, (tab) => {
 }
 
 .pager-btn:hover:not(:disabled) {
-  border-color: #00a1d6;
-  color: #00a1d6;
+  border-color: var(--color-primary);
+  color: var(--color-primary);
 }
 
 .pager-btn:disabled {
@@ -1152,13 +1152,13 @@ watch(activeRecordTab, (tab) => {
 .form-title {
   font-size: 15px;
   font-weight: 600;
-  color: #18191c;
+  color: var(--color-foreground);
   margin-bottom: 16px;
 }
 
 .form-sub {
   font-size: 12px;
-  color: #9499a0;
+  color: var(--color-muted-foreground);
   margin: -8px 0 16px;
 }
 
@@ -1170,18 +1170,18 @@ watch(activeRecordTab, (tab) => {
   display: block;
   font-size: 12px;
   font-weight: 600;
-  color: #18191c;
+  color: var(--color-foreground);
   margin-bottom: 6px;
 }
 
 .fi {
   width: 100%;
   padding: 8px 12px;
-  border: 1px solid #e3e5e7;
+  border: 1px solid var(--color-border);
   border-radius: 6px;
   font-size: 13px;
-  background: #fff;
-  color: #18191c;
+  background-color: var(--color-card);
+  color: var(--color-foreground);
   outline: none;
   transition:
     border-color 0.12s,
@@ -1189,8 +1189,8 @@ watch(activeRecordTab, (tab) => {
 }
 
 .fi:focus {
-  border-color: #00a1d6;
-  box-shadow: 0 0 0 2px rgb(0 161 214 / 0.1);
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 2px oklch(var(--primary) / 0.1);
 }
 
 .fi-area {
@@ -1214,12 +1214,12 @@ watch(activeRecordTab, (tab) => {
   border: none;
   background: none;
   cursor: pointer;
-  color: #9499a0;
+  color: var(--color-muted-foreground);
   padding: 2px;
 }
 
 .fi-icon:hover {
-  color: #61666d;
+  color: var(--color-muted-foreground);
 }
 
 .radio-row {
@@ -1233,7 +1233,7 @@ watch(activeRecordTab, (tab) => {
   gap: 6px;
   font-size: 13px;
   cursor: pointer;
-  color: #18191c;
+  color: var(--color-foreground);
 }
 
 .ri {
@@ -1250,7 +1250,7 @@ watch(activeRecordTab, (tab) => {
 }
 
 .ri:checked + .rc {
-  border-color: #00a1d6;
+  border-color: var(--color-primary);
 }
 
 .ri:checked + .rc::after {
@@ -1258,7 +1258,7 @@ watch(activeRecordTab, (tab) => {
   position: absolute;
   inset: 3px;
   border-radius: 50%;
-  background: #00a1d6;
+  background-color: var(--color-primary);
 }
 
 .btn-pri {
@@ -1271,14 +1271,14 @@ watch(activeRecordTab, (tab) => {
   font-weight: 600;
   cursor: pointer;
   border: none;
-  background: #00a1d6;
+  background-color: var(--color-primary);
   color: #fff;
   transition: all 0.12s;
   margin-top: 8px;
 }
 
 .btn-pri:hover:not(:disabled) {
-  background: #00b5e5;
+  background-color: var(--color-primary);
 }
 
 .btn-pri:disabled {
@@ -1315,12 +1315,12 @@ watch(activeRecordTab, (tab) => {
 .priv-row strong {
   font-size: 13px;
   font-weight: 600;
-  color: #18191c;
+  color: var(--color-foreground);
 }
 
 .priv-row p {
   font-size: 11px;
-  color: #9499a0;
+  color: var(--color-muted-foreground);
   margin-top: 2px;
 }
 
@@ -1343,7 +1343,7 @@ watch(activeRecordTab, (tab) => {
 .sw span {
   position: absolute;
   inset: 0;
-  background: #e3e5e7;
+  background-color: var(--color-secondary);
   border-radius: 11px;
   transition: background 0.2s;
 }
@@ -1355,14 +1355,14 @@ watch(activeRecordTab, (tab) => {
   height: 16px;
   left: 3px;
   bottom: 3px;
-  background: #fff;
+  background-color: var(--color-card);
   border-radius: 50%;
   box-shadow: 0 1px 2px rgb(0 0 0 / 0.12);
   transition: transform 0.2s;
 }
 
 .sw input:checked + span {
-  background: #00a1d6;
+  background-color: var(--color-primary);
 }
 
 .sw input:checked + span::before {
@@ -1371,7 +1371,7 @@ watch(activeRecordTab, (tab) => {
 
 /* Security */
 .sec-info {
-  background: #f6f7f8;
+  background-color: var(--color-secondary);
   border-radius: 8px;
   padding: 14px 16px;
   margin-bottom: 8px;
@@ -1389,11 +1389,11 @@ watch(activeRecordTab, (tab) => {
 }
 
 .sec-row span:first-child {
-  color: #9499a0;
+  color: var(--color-muted-foreground);
 }
 
 .sec-row span:last-child {
-  color: #18191c;
+  color: var(--color-foreground);
 }
 
 .sr-only {

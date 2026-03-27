@@ -154,7 +154,7 @@ onMounted(() => {
       />
       <div
         v-else
-        class="flex h-10 w-10 items-center justify-center rounded-full bg-[#f1f2f3] text-xs text-[#9499a0]"
+        class="flex h-10 w-10 items-center justify-center rounded-full bg-secondary text-xs text-muted-foreground/80"
       >
         登录
       </div>
@@ -164,7 +164,7 @@ onMounted(() => {
       <textarea
         ref="textareaRef"
         v-model="content"
-        class="min-h-[64px] w-full resize-none rounded-md border border-[#e3e5e7] bg-[#f1f2f3] px-3 py-2 text-sm transition-colors focus:border-[#00aeec] focus:bg-white focus:outline-none"
+        class="min-h-[64px] w-full resize-none rounded-md border border-border bg-secondary px-3 py-2 text-sm transition-colors focus:border-[#00aeec] focus:bg-card focus:outline-none"
         :placeholder="
           placeholder || (authStore.isLoggedIn ? '发一条友善的评论' : '请先登录后发表评论')
         "
@@ -176,16 +176,16 @@ onMounted(() => {
       <!-- Mention Dropdown -->
       <div
         v-if="showMention && mentionUsers.length > 0"
-        class="absolute left-0 top-full z-50 mt-1 w-[240px] rounded-lg border border-[#e3e5e7] bg-white shadow-[0_4px_12px_rgba(0,0,0,0.1)] overflow-hidden"
+        class="absolute left-0 top-full z-50 mt-1 w-[240px] rounded-lg border border-border bg-card shadow-[0_4px_12px_rgba(0,0,0,0.1)] overflow-hidden"
       >
-        <div class="px-4 py-2 text-xs text-[#9499a0] border-b border-[#f1f2f3] bg-white">
+        <div class="px-4 py-2 text-xs text-muted-foreground/80 border-b border-border/50 bg-card">
           选择或输入你想@的人
         </div>
         <div class="max-h-[240px] overflow-y-auto py-1">
           <button
             v-for="user in mentionUsers"
             :key="user.id"
-            class="flex w-full items-center gap-3 px-4 py-2 text-left hover:bg-[#f1f2f3] transition-colors"
+            class="flex w-full items-center gap-3 px-4 py-2 text-left hover:bg-secondary transition-colors"
             @click="selectMention(user)"
           >
             <AppAvatar
@@ -195,8 +195,10 @@ onMounted(() => {
               text-class="text-xs font-semibold"
             />
             <div class="flex flex-col overflow-hidden">
-              <span class="truncate text-sm text-[#18191c]">{{ user.username }}</span>
-              <span class="truncate text-xs text-[#9499a0]">{{ user.followerCount }}粉丝</span>
+              <span class="truncate text-sm text-foreground">{{ user.username }}</span>
+              <span class="truncate text-xs text-muted-foreground/80"
+                >{{ user.followerCount }}粉丝</span
+              >
             </div>
           </button>
         </div>
@@ -206,7 +208,7 @@ onMounted(() => {
         <div class="flex items-center gap-2 relative">
           <div ref="emojiPickerRef">
             <button
-              class="flex items-center gap-1 rounded px-2 py-1 text-sm text-[#61666d] transition-colors hover:text-[#00aeec]"
+              class="flex items-center gap-1 rounded px-2 py-1 text-sm text-muted-foreground transition-colors hover:text-[#00aeec]"
               :disabled="!authStore.isLoggedIn"
               @click="showEmoji = !showEmoji"
             >
@@ -219,12 +221,11 @@ onMounted(() => {
           </div>
 
           <button
-            class="flex items-center gap-1 rounded px-2 py-1 text-sm text-[#61666d] transition-colors hover:text-[#00aeec]"
+            class="flex items-center gap-1 rounded px-2 py-1 text-sm text-muted-foreground transition-colors hover:text-[#00aeec]"
             :disabled="!authStore.isLoggedIn"
             @click="handleAtClick"
           >
             <AtSign :size="16" />
-            <span>@</span>
           </button>
         </div>
 

@@ -80,7 +80,7 @@ const handleClick = () => {
 
 <template>
   <div
-    class="group cursor-pointer overflow-hidden rounded-lg bg-card transition-all duration-200 hover:-translate-y-1 hover:shadow-lg"
+    class="hover-lift group cursor-pointer overflow-hidden rounded-[var(--radius-xl)] bg-card border border-border/50"
     :class="[variant === 'compact' ? 'flex h-full flex-col' : '']"
     @click="handleClick"
   >

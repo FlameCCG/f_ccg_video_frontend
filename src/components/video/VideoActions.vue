@@ -180,10 +180,10 @@ const handleReport = () => {
   padding: 8px 16px;
   border-radius: 9999px;
   transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
-  color: hsl(var(--muted-foreground) / 0.9);
+  color: oklch(var(--muted-foreground) / 0.9);
   cursor: pointer;
   border: 1px solid transparent;
-  background: hsl(var(--muted) / 0.3);
+  background: oklch(var(--muted) / 0.3);
   white-space: nowrap;
   position: relative;
   overflow: hidden;
@@ -200,10 +200,10 @@ const handleReport = () => {
 }
 
 .action-btn:hover {
-  color: hsl(var(--foreground));
+  color: oklch(var(--foreground));
   transform: translateY(-2px);
   box-shadow: 0 4px 12px rgb(0 0 0 / 0.05);
-  border-color: hsl(var(--border) / 0.5);
+  border-color: oklch(var(--border) / 0.5);
 }
 
 :global(.dark) .action-btn:hover {
@@ -220,14 +220,14 @@ const handleReport = () => {
 }
 
 .action-btn.is-active {
-  color: #00a1d6;
-  background: rgb(0 161 214 / 0.08);
-  border-color: rgb(0 161 214 / 0.2);
+  color: var(--color-primary);
+  background: oklch(var(--primary) / 0.08);
+  border-color: oklch(var(--primary) / 0.2);
 }
 
 .action-btn.is-active:hover {
-  background: rgb(0 161 214 / 0.12);
-  box-shadow: 0 4px 12px rgb(0 161 214 / 0.15);
+  background: oklch(var(--primary) / 0.12);
+  box-shadow: 0 4px 12px oklch(var(--primary) / 0.15);
 }
 
 .action-icon {
@@ -250,22 +250,22 @@ const handleReport = () => {
 }
 
 .triple-btn {
-  color: hsl(var(--muted-foreground) / 0.9);
+  color: oklch(var(--muted-foreground) / 0.9);
 }
 
 .triple-btn:hover {
-  color: #fb7299;
-  border-color: rgb(251 114 153 / 0.2);
+  color: var(--color-accent);
+  border-color: oklch(var(--accent) / 0.2);
 }
 
 .triple-btn:hover::after {
-  background: #fb7299;
+  background-color: var(--color-accent);
   opacity: 0.08;
 }
 
 .triple-btn.is-animating .action-icon {
   animation: triple-spin 1s cubic-bezier(0.16, 1, 0.3, 1);
-  color: #fb7299;
+  color: var(--color-accent);
 }
 
 .coin-option {
@@ -273,19 +273,19 @@ const handleReport = () => {
   border-radius: 8px;
   font-size: 13px;
   font-weight: 600;
-  color: hsl(var(--foreground));
-  background: hsl(var(--card));
-  border: 1px solid hsl(var(--border));
+  color: oklch(var(--foreground));
+  background: oklch(var(--card));
+  border: 1px solid oklch(var(--border));
   cursor: pointer;
   transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .coin-option:hover {
-  background: #00a1d6;
+  background-color: var(--color-primary);
   color: white;
-  border-color: #00a1d6;
+  border-color: var(--color-primary);
   transform: translateY(-2px);
-  box-shadow: 0 4px 12px rgb(0 161 214 / 0.25);
+  box-shadow: 0 4px 12px oklch(var(--primary) / 0.25);
 }
 
 .coin-option:active {

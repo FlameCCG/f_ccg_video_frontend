@@ -140,11 +140,11 @@ const toggleTheme = () => {
 .user-hover-panel {
   width: 300px;
   position: relative;
-  background: hsl(var(--card));
-  border-radius: 12px;
-  color: hsl(var(--card-foreground));
-  box-shadow: 0 4px 24px -6px rgb(0 0 0 / 0.15);
-  border: 1px solid hsl(var(--border) / 0.6);
+  background-color: var(--color-popover);
+  border-radius: var(--radius-xl);
+  color: var(--color-popover-foreground);
+  box-shadow: var(--shadow-overlay);
+  border: 1px solid var(--color-border);
   animation: panel-enter 0.25s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
@@ -184,11 +184,11 @@ const toggleTheme = () => {
   width: 80px !important;
   height: 80px !important;
   border-radius: 50% !important;
-  border: 2px solid hsl(var(--card)) !important;
-  background-color: hsl(var(--card)) !important;
+  border: 2px solid var(--color-popover) !important;
+  background-color: var(--color-popover) !important;
   transition:
-    transform 0.2s,
-    box-shadow 0.2s;
+    transform var(--duration-normal) var(--ease-out-expo),
+    box-shadow var(--duration-normal) var(--ease-out-expo);
 }
 
 :deep(.panel-avatar:hover) {
@@ -214,12 +214,12 @@ const toggleTheme = () => {
   font-size: 18px;
   font-weight: 700;
   cursor: pointer;
-  color: hsl(var(--foreground));
+  color: var(--color-foreground);
   transition: color 0.15s;
 }
 
 .username:hover {
-  color: hsl(var(--primary));
+  color: var(--color-primary);
 }
 
 .level-row {
@@ -244,7 +244,7 @@ const toggleTheme = () => {
 .coin-row {
   margin-top: 8px;
   font-size: 12px;
-  color: hsl(var(--muted-foreground));
+  color: var(--color-muted-foreground);
 }
 
 /* Stats Section */
@@ -265,18 +265,18 @@ const toggleTheme = () => {
 }
 
 .stat-item:hover {
-  background: hsl(var(--muted));
+  background-color: var(--color-muted);
 }
 
 .stat-value {
   font-size: 16px;
   font-weight: 700;
-  color: hsl(var(--foreground));
+  color: var(--color-foreground);
 }
 
 .stat-label {
   font-size: 12px;
-  color: hsl(var(--muted-foreground));
+  color: var(--color-muted-foreground);
   margin-top: 2px;
 }
 
@@ -314,7 +314,7 @@ const toggleTheme = () => {
 /* Menu Section */
 .panel-menu {
   padding: 6px 12px;
-  border-top: 1px solid hsl(var(--border) / 0.4);
+  border-top: 1px solid var(--color-border);
 }
 
 .menu-item {
@@ -328,14 +328,14 @@ const toggleTheme = () => {
   transition:
     background 0.15s,
     color 0.15s;
-  color: hsl(var(--foreground));
+  color: var(--color-foreground);
 }
 
 .menu-item:hover {
-  background: hsl(var(--muted) / 0.6);
+  background-color: var(--color-muted);
 }
 
 .logout-item:hover {
-  background: hsl(var(--muted) / 0.4);
+  background-color: var(--color-muted);
 }
 </style>

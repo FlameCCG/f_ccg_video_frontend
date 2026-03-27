@@ -8,6 +8,13 @@ import {
 import AppAvatar from '@/components/common/AppAvatar.vue'
 import { useNotificationStore } from '@/stores/notification'
 import { formatTimeAgo } from '@/utils/time'
+import { useRouter } from 'vue-router'
+import {
+  navigateToNotificationTarget,
+  resolveNotificationTarget,
+} from '@/utils/notification-target'
+
+const router = useRouter()
 
 const list = ref<NotificationItem[]>([])
 const loading = ref(true)
@@ -48,23 +55,24 @@ onMounted(() => {
   void fetchData()
 })
 
+const canOpenTarget = (item: NotificationItem) => !!resolveNotificationTarget(item)
+
 const goReply = (item: NotificationItem) => {
-  const target = item.link || (item.videoID ? `/video/${item.videoID}` : '')
-  if (target) window.open(target, '_blank')
+  void navigateToNotificationTarget(router, item)
 }
 </script>
 
 <template>
-  <div class="flex h-full flex-col bg-background">
+  <div class="flex h-full flex-col">
     <!-- Header -->
-    <div
-      class="flex h-[50px] shrink-0 items-center justify-between border-b px-6 bg-background rounded-tr-xl"
-    >
+    <div class="flex h-[50px] shrink-0 items-center justify-between border-b px-6">
       <h2 class="text-[15px] font-medium text-foreground">回复我的</h2>
     </div>
 
     <!-- List -->
-    <div class="flex-1 overflow-y-auto px-4 py-2">
+    <div
+      class="flex-1 overflow-y-auto px-4 py-2 [&::-webkit-scrollbar-thumb]:rounded-[6px] [&::-webkit-scrollbar-thumb]:bg-muted-foreground/20 hover:[&::-webkit-scrollbar-thumb]:bg-muted-foreground/40 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar]:w-1.5"
+    >
       <div
         v-if="loading && list.length === 0"
         class="flex items-center justify-center p-10 text-muted-foreground"
@@ -101,11 +109,23 @@ const goReply = (item: NotificationItem) => {
               <span class="font-medium text-foreground cursor-pointer hover:text-primary">
                 {{ item.actionUserName || '未知用户' }}
               </span>
-              <span class="ml-2 text-muted-foreground">回复了我的评论</span>
+              <span class="ml-2 text-muted-foreground">{{
+                item.title ? item.title.replace('有人', '') : '回复了你的评论'
+              }}</span>
             </div>
 
-            <div class="mb-2 break-words text-sm text-foreground">
-              {{ item.content }}
+            <div v-if="item.content" class="mb-2">
+              <button
+                v-if="canOpenTarget(item)"
+                type="button"
+                class="-ml-2 inline-flex max-w-full cursor-pointer rounded-md px-2 py-1 text-left text-sm text-foreground transition-colors hover:bg-[#00aeec]/8 hover:text-[#00aeec]"
+                @click="goReply(item)"
+              >
+                <span class="break-words whitespace-pre-wrap">{{ item.content }}</span>
+              </button>
+              <div v-else class="break-words text-sm text-foreground">
+                {{ item.content }}
+              </div>
             </div>
 
             <div class="flex items-center gap-4 text-xs text-muted-foreground">
@@ -115,34 +135,17 @@ const goReply = (item: NotificationItem) => {
                 ) /* Temporary fallback if no timestamp in item */
               }}</span>
               <!-- Optionally we should use item created time if available -->
-
-              <button
-                class="flex items-center gap-1 hover:text-primary transition-colors"
-                @click="goReply(item)"
-              >
-                <svg
-                  xmlns="http://www.w3.org/2000/svg"
-                  width="14"
-                  height="14"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  stroke-width="2"
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                  class="lucide lucide-message-square"
-                >
-                  <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
-                </svg>
-                回复
-              </button>
             </div>
           </div>
 
           <!-- Right Reference (Article/Video Thumbnail) -->
-          <div v-if="item.videoTitle" class="shrink-0 max-w-[120px]">
+          <div
+            v-if="item.videoTitle"
+            class="shrink-0 max-w-[120px] cursor-pointer"
+            @click="goReply(item)"
+          >
             <div
-              class="h-[60px] overflow-hidden rounded bg-muted text-xs text-muted-foreground p-2 line-clamp-2"
+              class="h-[60px] overflow-hidden rounded bg-muted p-2 text-xs text-muted-foreground line-clamp-2 transition-colors hover:text-[#00aeec]"
             >
               {{ item.videoTitle }}
             </div>

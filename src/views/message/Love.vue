@@ -9,6 +9,13 @@ import AppAvatar from '@/components/common/AppAvatar.vue'
 import { useNotificationStore } from '@/stores/notification'
 import { formatTimeAgo } from '@/utils/time'
 import { Heart } from 'lucide-vue-next'
+import { useRouter } from 'vue-router'
+import {
+  navigateToNotificationTarget,
+  resolveNotificationTarget,
+} from '@/utils/notification-target'
+
+const router = useRouter()
 
 const list = ref<NotificationItem[]>([])
 const loading = ref(true)
@@ -49,23 +56,59 @@ onMounted(() => {
   void fetchData()
 })
 
+const canOpenTarget = (item: NotificationItem) => !!resolveNotificationTarget(item)
+
 const goLink = (item: NotificationItem) => {
-  const target = item.link || (item.videoID ? `/video/${item.videoID}` : '')
-  if (target) window.open(target, '_blank')
+  void navigateToNotificationTarget(router, item)
+}
+
+const getLikeTargetLabel = (item: NotificationItem) => {
+  if (item.commentID) return '你的评论'
+  if (item.dynamicID) return '你的动态'
+  if (item.videoID) return '你的视频'
+  return ''
+}
+
+const getLikeTitleParts = (item: NotificationItem) => {
+  const targetLabel = getLikeTargetLabel(item)
+  const title = item.title ? item.title.replace('有人', '').trim() : ''
+
+  if (!targetLabel) {
+    return {
+      before: title || '赞了你的内容',
+      target: '',
+      after: '',
+    }
+  }
+
+  const index = title.indexOf(targetLabel)
+  if (index === -1) {
+    return {
+      before: title || '赞了',
+      target: targetLabel,
+      after: '',
+    }
+  }
+
+  return {
+    before: title.slice(0, index),
+    target: targetLabel,
+    after: title.slice(index + targetLabel.length),
+  }
 }
 </script>
 
 <template>
-  <div class="flex h-full flex-col bg-background">
+  <div class="flex h-full flex-col">
     <!-- Header -->
-    <div
-      class="flex h-[50px] shrink-0 items-center justify-between border-b px-6 bg-background rounded-tr-xl"
-    >
+    <div class="flex h-[50px] shrink-0 items-center justify-between border-b px-6">
       <h2 class="text-[15px] font-medium text-foreground">收到的赞</h2>
     </div>
 
     <!-- List -->
-    <div class="flex-1 overflow-y-auto px-4 py-2">
+    <div
+      class="flex-1 overflow-y-auto px-4 py-2 [&::-webkit-scrollbar-thumb]:rounded-[6px] [&::-webkit-scrollbar-thumb]:bg-muted-foreground/20 hover:[&::-webkit-scrollbar-thumb]:bg-muted-foreground/40 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar]:w-1.5"
+    >
       <div
         v-if="loading && list.length === 0"
         class="flex items-center justify-center p-10 text-muted-foreground"
@@ -103,7 +146,20 @@ const goLink = (item: NotificationItem) => {
               <span class="font-medium text-foreground cursor-pointer hover:text-primary">
                 {{ item.actionUserName || '未知用户' }}
               </span>
-              <span class="ml-2 text-muted-foreground font-medium">赞了我的视频/动态</span>
+              <span class="ml-2 text-muted-foreground font-medium">
+                {{ getLikeTitleParts(item).before }}
+              </span>
+              <button
+                v-if="getLikeTitleParts(item).target && canOpenTarget(item)"
+                type="button"
+                class="cursor-pointer font-medium text-[#00aeec] transition-opacity hover:opacity-80"
+                @click="goLink(item)"
+              >
+                {{ getLikeTitleParts(item).target }}
+              </button>
+              <span class="text-muted-foreground font-medium">{{
+                getLikeTitleParts(item).after
+              }}</span>
             </div>
 
             <div class="flex items-center gap-4 text-xs text-muted-foreground mt-2">

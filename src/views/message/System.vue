@@ -51,16 +51,16 @@ const openLink = (url: string) => window.open(url, '_blank')
 </script>
 
 <template>
-  <div class="flex h-full flex-col bg-background">
+  <div class="flex h-full flex-col">
     <!-- Header -->
-    <div
-      class="flex h-[50px] shrink-0 items-center justify-between border-b px-6 bg-background rounded-tr-xl"
-    >
+    <div class="flex h-[50px] shrink-0 items-center justify-between border-b px-6">
       <h2 class="text-[15px] font-medium text-foreground">系统通知</h2>
     </div>
 
     <!-- List -->
-    <div class="flex-1 overflow-y-auto px-4 py-2">
+    <div
+      class="flex-1 overflow-y-auto px-4 py-2 [&::-webkit-scrollbar-thumb]:rounded-[6px] [&::-webkit-scrollbar-thumb]:bg-muted-foreground/20 hover:[&::-webkit-scrollbar-thumb]:bg-muted-foreground/40 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar]:w-1.5"
+    >
       <div
         v-if="loading && list.length === 0"
         class="flex items-center justify-center p-10 text-muted-foreground"

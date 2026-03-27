@@ -36,6 +36,7 @@ export interface NotificationItem {
   link: string
   videoID: number
   videoTitle: string
+  dynamicID: number
   commentID: number
   isRead: boolean
 }

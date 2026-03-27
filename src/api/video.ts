@@ -182,6 +182,7 @@ export interface ViewResult {
 
 export interface LikeResult {
   likes: number
+  isLiked: boolean
 }
 
 export interface CoinParams {

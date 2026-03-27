@@ -1,6 +1,14 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, onBeforeUnmount, watch, nextTick } from 'vue'
-import { useRouter } from 'vue-router'
+import {
+  ref,
+  computed,
+  onMounted,
+  onBeforeUnmount,
+  watch,
+  nextTick,
+  type ComponentPublicInstance,
+} from 'vue'
+import { useRouter, useRoute } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import {
   getDynamicList,
@@ -9,9 +17,12 @@ import {
   createDynamic,
   deleteDynamic,
   pinDynamic,
+  getWorkId,
+  toggleDynamicLike,
   type WorkFeedItem,
   type FollowUserItem,
 } from '@/api/dynamic'
+import { toggleVideoLike } from '@/api/video'
 import { uploadImage } from '@/api/upload'
 import { getHotSearchKeywords, type HotKeywordItem } from '@/api/video'
 import CommentSection from '@/components/comment/CommentSection.vue'
@@ -31,6 +42,7 @@ import {
   Pin,
   Trash2,
   MoreVertical,
+  Play,
 } from 'lucide-vue-next'
 import {
   DropdownMenu,
@@ -40,6 +52,7 @@ import {
 } from '@/components/ui/dropdown-menu'
 
 const router = useRouter()
+const route = useRoute()
 const authStore = useAuthStore()
 
 type DynamicTab = 'all' | 'video' | 'image'
@@ -78,6 +91,9 @@ const publishing = ref(false)
 const swiperRef = ref<HTMLDivElement | null>(null)
 const canScrollLeft = ref(false)
 const canScrollRight = ref(false)
+const feedItemRefs = new Map<string, HTMLElement>()
+const highlightedFeedKey = ref<string | null>(null)
+let clearFeedHighlightTimer: ReturnType<typeof setTimeout> | null = null
 
 const updateSwiperArrows = () => {
   const el = swiperRef.value
@@ -121,6 +137,62 @@ const fmtCount = (n: number): string => {
   return n.toString()
 }
 
+const getFeedItemKey = (item: WorkFeedItem) => `${item.workType}-${getWorkId(item)}`
+
+const setFeedItemRef = (key: string, el: Element | ComponentPublicInstance | null) => {
+  if (el instanceof HTMLElement) {
+    feedItemRefs.set(key, el)
+    return
+  }
+
+  feedItemRefs.delete(key)
+}
+
+const highlightFeedItem = (key: string) => {
+  if (clearFeedHighlightTimer) {
+    clearTimeout(clearFeedHighlightTimer)
+  }
+
+  highlightedFeedKey.value = key
+  clearFeedHighlightTimer = setTimeout(() => {
+    if (highlightedFeedKey.value === key) {
+      highlightedFeedKey.value = null
+    }
+  }, 2200)
+}
+
+const scrollToFeedItem = (key: string) => {
+  void nextTick(() => {
+    const el = feedItemRefs.get(key)
+    if (!el) return
+
+    el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    highlightFeedItem(key)
+  })
+}
+
+const getRouteTargetFeedKey = (items: WorkFeedItem[]) => {
+  const rawDynamicId = Array.isArray(route.query.dynamicId)
+    ? route.query.dynamicId[0]
+    : route.query.dynamicId
+  const dynamicId = Number(rawDynamicId)
+  if (dynamicId > 0) {
+    const targetItem = items.find((item) => item.workType === 2 && item.dynamic?.id === dynamicId)
+    if (targetItem) return getFeedItemKey(targetItem)
+  }
+
+  const rawVideoId = Array.isArray(route.query.videoId)
+    ? route.query.videoId[0]
+    : route.query.videoId
+  const videoId = Number(rawVideoId)
+  if (videoId > 0) {
+    const targetItem = items.find((item) => item.workType === 1 && item.video?.id === videoId)
+    if (targetItem) return getFeedItemKey(targetItem)
+  }
+
+  return null
+}
+
 const effectiveUserId = computed(() => selectedUserId.value ?? authStore.userId!)
 
 const fetchFeed = async (page = 1) => {
@@ -136,6 +208,22 @@ const fetchFeed = async (page = 1) => {
     feedTotal.value = res.total
     feedPage.value = page
     feedInitLoaded.value = true
+
+    const targetFeedKey = getRouteTargetFeedKey(feedItems.value)
+    if (targetFeedKey) {
+      expandedComments.value.add(targetFeedKey)
+      scrollToFeedItem(targetFeedKey)
+    }
+
+    // 消费完 query 参数后清除，避免刷新时重复触发展开
+    if (route.query.dynamicId || route.query.videoId || route.query.commentId) {
+      // 保存 commentId 给 CommentSection 使用（query 清除后 CommentSection 读不到）
+      if (route.query.commentId) {
+        const rawCid = route.query.commentId
+        savedCommentId.value = Number(Array.isArray(rawCid) ? rawCid[0] : rawCid)
+      }
+      void router.replace({ path: route.path, query: {} })
+    }
   } catch {
     if (!feedInitLoaded.value) feedInitLoaded.value = true
   } finally {
@@ -314,9 +402,10 @@ const closeEmojiOnOutsideClick = () => {
 }
 
 const expandedComments = ref<Set<string>>(new Set())
+const savedCommentId = ref<number | undefined>()
 
 const toggleComments = (item: WorkFeedItem) => {
-  const key = `${item.workType}-${item.workId}`
+  const key = getFeedItemKey(item)
   if (expandedComments.value.has(key)) {
     expandedComments.value.delete(key)
   } else {
@@ -325,7 +414,7 @@ const toggleComments = (item: WorkFeedItem) => {
 }
 
 const isCommentExpanded = (item: WorkFeedItem) => {
-  return expandedComments.value.has(`${item.workType}-${item.workId}`)
+  return expandedComments.value.has(getFeedItemKey(item))
 }
 
 const getVideoId = (item: WorkFeedItem) => {
@@ -365,6 +454,27 @@ const handlePinDynamic = async (item: WorkFeedItem) => {
   }
 }
 
+const handleLike = async (item: WorkFeedItem) => {
+  if (!authStore.isLoggedIn) {
+    toast.error('请先登录')
+    return
+  }
+
+  try {
+    if (item.workType === 1 && item.video) {
+      const res = await toggleVideoLike(item.video.id)
+      item.video.isLiked = res.isLiked
+      item.video.likeCount = res.likes
+    } else if (item.workType === 2 && item.dynamic) {
+      const res = await toggleDynamicLike(item.dynamic.id)
+      item.dynamic.isLiked = res.isLiked
+      item.dynamic.likeCount = res.likeCount
+    }
+  } catch {
+    toast.error('操作失败')
+  }
+}
+
 const goVideo = (id: number) => void router.push(`/video/${id}`)
 const goUser = (id: number) => void router.push(`/user/${id}`)
 const goUserTab = (id: number, tab: string) =>
@@ -389,6 +499,8 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   document.removeEventListener('click', closeEmojiOnOutsideClick)
+  feedItemRefs.clear()
+  if (clearFeedHighlightTimer) clearTimeout(clearFeedHighlightTimer)
 })
 
 watch(
@@ -397,6 +509,23 @@ watch(
     if (authStore.userId) {
       void fetchFeed(1)
       void fetchFollowUsers()
+    }
+  }
+)
+
+watch(
+  () => [route.query.dynamicId, route.query.videoId, route.query.commentId] as const,
+  ([dynamicId, videoId, commentId], [previousDynamicId, previousVideoId, previousCommentId]) => {
+    if (
+      dynamicId === previousDynamicId &&
+      videoId === previousVideoId &&
+      commentId === previousCommentId
+    ) {
+      return
+    }
+
+    if (dynamicId || videoId || commentId) {
+      void fetchFeed(1)
     }
   }
 )
@@ -614,8 +743,14 @@ watch(
         <div class="dyn-feed">
           <div
             v-for="item in feedItems"
-            :key="`${item.workType}-${item.workId}`"
+            :key="getFeedItemKey(item)"
+            :ref="
+              (el) => {
+                setFeedItemRef(getFeedItemKey(item), el)
+              }
+            "
             class="dyn-feed-item"
+            :class="{ 'dyn-feed-item-highlight': highlightedFeedKey === getFeedItemKey(item) }"
           >
             <div class="cursor-pointer" @click="goUser(item.author.id)">
               <AppAvatar
@@ -682,6 +817,17 @@ watch(
                 </div>
                 <div class="dyn-video-info">
                   <h4 class="dyn-video-title">{{ item.video.title }}</h4>
+                  <p v-if="item.video.description" class="dyn-video-desc">
+                    {{ item.video.description }}
+                  </p>
+                  <div class="dyn-video-stats">
+                    <span class="dyn-video-stat">
+                      <Play :size="12" /> {{ fmtCount(item.video.views) }}
+                    </span>
+                    <span class="dyn-video-stat">
+                      <MessageSquare :size="12" /> {{ fmtCount(item.video.danmuCount) }}
+                    </span>
+                  </div>
                 </div>
               </div>
 
@@ -696,11 +842,36 @@ watch(
                   @click="toggleComments(item)"
                 >
                   <MessageSquare :size="14" />
-                  <span>评论</span>
+                  <span v-if="item.workType === 1 && item.video?.commentCount">{{
+                    item.video.commentCount
+                  }}</span>
+                  <span v-else-if="item.workType === 2 && item.dynamic?.commentCount">{{
+                    item.dynamic.commentCount
+                  }}</span>
+                  <span v-else>评论</span>
                 </button>
-                <button class="dyn-action-btn" @click="toggleComments(item)">
-                  <ThumbsUp :size="14" />
-                  <span>点赞</span>
+                <button
+                  class="dyn-action-btn"
+                  :class="{
+                    'text-primary':
+                      item.workType === 1 ? item.video?.isLiked : item.dynamic?.isLiked,
+                  }"
+                  @click="handleLike(item)"
+                >
+                  <ThumbsUp
+                    :size="14"
+                    :class="{
+                      'fill-current':
+                        item.workType === 1 ? item.video?.isLiked : item.dynamic?.isLiked,
+                    }"
+                  />
+                  <span v-if="item.workType === 1 && item.video?.likeCount">{{
+                    item.video.likeCount
+                  }}</span>
+                  <span v-else-if="item.workType === 2 && item.dynamic?.likeCount">{{
+                    item.dynamic.likeCount
+                  }}</span>
+                  <span v-else>点赞</span>
                 </button>
               </div>
 
@@ -709,6 +880,8 @@ watch(
                   :video-id="getVideoId(item)"
                   :dynamic-id="getDynamicId(item)"
                   :author-id="item.author.id"
+                  :initial-comment-id="savedCommentId"
+                  @comment-consumed="savedCommentId = undefined"
                 />
               </div>
             </div>
@@ -720,7 +893,7 @@ watch(
           </div>
 
           <div v-if="feedLoading && feedItems.length === 0" class="dyn-loading">
-            <Loader2 :size="24" class="animate-spin text-[#00a1d6]" />
+            <Loader2 :size="24" class="animate-spin text-primary" />
             <span>加载中...</span>
           </div>
 
@@ -736,7 +909,7 @@ watch(
       <aside class="dyn-sidebar-right">
         <div class="dyn-right-card dyn-tips-card">
           <div class="dyn-tips-icon">
-            <Zap :size="20" class="text-[#00a1d6]" />
+            <Zap :size="20" class="text-primary" />
           </div>
           <div class="dyn-tips-body">
             <div class="dyn-tips-title">动态</div>
@@ -819,7 +992,7 @@ watch(
 }
 
 .dyn-profile-card {
-  background: #fff;
+  background-color: var(--color-card);
   border-radius: 8px;
   padding: 18px 14px;
   box-shadow: 0 1px 3px rgb(0 0 0 / 0.05);
@@ -850,7 +1023,7 @@ watch(
 .dyn-profile-name {
   font-size: 14px;
   font-weight: 600;
-  color: #18191c;
+  color: var(--color-foreground);
 }
 
 .dyn-profile-level {
@@ -866,7 +1039,7 @@ watch(
 .dyn-profile-stats {
   display: flex;
   justify-content: space-between;
-  border-top: 1px solid #e3e5e7;
+  border-top: 1px solid var(--color-border);
   padding-top: 12px;
 }
 
@@ -881,18 +1054,18 @@ watch(
 .dyn-stat-num {
   font-size: 15px;
   font-weight: 600;
-  color: #18191c;
+  color: var(--color-foreground);
 }
 
 .dyn-stat-label {
   font-size: 11px;
-  color: #9499a0;
+  color: var(--color-muted-foreground);
   margin-top: 1px;
 }
 
 /* Left follow list */
 .dyn-left-follow {
-  background: #fff;
+  background-color: var(--color-card);
   border-radius: 8px;
   margin-top: 10px;
   padding: 12px 0;
@@ -906,18 +1079,18 @@ watch(
   padding: 0 14px 10px;
   font-size: 13px;
   font-weight: 600;
-  color: #18191c;
+  color: var(--color-foreground);
 }
 
 .dyn-left-follow-more {
   font-size: 11px;
   font-weight: 400;
-  color: #9499a0;
+  color: var(--color-muted-foreground);
   cursor: pointer;
 }
 
 .dyn-left-follow-more:hover {
-  color: #00a1d6;
+  color: var(--color-primary);
 }
 
 .dyn-left-follow-list {
@@ -935,7 +1108,7 @@ watch(
 }
 
 .dyn-left-follow-item:hover {
-  background: #f6f7f8;
+  background-color: var(--color-secondary);
 }
 
 .dyn-left-follow-aw {
@@ -957,7 +1130,7 @@ watch(
   width: 7px;
   height: 7px;
   border-radius: 50%;
-  background: #fb7299;
+  background-color: var(--color-accent);
   border: 1.5px solid #fff;
 }
 
@@ -969,7 +1142,7 @@ watch(
 .dyn-left-follow-name {
   display: block;
   font-size: 13px;
-  color: #18191c;
+  color: var(--color-foreground);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -977,7 +1150,7 @@ watch(
 
 .dyn-left-follow-desc {
   font-size: 11px;
-  color: #9499a0;
+  color: var(--color-muted-foreground);
 }
 
 /* ===================== Center Main ===================== */
@@ -987,7 +1160,7 @@ watch(
 
 /* Editor */
 .dyn-editor {
-  background: #fff;
+  background-color: var(--color-card);
   border-radius: 8px;
   padding: 16px 18px;
   margin-bottom: 10px;
@@ -1014,11 +1187,11 @@ watch(
 
 .dyn-editor-input {
   width: 100%;
-  border: 1px solid #e3e5e7;
+  border: 1px solid var(--color-border);
   border-radius: 8px;
   padding: 10px 12px;
   font-size: 13px;
-  color: #18191c;
+  color: var(--color-foreground);
   resize: none;
   outline: none;
   transition: border-color 0.2s;
@@ -1026,11 +1199,11 @@ watch(
 }
 
 .dyn-editor-input:focus {
-  border-color: #00a1d6;
+  border-color: var(--color-primary);
 }
 
 .dyn-editor-input::placeholder {
-  color: #c0c0c0;
+  color: var(--color-muted-foreground);
 }
 
 .dyn-editor-preview {
@@ -1081,7 +1254,7 @@ watch(
   width: 30px;
   height: 30px;
   border-radius: 6px;
-  color: #9499a0;
+  color: var(--color-muted-foreground);
   cursor: pointer;
   transition:
     color 0.12s,
@@ -1091,8 +1264,8 @@ watch(
 }
 
 .dyn-tool-btn:hover {
-  color: #00a1d6;
-  background: #f0f8ff;
+  color: var(--color-primary);
+  background: var(--color-secondary);
 }
 
 .dyn-emoji-panel {
@@ -1100,8 +1273,8 @@ watch(
   bottom: calc(100% + 8px);
   left: 0;
   width: 320px;
-  background: #fff;
-  border: 1px solid #e3e5e7;
+  background-color: var(--color-card);
+  border: 1px solid var(--color-border);
   border-radius: 8px;
   box-shadow:
     0 4px 12px rgb(0 0 0 / 0.08),
@@ -1133,7 +1306,7 @@ watch(
 }
 
 .dyn-emoji-item:hover {
-  background: #f0f8ff;
+  background: var(--color-secondary);
   transform: scale(1.2);
 }
 
@@ -1145,13 +1318,13 @@ watch(
 
 .dyn-char-count {
   font-size: 12px;
-  color: #c9ccd0;
+  color: var(--color-muted-foreground);
 }
 
 .dyn-publish-btn {
   padding: 5px 22px;
   border-radius: 6px;
-  background: #00a1d6;
+  background-color: var(--color-primary);
   color: #fff;
   font-size: 13px;
   font-weight: 500;
@@ -1161,7 +1334,7 @@ watch(
 }
 
 .dyn-publish-btn:hover:not(:disabled) {
-  background: #00b5e5;
+  background-color: var(--color-primary);
 }
 
 .dyn-publish-btn:disabled {
@@ -1172,7 +1345,7 @@ watch(
 /* ===================== Swiper ===================== */
 .dyn-swiper-wrap {
   position: relative;
-  background: #fff;
+  background-color: var(--color-card);
   border-radius: 8px;
   padding: 14px 12px;
   margin-bottom: 10px;
@@ -1217,12 +1390,12 @@ watch(
 }
 
 .dyn-swiper-icon-all {
-  background: linear-gradient(135deg, #00c4ff, #00a1d6);
-  color: #fff;
+  background: linear-gradient(135deg, oklch(var(--primary) / 0.8), var(--color-primary));
+  color: var(--color-primary-foreground);
 }
 
 .dyn-swiper-item-active .dyn-swiper-icon {
-  border-color: #00a1d6;
+  border-color: var(--color-primary);
   transform: scale(1.06);
 }
 
@@ -1250,11 +1423,11 @@ watch(
 
 .dyn-swiper-item:hover .dyn-swiper-avatar {
   transform: scale(1.06);
-  border-color: #d3ecff;
+  border-color: oklch(var(--primary) / 0.2);
 }
 
 .dyn-swiper-item-active .dyn-swiper-avatar {
-  border-color: #00a1d6;
+  border-color: var(--color-primary);
   transform: scale(1.06);
 }
 
@@ -1265,13 +1438,13 @@ watch(
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  background: #fb7299;
+  background-color: var(--color-accent);
   border: 1.5px solid #fff;
 }
 
 .dyn-swiper-name {
   font-size: 11px;
-  color: #61666d;
+  color: var(--color-muted-foreground);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1280,7 +1453,7 @@ watch(
 }
 
 .dyn-swiper-item-active .dyn-swiper-name {
-  color: #00a1d6;
+  color: var(--color-primary);
   font-weight: 500;
 }
 
@@ -1292,13 +1465,13 @@ watch(
   width: 28px;
   height: 28px;
   border-radius: 50%;
-  background: #fff;
-  border: 1px solid #e3e5e7;
+  background-color: var(--color-card);
+  border: 1px solid var(--color-border);
   box-shadow: 0 2px 6px rgb(0 0 0 / 0.1);
   display: flex;
   align-items: center;
   justify-content: center;
-  color: #61666d;
+  color: var(--color-muted-foreground);
   cursor: pointer;
   transition:
     background 0.15s,
@@ -1306,9 +1479,9 @@ watch(
 }
 
 .dyn-swiper-arrow:hover {
-  background: #00a1d6;
+  background-color: var(--color-primary);
   color: #fff;
-  border-color: #00a1d6;
+  border-color: var(--color-primary);
 }
 
 .dyn-swiper-arrow-left {
@@ -1323,7 +1496,7 @@ watch(
 .dyn-tabs {
   display: flex;
   gap: 0;
-  background: #fff;
+  background-color: var(--color-card);
   border-radius: 8px;
   padding: 0 4px;
   margin-bottom: 10px;
@@ -1334,7 +1507,7 @@ watch(
   position: relative;
   padding: 13px 18px;
   font-size: 14px;
-  color: #61666d;
+  color: var(--color-muted-foreground);
   cursor: pointer;
   border: none;
   background: none;
@@ -1343,11 +1516,11 @@ watch(
 }
 
 .dyn-tab:hover {
-  color: #18191c;
+  color: var(--color-foreground);
 }
 
 .dyn-tab-active {
-  color: #00a1d6;
+  color: var(--color-primary);
   font-weight: 600;
 }
 
@@ -1360,7 +1533,7 @@ watch(
   width: 22px;
   height: 3px;
   border-radius: 2px;
-  background: #00a1d6;
+  background-color: var(--color-primary);
 }
 
 /* ===================== Feed ===================== */
@@ -1374,14 +1547,23 @@ watch(
   display: flex;
   gap: 12px;
   padding: 16px 18px;
-  background: #fff;
+  background-color: var(--color-card);
   border-radius: 8px;
   box-shadow: 0 1px 3px rgb(0 0 0 / 0.05);
-  transition: box-shadow 0.18s;
+  transition:
+    box-shadow 0.18s,
+    background-color 0.18s;
 }
 
 .dyn-feed-item:hover {
   box-shadow: 0 2px 8px rgb(0 0 0 / 0.08);
+}
+
+.dyn-feed-item-highlight {
+  background-color: color-mix(in oklab, var(--color-card) 92%, var(--color-primary));
+  box-shadow:
+    0 0 0 1px oklch(var(--primary) / 0.12),
+    0 16px 32px -28px oklch(var(--primary) / 0.45);
 }
 
 .dyn-feed-avatar {
@@ -1409,30 +1591,30 @@ watch(
 .dyn-feed-author {
   font-size: 13px;
   font-weight: 500;
-  color: #00a1d6;
+  color: var(--color-primary);
   cursor: pointer;
   transition: color 0.12s;
 }
 
 .dyn-feed-author:hover {
-  color: #00b5e5;
+  color: var(--color-primary);
 }
 
 .dyn-feed-badge {
   font-size: 11px;
-  color: #9499a0;
+  color: var(--color-muted-foreground);
 }
 
 .dyn-feed-time {
   font-size: 12px;
-  color: #9499a0;
+  color: var(--color-muted-foreground);
   margin-left: auto;
 }
 
 .dyn-feed-more {
   padding: 4px;
   border-radius: 4px;
-  color: #9499a0;
+  color: var(--color-muted-foreground);
   background: none;
   border: none;
   cursor: pointer;
@@ -1444,8 +1626,8 @@ watch(
 }
 
 .dyn-feed-more:hover {
-  color: #61666d;
-  background: #f0f1f2;
+  color: var(--color-muted-foreground);
+  background: var(--color-secondary);
 }
 
 .dyn-pinned-badge {
@@ -1455,8 +1637,8 @@ watch(
   margin-top: 4px;
   margin-bottom: 4px;
   padding: 1px 6px;
-  background: #fff0f0;
-  color: #fb7299;
+  background: oklch(var(--destructive) / 0.08);
+  color: var(--color-accent);
   font-size: 11px;
   border-radius: 3px;
   font-weight: 500;
@@ -1468,7 +1650,7 @@ watch(
 
 .dyn-feed-text {
   font-size: 14px;
-  color: #18191c;
+  color: var(--color-foreground);
   line-height: 1.7;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
@@ -1493,7 +1675,7 @@ watch(
   display: flex;
   gap: 12px;
   padding: 10px;
-  background: #f6f7f8;
+  background-color: var(--color-secondary);
   border-radius: 8px;
   cursor: pointer;
   margin-bottom: 8px;
@@ -1501,7 +1683,7 @@ watch(
 }
 
 .dyn-video-card:hover {
-  background: #eef0f2;
+  background: var(--color-muted);
 }
 
 .dyn-video-cover {
@@ -1511,7 +1693,7 @@ watch(
   border-radius: 6px;
   overflow: hidden;
   flex-shrink: 0;
-  background: #e3e5e7;
+  background-color: var(--color-secondary);
 }
 
 .dyn-video-cover img {
@@ -1536,17 +1718,49 @@ watch(
   flex: 1;
   min-width: 0;
   padding: 2px 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 4px;
 }
 
 .dyn-video-title {
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 500;
-  color: #18191c;
+  color: var(--color-foreground);
   display: -webkit-box;
   -webkit-line-clamp: 2;
+  line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
   line-height: 1.5;
+}
+
+.dyn-video-desc {
+  font-size: 12px;
+  color: var(--color-muted-foreground);
+  display: -webkit-box;
+  -webkit-line-clamp: 1;
+  line-clamp: 1;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  line-height: 1.5;
+  margin: 0;
+}
+
+.dyn-video-stats {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: auto;
+}
+
+.dyn-video-stat {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 12px;
+  color: var(--color-muted-foreground);
 }
 
 /* Feed Actions */
@@ -1554,7 +1768,7 @@ watch(
   display: flex;
   gap: 4px;
   padding-top: 8px;
-  border-top: 1px solid #f0f1f2;
+  border-top: 1px solid var(--color-border);
 }
 
 .dyn-action-btn {
@@ -1564,7 +1778,7 @@ watch(
   padding: 5px 14px;
   border-radius: 6px;
   font-size: 12px;
-  color: #9499a0;
+  color: var(--color-muted-foreground);
   background: none;
   border: none;
   cursor: pointer;
@@ -1574,18 +1788,18 @@ watch(
 }
 
 .dyn-action-btn:hover {
-  color: #00a1d6;
-  background: #f0f8ff;
+  color: var(--color-primary);
+  background: oklch(var(--primary) / 0.06);
 }
 
 .dyn-action-btn-active {
-  color: #00a1d6;
+  color: var(--color-primary);
 }
 
 .dyn-feed-comments {
   margin-top: 12px;
   padding-top: 12px;
-  border-top: 1px solid #f0f1f2;
+  border-top: 1px solid var(--color-border);
 }
 
 /* Empty / Loading / Load More */
@@ -1600,7 +1814,7 @@ watch(
 
 .dyn-empty p {
   font-size: 13px;
-  color: #9499a0;
+  color: var(--color-muted-foreground);
 }
 
 .dyn-loading {
@@ -1611,7 +1825,7 @@ watch(
   justify-content: center;
   gap: 8px;
   font-size: 13px;
-  color: #9499a0;
+  color: var(--color-muted-foreground);
 }
 
 .dyn-loadmore {
@@ -1622,9 +1836,9 @@ watch(
 .dyn-loadmore-btn {
   padding: 7px 28px;
   border-radius: 20px;
-  border: 1px solid #e3e5e7;
-  background: #fff;
-  color: #61666d;
+  border: 1px solid var(--color-border);
+  background-color: var(--color-card);
+  color: var(--color-muted-foreground);
   font-size: 13px;
   cursor: pointer;
   transition:
@@ -1633,8 +1847,8 @@ watch(
 }
 
 .dyn-loadmore-btn:hover:not(:disabled) {
-  color: #00a1d6;
-  border-color: #00a1d6;
+  color: var(--color-primary);
+  border-color: var(--color-primary);
 }
 
 .dyn-loadmore-btn:disabled {
@@ -1652,7 +1866,7 @@ watch(
 }
 
 .dyn-right-card {
-  background: #fff;
+  background-color: var(--color-card);
   border-radius: 8px;
   padding: 14px;
   box-shadow: 0 1px 3px rgb(0 0 0 / 0.05);
@@ -1662,15 +1876,15 @@ watch(
   display: flex;
   align-items: flex-start;
   gap: 12px;
-  background: linear-gradient(135deg, #e8f7ff 0%, #f0f4ff 100%);
-  border: 1px solid #d3ecff;
+  background: oklch(var(--primary) / 0.05);
+  border: 1px solid oklch(var(--primary) / 0.1);
 }
 
 .dyn-tips-icon {
   width: 36px;
   height: 36px;
   border-radius: 8px;
-  background: #fff;
+  background-color: var(--color-card);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1685,13 +1899,13 @@ watch(
 .dyn-tips-title {
   font-size: 14px;
   font-weight: 600;
-  color: #00a1d6;
+  color: var(--color-primary);
   margin-bottom: 4px;
 }
 
 .dyn-tips-desc {
   font-size: 12px;
-  color: #61666d;
+  color: var(--color-muted-foreground);
   line-height: 1.5;
 }
 
@@ -1701,10 +1915,10 @@ watch(
   justify-content: space-between;
   margin-bottom: 10px;
   padding-bottom: 8px;
-  border-bottom: 1px solid #f0f1f2;
+  border-bottom: 1px solid var(--color-border);
   font-size: 13px;
   font-weight: 600;
-  color: #18191c;
+  color: var(--color-foreground);
 }
 
 .dyn-recent-list {
@@ -1724,7 +1938,7 @@ watch(
 }
 
 .dyn-recent-item:hover {
-  background: #f6f7f8;
+  background-color: var(--color-secondary);
 }
 
 .dyn-recent-avatar {
@@ -1743,7 +1957,7 @@ watch(
 .dyn-recent-name {
   display: block;
   font-size: 13px;
-  color: #18191c;
+  color: var(--color-foreground);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1751,10 +1965,10 @@ watch(
 
 .dyn-recent-type {
   font-size: 11px;
-  color: #00a1d6;
+  color: var(--color-primary);
   flex-shrink: 0;
   padding: 2px 6px;
-  background: #e8f5ff;
+  background: oklch(var(--primary) / 0.08);
   border-radius: 4px;
 }
 
@@ -1776,7 +1990,7 @@ watch(
 }
 
 .dyn-hot-item:hover {
-  background: #f6f7f8;
+  background-color: var(--color-secondary);
 }
 
 .dyn-hot-rank {
@@ -1787,13 +2001,13 @@ watch(
   justify-content: center;
   font-size: 12px;
   font-weight: 700;
-  color: #9499a0;
+  color: var(--color-muted-foreground);
   flex-shrink: 0;
   border-radius: 4px;
 }
 
 .dyn-hot-rank-top {
-  background: #00a1d6;
+  background-color: var(--color-primary);
   color: #fff;
 }
 
@@ -1801,7 +2015,7 @@ watch(
   flex: 1;
   min-width: 0;
   font-size: 13px;
-  color: #18191c;
+  color: var(--color-foreground);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;

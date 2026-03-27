@@ -10,11 +10,11 @@ const notificationStore = useNotificationStore()
 const { counts } = storeToRefs(notificationStore)
 
 const navItems = [
+  { text: '我的消息', path: '/message/chat', icon: 'messageCircle' },
   { text: '回复我的', path: '/message/reply', icon: 'reply' },
   { text: '@ 我的', path: '/message/at', icon: 'atSign' },
   { text: '收到的赞', path: '/message/love', icon: 'heart' },
   { text: '系统通知', path: '/message/system', icon: 'bell' },
-  { text: '我的消息', path: '/message/chat', icon: 'messageCircle' },
 ]
 
 const fetchCounts = async () => {
@@ -41,30 +41,23 @@ const getBadgeCount = (path: string) => {
 </script>
 
 <template>
-  <div class="relative min-h-screen bg-[#f4f5f7]">
+  <div class="relative min-h-screen bg-background">
     <!-- Navbar -->
-    <div class="sticky top-0 z-50 w-full bg-background shadow-sm">
+    <div class="sticky top-0 z-50 w-full bg-card border-b border-border/40 shadow-sm">
       <Navbar light />
     </div>
 
-    <!-- Decorative Background (matches the sky/cloud concept from reference) -->
-    <div class="pointer-events-none fixed inset-0 z-0 overflow-hidden">
-      <!-- A soft top-to-bottom gradient similar to Bilibili's message center -->
-      <div class="absolute inset-0 bg-gradient-to-b from-[#e1eaf5] to-[#f4f5f7] opacity-80"></div>
-      <!-- Decorative circles / clouds placeholders if needed -->
-    </div>
-
     <!-- Main Content Container -->
-    <main class="relative z-10 mx-auto mt-3 max-w-[1140px] px-2 pb-6 sm:px-4 md:mt-4 md:pb-10">
-      <div
-        class="flex min-h-[calc(100vh-100px)] flex-col overflow-hidden rounded-2xl bg-background shadow-sm md:flex-row"
-      >
+    <main
+      class="relative z-10 mx-auto mt-3 max-w-[1140px] px-2 sm:px-4 md:mt-4 h-[calc(100vh-80px)] md:h-[calc(100vh-90px)]"
+    >
+      <div class="flex h-full flex-col overflow-hidden rounded-2xl bg-card shadow-sm md:flex-row">
         <!-- Left Sidebar Navigation -->
         <aside
-          class="w-full shrink-0 overflow-hidden border-b border-border/50 bg-background/90 backdrop-blur-md md:w-[180px] md:border-b-0 md:border-r"
+          class="w-full shrink-0 overflow-hidden border-b border-border/50 bg-card md:w-[180px] md:border-b-0 md:border-r"
         >
           <div
-            class="flex items-center gap-2 px-4 py-4 text-base font-semibold text-foreground md:mb-4 md:px-6 md:py-0"
+            class="flex items-center gap-2 px-4 py-4 text-base font-semibold text-foreground md:mb-4 md:px-6 md:pt-6 md:pb-0"
           >
             <svg
               xmlns="http://www.w3.org/2000/svg"
@@ -113,11 +106,13 @@ const getBadgeCount = (path: string) => {
                 </span>
               </router-link>
             </template>
+
+            <!-- Divider -->
           </nav>
         </aside>
 
         <!-- Right Content Area -->
-        <div class="min-w-0 flex-1 bg-background">
+        <div class="min-w-0 flex-1 bg-card">
           <RouterView />
         </div>
       </div>

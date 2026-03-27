@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, computed, watch, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import type { CommentItem } from '@/api/comment'
@@ -19,6 +19,7 @@ const props = defineProps<{
   dynamicId?: number
   isAuthor?: boolean
   isReply?: boolean
+  autoExpandTargetId?: number
 }>()
 
 const emit = defineEmits<{
@@ -135,6 +136,40 @@ const loadReplies = async () => {
   }
 }
 
+/**
+ * 当收到 autoExpandTargetId 时，自动加载回复并滚动到目标评论
+ */
+watch(
+  () => props.autoExpandTargetId,
+  async (targetId) => {
+    if (!targetId || props.isReply) return
+    // 加载回复
+    repliesPage.value = 1
+    await loadReplies()
+    // 如果还没找到，继续加载更多
+    while (
+      !replies.value.some((r) => r.id === targetId) &&
+      replies.value.length < repliesTotal.value
+    ) {
+      repliesPage.value++
+      await loadReplies()
+    }
+    // 等 DOM 渲染完成后滚动到目标
+    void nextTick(() => {
+      const el = document.getElementById(`comment-${targetId}`)
+      if (el) {
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+        el.style.backgroundColor = 'var(--color-secondary)'
+        el.style.transition = 'background-color 1.5s'
+        setTimeout(() => {
+          el.style.backgroundColor = ''
+        }, 2000)
+      }
+    })
+  },
+  { immediate: true }
+)
+
 const handleReplySubmit = async (content: string, atUserIds: number[]) => {
   try {
     const { createComment } = await import('@/api/comment')
@@ -167,7 +202,7 @@ const handleReplyDeleted = (id: number) => {
 </script>
 
 <template>
-  <div class="flex gap-4 py-4" :class="{ 'py-2': isReply }">
+  <div :id="'comment-' + comment.id" class="flex gap-4 py-4" :class="{ 'py-2': isReply }">
     <!-- Avatar -->
     <div class="shrink-0">
       <AppAvatar
@@ -182,7 +217,7 @@ const handleReplyDeleted = (id: number) => {
     <!-- Content -->
     <div class="flex-1 min-w-0">
       <div class="flex items-center gap-2">
-        <span class="text-[13px] font-medium text-[#61666d]">{{ comment.username }}</span>
+        <span class="text-[13px] font-medium text-muted-foreground">{{ comment.username }}</span>
         <span
           v-if="isPinned && !isReply"
           class="rounded border border-[#ff6699] px-1 text-[10px] text-[#ff6699]"
@@ -190,7 +225,7 @@ const handleReplyDeleted = (id: number) => {
         >
       </div>
 
-      <p class="mt-1.5 text-[15px] leading-relaxed text-[#18191c] break-words whitespace-pre-wrap">
+      <p class="mt-1.5 text-[15px] leading-relaxed text-foreground break-words whitespace-pre-wrap">
         <span
           v-if="isReply && comment.replyTo && comment.parentId !== comment.rootId"
           class="text-[#00aeec] mr-1 cursor-pointer hover:underline"
@@ -212,7 +247,7 @@ const handleReplyDeleted = (id: number) => {
       </p>
 
       <!-- Actions -->
-      <div class="mt-2 flex items-center gap-4 text-[13px] text-[#9499a0]">
+      <div class="mt-2 flex items-center gap-4 text-[13px] text-muted-foreground/80">
         <span>{{ timeAgo }}</span>
 
         <button
@@ -240,11 +275,11 @@ const handleReplyDeleted = (id: number) => {
           </button>
           <div
             v-if="showMoreMenu"
-            class="absolute right-0 top-full z-50 mt-1 w-32 rounded-md border border-[#e3e5e7] bg-white p-1 shadow-lg"
+            class="absolute right-0 top-full z-50 mt-1 w-32 rounded-md border border-border bg-card p-1 shadow-lg"
           >
             <button
               v-if="isAuthor && !isReply"
-              class="flex w-full items-center gap-2 rounded px-2 py-1.5 text-sm hover:bg-[#f1f2f3]"
+              class="flex w-full items-center gap-2 rounded px-2 py-1.5 text-sm hover:bg-secondary"
               @click="handlePin"
             >
               <Pin :size="14" />
@@ -274,7 +309,7 @@ const handleReplyDeleted = (id: number) => {
       <!-- Replies Section -->
       <div
         v-if="!isReply && (replies.length > 0 || repliesTotal > 0)"
-        class="mt-3 rounded-md bg-[#f1f2f3] px-4 py-3"
+        class="mt-3 rounded-md bg-secondary px-4 py-3"
       >
         <div v-if="replies.length > 0" class="space-y-1">
           <CommentItem
@@ -295,7 +330,7 @@ const handleReplyDeleted = (id: number) => {
           />
         </div>
 
-        <div v-if="repliesTotal > replies.length" class="mt-2 text-[13px] text-[#9499a0]">
+        <div v-if="repliesTotal > replies.length" class="mt-2 text-[13px] text-muted-foreground/80">
           共 {{ repliesTotal }} 条回复,
           <button
             class="text-[#00aeec] hover:underline"

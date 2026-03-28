@@ -168,8 +168,10 @@ request.interceptors.response.use(
       }
     }
 
-    // Business error - show toast
-    toast.error(msg || '请求失败')
+    // Business error - show toast unless caller opted into silent mode
+    if (!response.config?.silent) {
+      toast.error(msg || '请求失败')
+    }
     return Promise.reject(new Error(msg))
   },
   (error) => {

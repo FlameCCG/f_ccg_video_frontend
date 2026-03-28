@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, onBeforeUnmount, computed } from 'vue'
+import { ref, onMounted, onBeforeUnmount, computed, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { UploadCloud, Image as ImageIcon, X, Loader2, Plus, Check } from 'lucide-vue-next'
 import { Button } from '@/components/ui/button'
@@ -18,6 +18,7 @@ import {
   getUploadStatus,
   completeUpload,
   uploadImage,
+  getRecommendedCovers,
   type UploadStatusResult,
 } from '@/api/upload'
 import { publishVideo, getPartitions, type Partition } from '@/api/video'
@@ -88,7 +89,8 @@ const form = ref({
 const showCoverSetting = ref(false)
 const coverSettingMode = ref<'upload' | 'frame'>('upload')
 const frameVideoRef = ref<HTMLVideoElement | null>(null)
-const videoUrl = computed(() => (parts.value[0] ? URL.createObjectURL(parts.value[0].file) : ''))
+const previewVideoUrl = ref('')
+const previewVideoError = ref(false)
 const recommendedCovers = ref<string[]>([])
 const isExtractingFrames = ref(false)
 const tempCoverPreview = ref('')
@@ -97,8 +99,11 @@ const UPLOAD_STATUS_TIMEOUT = 6000
 const UPLOAD_CHUNK_TIMEOUT = 60000
 const COMPLETE_UPLOAD_TIMEOUT = 5 * 60 * 1000
 const COVER_EXTRACT_TIMEOUT = 8000
+const RECOMMENDED_COVER_TIMEOUT = 20000
 
 let coverExtractJobId = 0
+let recommendedCoverLoadingHash = ''
+let localPreviewObjectUrl = ''
 
 const emptyUploadStatus = (fileHash: string): UploadStatusResult => ({
   fileHash,
@@ -142,6 +147,34 @@ const waitForVideoEvent = (
     video.addEventListener(successEvent, onSuccess, { once: true })
     video.addEventListener('error', onError, { once: true })
   })
+}
+
+const revokeLocalPreviewObjectUrl = () => {
+  if (localPreviewObjectUrl) {
+    URL.revokeObjectURL(localPreviewObjectUrl)
+    localPreviewObjectUrl = ''
+  }
+}
+
+const syncPreviewVideoUrl = () => {
+  const firstPart = parts.value[0]
+  previewVideoError.value = false
+
+  if (!firstPart) {
+    revokeLocalPreviewObjectUrl()
+    previewVideoUrl.value = ''
+    return
+  }
+
+  if (firstPart.status === 'success' && firstPart.filePath) {
+    revokeLocalPreviewObjectUrl()
+    previewVideoUrl.value = firstPart.filePath
+    return
+  }
+
+  revokeLocalPreviewObjectUrl()
+  localPreviewObjectUrl = URL.createObjectURL(firstPart.file)
+  previewVideoUrl.value = localPreviewObjectUrl
 }
 
 const extractFrames = async (file: File) => {
@@ -209,10 +242,13 @@ const extractFrames = async (file: File) => {
     if (currentJobId !== coverExtractJobId) return
     recommendedCovers.value = []
     console.error('Extract recommended covers failed', error)
-    toast({ title: '推荐封面生成失败，请手动上传或截取封面', variant: 'destructive' })
   } finally {
     if (currentJobId === coverExtractJobId) {
       isExtractingFrames.value = false
+      const firstPart = parts.value[0]
+      if (recommendedCovers.value.length === 0 && firstPart?.status === 'success') {
+        void loadRecommendedCoversFromServer(firstPart)
+      }
     }
     URL.revokeObjectURL(objectUrl)
     video.removeAttribute('src')
@@ -220,11 +256,49 @@ const extractFrames = async (file: File) => {
   }
 }
 
-const selectRecommendedCover = async (dataUrl: string) => {
-  coverPreview.value = dataUrl
+const dataUrlToCoverFile = async (dataUrl: string) => {
   const res = await fetch(dataUrl)
   const blob = await res.blob()
-  coverFile.value = new File([blob], 'cover.jpg', { type: 'image/jpeg' })
+  return new File([blob], 'cover.jpg', { type: 'image/jpeg' })
+}
+
+const loadRecommendedCoversFromServer = async (part: VideoPart) => {
+  if (!part.hash || part.status !== 'success') return
+  if (parts.value[0]?.id !== part.id) return
+  if (recommendedCovers.value.length > 0) return
+  if (recommendedCoverLoadingHash === part.hash) return
+
+  recommendedCoverLoadingHash = part.hash
+  isExtractingFrames.value = true
+  try {
+    const res = await getRecommendedCovers(part.hash, 6, {
+      timeout: RECOMMENDED_COVER_TIMEOUT,
+      silent: true,
+    })
+    if (parts.value[0]?.id !== part.id) return
+    recommendedCovers.value = res.covers || []
+    if (!coverPreview.value && recommendedCovers.value[0]) {
+      await selectRecommendedCover(recommendedCovers.value[0])
+    }
+  } catch (error) {
+    console.error('Load recommended covers from server failed', error)
+    toast({ title: '推荐封面生成失败，请手动上传或截取封面', variant: 'destructive' })
+  } finally {
+    if (recommendedCoverLoadingHash === part.hash) {
+      recommendedCoverLoadingHash = ''
+    }
+    isExtractingFrames.value = false
+  }
+}
+
+const selectRecommendedCover = async (dataUrl: string) => {
+  coverPreview.value = dataUrl
+  coverFile.value = await dataUrlToCoverFile(dataUrl)
+}
+
+const applyRecommendedCoverInDialog = async (dataUrl: string) => {
+  tempCoverPreview.value = dataUrl
+  tempCoverFile.value = await dataUrlToCoverFile(dataUrl)
 }
 
 const openCoverSetting = () => {
@@ -232,6 +306,15 @@ const openCoverSetting = () => {
   tempCoverFile.value = coverFile.value
   coverSettingMode.value = parts.value[0] ? 'frame' : 'upload'
   showCoverSetting.value = true
+
+  const firstPart = parts.value[0]
+  if (
+    firstPart?.status === 'success' &&
+    recommendedCovers.value.length === 0 &&
+    !isExtractingFrames.value
+  ) {
+    void loadRecommendedCoversFromServer(firstPart)
+  }
 }
 
 const onTempCoverChange = (e: Event) => {
@@ -245,8 +328,15 @@ const onTempCoverChange = (e: Event) => {
 }
 
 const captureFrame = () => {
-  if (!frameVideoRef.value) return
+  if (!frameVideoRef.value || previewVideoError.value) {
+    toast({ title: '当前视频无法直接预览，请从推荐封面中选择', variant: 'destructive' })
+    return
+  }
   const video = frameVideoRef.value
+  if (!video.videoWidth || !video.videoHeight) {
+    toast({ title: '视频尚未就绪，请稍后重试', variant: 'destructive' })
+    return
+  }
   const canvas = document.createElement('canvas')
   canvas.width = video.videoWidth
   canvas.height = video.videoHeight
@@ -264,6 +354,18 @@ const captureFrame = () => {
     })
 }
 
+const onPreviewVideoError = () => {
+  previewVideoError.value = true
+  const firstPart = parts.value[0]
+  if (
+    firstPart?.status === 'success' &&
+    recommendedCovers.value.length === 0 &&
+    !isExtractingFrames.value
+  ) {
+    void loadRecommendedCoversFromServer(firstPart)
+  }
+}
+
 const confirmCoverSetting = () => {
   coverPreview.value = tempCoverPreview.value
   coverFile.value = tempCoverFile.value
@@ -279,6 +381,14 @@ onMounted(async () => {
     storageConfig.value = configRes.value.site.storage
   }
 })
+
+watch(
+  () => [parts.value[0]?.id, parts.value[0]?.status, parts.value[0]?.filePath],
+  () => {
+    syncPreviewVideoUrl()
+  },
+  { immediate: true }
+)
 
 // Full-file SHA-256 via Web Worker with progress reporting
 const calculateFullSHA256 = (
@@ -590,6 +700,13 @@ const uploadPart = async (part: VideoPart) => {
       )
       part.filePath = res.filePath
       part.status = 'success'
+      if (
+        parts.value[0]?.id === part.id &&
+        recommendedCovers.value.length === 0 &&
+        !isExtractingFrames.value
+      ) {
+        void loadRecommendedCoversFromServer(part)
+      }
     } finally {
       releaseCompleteLock()
     }
@@ -614,11 +731,16 @@ const removePart = (index: number) => {
   parts.value.splice(index, 1)
   if (removedFirst) {
     coverExtractJobId++
+    recommendedCoverLoadingHash = ''
     isExtractingFrames.value = false
     recommendedCovers.value = []
     const nextFirstPart = parts.value[0]
     if (nextFirstPart) {
-      void extractFrames(nextFirstPart.file)
+      if (nextFirstPart.status === 'success') {
+        void loadRecommendedCoversFromServer(nextFirstPart)
+      } else {
+        void extractFrames(nextFirstPart.file)
+      }
     }
   }
   processUploadQueue()
@@ -626,7 +748,9 @@ const removePart = (index: number) => {
 
 onBeforeUnmount(() => {
   coverExtractJobId++
+  recommendedCoverLoadingHash = ''
   isExtractingFrames.value = false
+  revokeLocalPreviewObjectUrl()
   parts.value.forEach((p) => p.abortController?.abort())
 })
 
@@ -1142,19 +1266,68 @@ const handlePublish = async () => {
             <div
               class="relative aspect-video bg-black rounded-lg overflow-hidden flex items-center justify-center"
             >
-              <video ref="frameVideoRef" :src="videoUrl" controls class="w-full h-full"></video>
+              <video
+                v-if="previewVideoUrl"
+                ref="frameVideoRef"
+                :src="previewVideoUrl"
+                controls
+                class="w-full h-full"
+                crossorigin="anonymous"
+                @loadeddata="previewVideoError = false"
+                @error="onPreviewVideoError"
+              ></video>
+              <div
+                v-else
+                class="absolute inset-0 flex items-center justify-center text-sm text-white/70"
+              >
+                暂无可预览视频
+              </div>
+              <div
+                v-if="previewVideoError"
+                class="absolute inset-0 flex items-center justify-center bg-black/70 px-6 text-center text-sm text-white"
+              >
+                当前视频浏览器无法直接预览，已自动尝试服务端生成推荐封面
+              </div>
             </div>
             <div class="flex justify-between items-center bg-muted/50 p-3 rounded-lg">
               <span class="text-sm text-muted-foreground"
                 >拖动进度条，点击右侧按钮截取当前画面作为封面</span
               >
-              <Button @click="captureFrame">截取当前帧</Button>
+              <Button :disabled="previewVideoError || !previewVideoUrl" @click="captureFrame">
+                截取当前帧
+              </Button>
             </div>
 
             <div v-if="tempCoverPreview" class="mt-4">
               <p class="text-sm font-medium mb-2">已截取封面预览：</p>
               <div class="w-[200px] aspect-video rounded border overflow-hidden">
                 <img :src="tempCoverPreview" class="w-full h-full object-cover" />
+              </div>
+            </div>
+
+            <div v-if="recommendedCovers.length > 0" class="space-y-3">
+              <p class="text-sm font-medium">推荐封面</p>
+              <div class="flex gap-3 overflow-x-auto pb-2">
+                <button
+                  v-for="(cover, index) in recommendedCovers"
+                  :key="index"
+                  type="button"
+                  class="relative w-[120px] aspect-video rounded border-2 overflow-hidden transition-colors"
+                  :class="
+                    tempCoverPreview === cover
+                      ? 'border-primary'
+                      : 'border-transparent hover:border-primary/50'
+                  "
+                  @click="void applyRecommendedCoverInDialog(cover)"
+                >
+                  <img :src="cover" class="w-full h-full object-cover" />
+                  <div
+                    v-if="tempCoverPreview === cover"
+                    class="absolute inset-0 bg-black/20 flex items-center justify-center"
+                  >
+                    <Check class="h-6 w-6 text-white drop-shadow-md" />
+                  </div>
+                </button>
               </div>
             </div>
           </div>

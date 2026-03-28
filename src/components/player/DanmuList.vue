@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, watch, computed } from 'vue'
+import { ref, onMounted, watch, computed, nextTick } from 'vue'
 import { getDanmuList, type DanmuItem } from '@/api/danmu'
 import { MoreVertical, ChevronUp, ChevronLeft, ChevronRight, ArrowLeft } from 'lucide-vue-next'
 
@@ -252,6 +252,42 @@ const displayCount = computed(() => {
   return totalCount.value || list.value.length
 })
 
+const scrollRef = ref<HTMLElement | null>(null)
+
+const addDanmu = (danmu: {
+  id?: number
+  text: string
+  time: number
+  color: string
+  mode: 0 | 1 | 2
+  createdAt?: string
+}) => {
+  if (viewMode.value !== 'current') return
+  const item: DanmuItem = {
+    id: danmu.id ?? Date.now(),
+    videoId: props.videoId,
+    videoPartId: props.partId ?? 0,
+    userId: 0,
+    content: danmu.text,
+    timeOffset: Math.round(danmu.time * 1000),
+    color: danmu.color,
+    fontSize: 25,
+    position: danmu.mode,
+    likeCount: 0,
+    isLiked: false,
+    createdAt: danmu.createdAt ?? new Date().toISOString(),
+  }
+  list.value.push(item)
+  totalCount.value++
+  void nextTick(() => {
+    if (scrollRef.value) {
+      scrollRef.value.scrollTop = scrollRef.value.scrollHeight
+    }
+  })
+}
+
+defineExpose({ addDanmu })
+
 onMounted(() => void fetchList())
 watch(
   () => [props.videoId, props.partId],
@@ -401,7 +437,7 @@ watch(
       </div>
 
       <!-- List -->
-      <div class="danmu-scroll flex-1 overflow-y-auto px-2 py-1">
+      <div ref="scrollRef" class="danmu-scroll flex-1 overflow-y-auto px-2 py-1">
         <div v-if="loading" class="flex items-center justify-center py-10">
           <div
             class="h-5 w-5 animate-spin rounded-full border-2 border-[#00a1d6]/30 border-t-[#00a1d6]"

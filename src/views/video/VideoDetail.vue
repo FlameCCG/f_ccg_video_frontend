@@ -48,6 +48,7 @@ const route = useRoute()
 const authStore = useAuthStore()
 const videoStore = useVideoStore()
 const playerRef = ref<InstanceType<typeof VideoPlayer> | null>(null)
+const danmuListRef = ref<InstanceType<typeof DanmuList> | null>(null)
 const REPORT_REASONS = ['垃圾广告', '剧透刷屏', '人身攻击', '违法违禁', '色情低俗', '其他']
 
 const videoId = computed(() => {
@@ -68,15 +69,48 @@ const currentPartId = computed(() => {
 })
 const descExpanded = ref(false)
 const currentPlayerTime = computed(() => videoStore.playerState.currentTime)
+const recentLocalDanmuIds = new Set<number>()
+const danmuSocketVideoId = computed(() => {
+  if (!video.value?.id) return 0
+
+  const hasParts = (video.value.parts?.length ?? 0) > 0
+  if (hasParts && currentPartId.value === undefined) {
+    return 0
+  }
+
+  return video.value.id
+})
+
+const rememberLocalDanmu = (danmuId?: number) => {
+  if (danmuId === undefined) return
+  recentLocalDanmuIds.add(danmuId)
+  window.setTimeout(() => {
+    recentLocalDanmuIds.delete(danmuId)
+  }, 5000)
+}
+
+const getPlayerCurrentTime = () => {
+  const playerTime = playerRef.value?.artRef?.currentTime
+  if (typeof playerTime === 'number' && Number.isFinite(playerTime) && playerTime >= 0) {
+    return playerTime
+  }
+
+  return currentPlayerTime.value
+}
 
 const { newDanmu } = useDanmuWebSocket(
-  () => videoId.value,
+  () => danmuSocketVideoId.value,
   () => currentPartId.value
 )
 
 watch(newDanmu, (danmu) => {
+  if (danmu?.id !== undefined && recentLocalDanmuIds.has(danmu.id)) {
+    recentLocalDanmuIds.delete(danmu.id)
+    return
+  }
+
   if (danmu && playerRef.value) {
-    playerRef.value.emitDanmu({
+    const payload: PlayerDanmuPayload = {
       id: danmu.id,
       text: danmu.content,
       time: danmu.timeOffset / 1000,
@@ -85,12 +119,19 @@ watch(newDanmu, (danmu) => {
       likeCount: danmu.likeCount ?? 0,
       isLiked: danmu.isLiked ?? false,
       createdAt: danmu.createdAt,
-    })
+    }
+    playerRef.value.emitDanmu(payload)
+    danmuListRef.value?.addDanmu(payload)
   }
 })
 
 const handleDanmuSent = (danmu: PlayerDanmuPayload) => {
-  playerRef.value?.emitDanmu(danmu)
+  rememberLocalDanmu(danmu.id)
+  playerRef.value?.emitDanmu({
+    ...danmu,
+    time: getPlayerCurrentTime(),
+  })
+  danmuListRef.value?.addDanmu(danmu)
 }
 
 const danmuTooltip = ref<DanmuHoverState>({
@@ -275,24 +316,6 @@ const handleDanmuCopy = async () => {
   hideDanmuTooltip()
 }
 
-const handleDanmuLoadHistory = (danmuList: PlayerDanmuPayload[]) => {
-  if (!playerRef.value?.artRef) return
-  const plugin = playerRef.value.artRef.plugins?.artplayerPluginDanmuku as
-    | { load: (data: unknown) => Promise<unknown> }
-    | undefined
-  if (plugin) {
-    void plugin.load(
-      danmuList.map((d) => ({
-        id: d.id,
-        text: d.text,
-        time: d.time,
-        color: d.color,
-        mode: d.mode,
-      }))
-    )
-  }
-}
-
 const formatCount = (count: number): string => {
   if (count >= 10000) return `${(count / 10000).toFixed(1)}万`
   return count.toString()
@@ -417,8 +440,8 @@ onBeforeUnmount(() => {
             :video-id="video.id"
             :part-id="currentPartId"
             :current-time="currentPlayerTime"
+            :get-current-time="getPlayerCurrentTime"
             @sent="handleDanmuSent"
-            @load-history="handleDanmuLoadHistory"
           />
 
           <!-- Interaction Buttons (like bilibili: 点赞 投 收藏 分享) -->
@@ -467,7 +490,12 @@ onBeforeUnmount(() => {
           <AuthorCard v-if="video.author" :author="video.author" />
 
           <!-- Danmu List Panel (bilibili style) -->
-          <DanmuList :video-id="video.id" :part-id="currentPartId" @seek="handleSeek" />
+          <DanmuList
+            ref="danmuListRef"
+            :video-id="video.id"
+            :part-id="currentPartId"
+            @seek="handleSeek"
+          />
 
           <!-- Part List -->
           <PartList

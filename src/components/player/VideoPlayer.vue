@@ -160,6 +160,7 @@ const emitDanmu = (danmu: PlayerDanmuPayload) => {
       color: danmu.color,
       mode: danmu.mode ?? 0,
       border: !!danmu.isSelf,
+      style: danmu.isSelf ? { backgroundColor: 'transparent' } : undefined,
       id: danmu.id != null ? String(danmu.id) : undefined,
     }
     plugin.emit(emitted)
@@ -188,6 +189,24 @@ const emitDanmu = (danmu: PlayerDanmuPayload) => {
       })
     }
   }
+}
+
+const resetVisibleDanmu = () => {
+  const plugin = getDanmuPlugin()
+  if (!plugin) return
+
+  heldDanmu = null
+  currentHoverEl = null
+  emit('danmuHoldEnd')
+
+  activeClones.forEach((clone) => {
+    if (clone.el.isConnected) clone.el.remove()
+  })
+  activeClones.clear()
+
+  danmuMetaMap.clear()
+  danmuIdToEl.clear()
+  plugin.reset()
 }
 
 const setDanmuVisible = (visible: boolean) => {
@@ -590,6 +609,14 @@ const initPlayer = () => {
 
   art.on('video:pause', () => {
     videoStore.updatePlayerState({ playing: false })
+  })
+
+  art.on('video:seeking', () => {
+    resetVisibleDanmu()
+  })
+
+  art.on('video:seeked', () => {
+    resetVisibleDanmu()
   })
 
   art.on('video:canplay', () => {

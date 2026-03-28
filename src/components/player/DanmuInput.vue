@@ -1,9 +1,8 @@
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 import { useAuthStore } from '@/stores/auth'
 import {
   sendDanmu,
-  getDanmuHistory,
   type DanmuPositionType,
   DanmuPosition,
   type PlayerDanmuPayload,
@@ -15,19 +14,17 @@ import {
   ArrowUpToLine,
   ArrowDownToLine,
   MoveHorizontal,
-  Calendar,
 } from 'lucide-vue-next'
 
 const props = defineProps<{
   videoId: number
   partId?: number
   currentTime: number
+  getCurrentTime?: () => number
 }>()
 
 const emit = defineEmits<{
   sent: [danmu: PlayerDanmuPayload]
-  toggleVisible: [visible: boolean]
-  loadHistory: [danmuList: PlayerDanmuPayload[]]
 }>()
 
 const authStore = useAuthStore()
@@ -37,6 +34,8 @@ const selectedColor = ref('#ffffff')
 const selectedPosition = ref<DanmuPositionType>(DanmuPosition.SCROLL)
 const showSettings = ref(false)
 const sending = ref(false)
+const settingsBtnRef = ref<HTMLElement | null>(null)
+const settingsPanelRef = ref<HTMLElement | null>(null)
 
 const PRESET_COLORS = [
   '#ffffff',
@@ -63,6 +62,27 @@ const canSend = computed(
 
 const sendSuccess = ref(false)
 
+const getExactCurrentTime = (): number => {
+  const exactTime = props.getCurrentTime?.()
+  if (typeof exactTime === 'number' && Number.isFinite(exactTime) && exactTime >= 0) {
+    return exactTime
+  }
+
+  if (Number.isFinite(props.currentTime) && props.currentTime >= 0) {
+    return props.currentTime
+  }
+
+  return 0
+}
+
+const normalizeDanmuTime = (timeOffset?: number): number | undefined => {
+  if (typeof timeOffset !== 'number' || !Number.isFinite(timeOffset) || timeOffset < 0) {
+    return undefined
+  }
+
+  return timeOffset >= 10000 ? timeOffset / 1000 : timeOffset
+}
+
 const handleSend = async () => {
   if (!canSend.value) {
     if (!authStore.isLoggedIn) {
@@ -73,7 +93,8 @@ const handleSend = async () => {
 
   sending.value = true
   const text = inputText.value.trim()
-  const timeMs = Math.round(props.currentTime * 1000)
+  const sendAt = getExactCurrentTime()
+  const timeMs = Math.round(sendAt * 1000)
 
   try {
     const sendParams: Parameters<typeof sendDanmu>[0] = {
@@ -88,9 +109,12 @@ const handleSend = async () => {
     const sentDanmu: PlayerDanmuPayload = {
       id: result.id,
       text,
-      time: props.currentTime,
+      time: normalizeDanmuTime(result.timeOffset) ?? sendAt,
       color: selectedColor.value,
       mode: selectedPosition.value as 0 | 1 | 2,
+      likeCount: result.likeCount ?? 0,
+      isLiked: result.isLiked ?? false,
+      createdAt: result.createdAt,
       isSelf: true,
     }
 
@@ -113,33 +137,6 @@ const handleSend = async () => {
   }
 }
 
-const historyDate = ref('')
-const loadingHistory = ref(false)
-
-const handleLoadHistory = async () => {
-  if (!historyDate.value || loadingHistory.value) return
-  loadingHistory.value = true
-  try {
-    const historyParams: Parameters<typeof getDanmuHistory>[0] = {
-      videoId: props.videoId,
-    }
-    if (props.partId) historyParams.partId = props.partId
-    const result = await getDanmuHistory(historyParams)
-    const mapped = (result.list ?? []).map((d) => ({
-      text: d.content,
-      time: d.timeOffset / 1000,
-      color: d.color || '#ffffff',
-      mode: (d.position ?? 0) as 0 | 1 | 2,
-    }))
-    emit('loadHistory', mapped)
-    toast.success(`已加载 ${mapped.length} 条历史弹幕`)
-  } catch {
-    toast.error('加载历史弹幕失败')
-  } finally {
-    loadingHistory.value = false
-  }
-}
-
 const handleKeydown = (e: KeyboardEvent) => {
   if (e.key === 'Enter' && !e.shiftKey) {
     e.preventDefault()
@@ -147,99 +144,103 @@ const handleKeydown = (e: KeyboardEvent) => {
   }
   e.stopPropagation()
 }
+
+const toggleSettings = () => {
+  showSettings.value = !showSettings.value
+}
+
+const handleClickOutside = (e: MouseEvent) => {
+  if (!showSettings.value) return
+  const target = e.target as Node
+  if (settingsPanelRef.value?.contains(target)) return
+  if (settingsBtnRef.value?.contains(target)) return
+  showSettings.value = false
+}
+
+onMounted(() => {
+  document.addEventListener('mousedown', handleClickOutside)
+})
+onBeforeUnmount(() => {
+  document.removeEventListener('mousedown', handleClickOutside)
+})
 </script>
 
 <template>
-  <div class="danmu-control-bar relative flex items-center gap-3 px-4 py-2.5">
-    <!-- Input -->
-    <div class="relative flex-1 group">
-      <input
-        v-model="inputText"
-        type="text"
-        :placeholder="authStore.isLoggedIn ? '发个弹幕见证当下~' : '登录后发弹幕'"
-        maxlength="200"
-        class="danmu-input w-full"
-        :disabled="!authStore.isLoggedIn"
-        @keydown="handleKeydown"
-      />
+  <div class="danmu-input-shell">
+    <div class="danmu-control-bar relative flex items-center gap-2 px-3 py-2">
+      <!-- Input -->
+      <div class="relative flex-1">
+        <input
+          v-model="inputText"
+          type="text"
+          :placeholder="authStore.isLoggedIn ? '发个弹幕见证当下~' : '登录后发弹幕'"
+          maxlength="200"
+          class="danmu-input w-full"
+          :disabled="!authStore.isLoggedIn"
+          @keydown="handleKeydown"
+        />
+      </div>
+
+      <!-- Settings Toggle -->
+      <div class="relative">
+        <button
+          ref="settingsBtnRef"
+          class="icon-btn shrink-0"
+          :class="{ 'is-active': showSettings }"
+          title="弹幕设置"
+          @click="toggleSettings"
+        >
+          <Settings2 :size="18" />
+        </button>
+      </div>
+
+      <!-- Send Button -->
+      <button
+        class="send-btn shrink-0"
+        :class="{ 'is-success': sendSuccess }"
+        :disabled="!canSend && !sendSuccess"
+        @click="handleSend"
+      >
+        <Send v-if="!sendSuccess" :size="14" class="send-icon" />
+        <span>{{ sendSuccess ? '已发送 ✓' : '发送' }}</span>
+      </button>
     </div>
 
-    <!-- Settings Toggle -->
-    <button
-      class="icon-btn shrink-0"
-      :class="{ 'is-active': showSettings }"
-      title="弹幕设置"
-      @click="showSettings = !showSettings"
-    >
-      <Settings2 :size="18" />
-    </button>
-
-    <!-- Send Button -->
-    <button
-      class="send-btn shrink-0"
-      :class="{ 'is-success': sendSuccess }"
-      :disabled="!canSend && !sendSuccess"
-      @click="handleSend"
-    >
-      <Send v-if="!sendSuccess" :size="14" class="send-icon" />
-      <span>{{ sendSuccess ? '已发送 ✓' : '发送' }}</span>
-    </button>
-
-    <!-- Settings Panel -->
-    <Transition name="panel-fade">
-      <div
-        v-if="showSettings"
-        class="settings-panel absolute bottom-[calc(100%+12px)] right-0 z-50 w-[280px]"
-      >
-        <div class="space-y-5">
+    <Transition name="panel-pop">
+      <div v-if="showSettings" ref="settingsPanelRef" class="settings-panel">
           <!-- Color Picker -->
-          <div>
-            <p class="setting-title">弹幕颜色</p>
+          <div class="settings-section">
+            <p class="settings-label">弹幕颜色</p>
             <div class="color-grid">
               <button
                 v-for="color in PRESET_COLORS"
                 :key="color"
                 class="color-dot"
                 :class="{ 'is-active': selectedColor === color }"
-                :style="{ backgroundColor: color }"
+                :style="{ '--dot-color': color }"
                 @click="selectedColor = color"
-              />
+              >
+                <span class="color-dot-inner" :style="{ backgroundColor: color }" />
+              </button>
             </div>
           </div>
 
-          <!-- Position -->
-          <div>
-            <p class="setting-title">弹幕位置</p>
-            <div class="position-grid">
+          <!-- Position (Segmented Control) -->
+          <div class="settings-section">
+            <p class="settings-label">弹幕位置</p>
+            <div class="position-seg">
               <button
                 v-for="pos in positionOptions"
                 :key="pos.value"
-                class="position-btn"
+                class="position-seg-item"
                 :class="{ 'is-active': selectedPosition === pos.value }"
                 @click="selectedPosition = pos.value"
               >
-                <component :is="pos.icon" :size="16" />
+                <component :is="pos.icon" :size="14" />
                 <span>{{ pos.label }}</span>
               </button>
             </div>
           </div>
-
-          <!-- Historical Danmu -->
-          <div>
-            <p class="setting-title">历史弹幕</p>
-            <div class="flex items-center gap-2">
-              <Calendar :size="14" class="shrink-0 text-muted-foreground" />
-              <input v-model="historyDate" type="date" class="history-date-input flex-1" />
-              <button
-                class="history-load-btn"
-                :disabled="!historyDate || loadingHistory"
-                @click="handleLoadHistory"
-              >
-                {{ loadingHistory ? '加载中...' : '加载' }}
-              </button>
-            </div>
-          </div>
-        </div>
       </div>
     </Transition>
   </div>
@@ -247,77 +248,31 @@ const handleKeydown = (e: KeyboardEvent) => {
 
 <style scoped>
 /* ============================================
-   DanmuInput — Bilibili Style Refined
-   Ambition: Polished Bilibili Experience
+   DanmuInput — Refined Bilibili-grade Popover
    ============================================ */
 
+.danmu-input-shell {
+  position: relative;
+}
+
 .danmu-control-bar {
-  background: var(--surface-1, oklch(99% 0.001 80deg));
-  border-radius: 0 0 8px 8px;
-  box-shadow: 0 -1px 2px rgb(0 0 0 / 0.03);
-  transition: background 0.3s ease;
+  background: var(--surface-1, oklch(96.5% 0.008 240deg));
+  border-top: 1px solid oklch(0% 0 0deg / 0.04);
+  transition: background 0.2s ease;
 }
 
-:deep(.dark) .danmu-control-bar,
 .dark .danmu-control-bar {
-  background: var(--surface-1, oklch(16% 0.01 260deg));
-  box-shadow: 0 -1px 2px rgb(0 0 0 / 0.2);
-}
-
-/* --- Icon Buttons --- */
-.icon-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 32px;
-  height: 32px;
-  border-radius: 50%;
-  color: #757575;
-  background: transparent;
-  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
-  cursor: pointer;
-  border: none;
-}
-
-.icon-btn:hover {
-  color: var(--color-foreground);
-  background: rgb(0 0 0 / 0.05);
-  transform: scale(1.05);
-}
-
-.icon-btn:active {
-  transform: scale(0.95);
-}
-
-.icon-btn.is-active {
-  color: var(--color-primary);
-  background: oklch(var(--primary) / 0.1);
-}
-
-:deep(.dark) .icon-btn,
-.dark .icon-btn {
-  color: var(--color-muted-foreground);
-}
-
-:deep(.dark) .icon-btn:hover,
-.dark .icon-btn:hover {
-  color: #e3e5e7;
-  background: rgb(255 255 255 / 0.1);
-}
-
-:deep(.dark) .icon-btn.is-active,
-.dark .icon-btn.is-active {
-  color: var(--color-primary);
-  background: oklch(var(--primary) / 0.15);
+  background: var(--surface-1, oklch(22% 0.012 250deg));
+  border-top-color: oklch(100% 0 0deg / 0.06);
 }
 
 /* --- Input Field --- */
 .danmu-input {
-  height: 32px;
-  border-radius: 16px;
-  background-color: var(--color-secondary);
-  border: 1px solid transparent;
-  padding: 0 16px;
+  height: 34px;
+  border-radius: 17px;
+  background-color: oklch(96% 0.004 240deg);
+  border: 1.5px solid transparent;
+  padding: 0 14px;
   font-size: 13px;
   color: var(--color-foreground);
   transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
@@ -326,44 +281,84 @@ const handleKeydown = (e: KeyboardEvent) => {
 
 .danmu-input::placeholder {
   color: var(--color-muted-foreground);
+  font-size: 13px;
 }
 
 .danmu-input:hover:not(:disabled) {
-  background-color: var(--color-secondary);
+  background-color: oklch(94% 0.006 240deg);
 }
 
 .danmu-input:focus {
   background-color: var(--color-card);
   border-color: var(--color-primary);
-  box-shadow: 0 0 0 2px oklch(var(--primary) / 0.2);
+  box-shadow: 0 0 0 2.5px oklch(var(--primary) / 0.15);
 }
 
 .danmu-input:disabled {
-  opacity: 0.6;
+  opacity: 0.5;
   cursor: not-allowed;
 }
 
-:deep(.dark) .danmu-input,
 .dark .danmu-input {
-  background: #2f3134;
-  color: #e3e5e7;
+  background: oklch(24% 0.01 250deg);
+  color: oklch(92% 0.01 250deg);
 }
 
-:deep(.dark) .danmu-input::placeholder,
 .dark .danmu-input::placeholder {
-  color: #797b80;
+  color: oklch(55.% 0.015 250deg);
 }
 
-:deep(.dark) .danmu-input:hover:not(:disabled),
 .dark .danmu-input:hover:not(:disabled) {
-  background: #3e4043;
+  background: oklch(28.% 0.012 250deg);
 }
 
-:deep(.dark) .danmu-input:focus,
 .dark .danmu-input:focus {
-  background: #18191c;
+  background: oklch(18% 0.01 250deg);
   border-color: var(--color-primary);
-  box-shadow: 0 0 0 2px oklch(var(--primary) / 0.3);
+  box-shadow: 0 0 0 2.5px oklch(var(--primary) / 0.25);
+}
+
+/* --- Icon Button --- */
+.icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 8px;
+  color: oklch(55.% 0.02 240deg);
+  background: transparent;
+  transition: all 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+  cursor: pointer;
+  border: none;
+}
+
+.icon-btn:hover {
+  color: var(--color-foreground);
+  background: oklch(0% 0 0deg / 0.06);
+}
+
+.icon-btn:active {
+  transform: scale(0.92);
+}
+
+.icon-btn.is-active {
+  color: var(--color-primary);
+  background: oklch(var(--primary) / 0.1);
+}
+
+.dark .icon-btn {
+  color: oklch(60% 0.015 250deg);
+}
+
+.dark .icon-btn:hover {
+  color: oklch(90% 0.01 250deg);
+  background: oklch(100% 0 0deg / 0.08);
+}
+
+.dark .icon-btn.is-active {
+  color: var(--color-primary);
+  background: oklch(var(--primary) / 0.15);
 }
 
 /* --- Send Button --- */
@@ -371,242 +366,225 @@ const handleKeydown = (e: KeyboardEvent) => {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 6px;
-  height: 32px;
+  gap: 5px;
+  height: 34px;
   padding: 0 16px;
-  border-radius: 16px;
+  border-radius: 17px;
   font-size: 13px;
   font-weight: 500;
-  color: #ffffff;
+  color: #fff;
   background-color: var(--color-primary);
   border: none;
   cursor: pointer;
-  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
-  box-shadow: 0 2px 6px oklch(var(--primary) / 0.3);
+  transition: all 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+  box-shadow: 0 1px 4px oklch(var(--primary) / 0.25);
 }
 
 .send-btn:hover:not(:disabled) {
-  background-color: var(--color-primary);
   transform: translateY(-1px);
-  box-shadow: 0 4px 12px oklch(var(--primary) / 0.4);
+  box-shadow: 0 3px 10px oklch(var(--primary) / 0.35);
 }
 
 .send-btn:active:not(:disabled) {
-  transform: translateY(0) scale(0.96);
-  box-shadow: 0 2px 4px oklch(var(--primary) / 0.3);
+  transform: translateY(0) scale(0.97);
 }
 
 .send-btn:disabled {
-  background-color: var(--color-secondary);
-  color: var(--color-muted-foreground);
+  background-color: oklch(92% 0.005 240deg);
+  color: oklch(60% 0.02 240deg);
   box-shadow: none;
   cursor: not-allowed;
 }
 
 .send-btn.is-success {
-  background: #00b578;
-  box-shadow: 0 2px 6px oklch(var(--primary) / 0.3);
+  background: oklch(60% 0.16 155deg);
+  box-shadow: 0 1px 4px oklch(60% 0.16 155deg / 0.3);
   cursor: default;
 }
 
-:deep(.dark) .send-btn:disabled,
 .dark .send-btn:disabled {
-  background: #2f3134;
-  color: #5f6165;
+  background: oklch(26% 0.01 250deg);
+  color: oklch(45% 0.015 250deg);
 }
 
 .send-icon {
-  transition: transform 0.2s ease;
+  transition: transform 0.18s ease;
 }
 
 .send-btn:hover:not(:disabled) .send-icon {
-  transform: translateX(2px) translateY(-2px);
+  transform: translateX(1px) translateY(-1px);
 }
 
-/* --- Settings Panel (Glassmorphism) --- */
 .settings-panel {
-  background: rgb(255 255 255 / 0.85);
-  backdrop-filter: blur(20px) saturate(1.5);
-  border: 1px solid rgb(0 0 0 / 0.08);
+  position: absolute;
+  top: calc(100% + 10px);
+  right: 0;
+  z-index: 60;
+  width: 248px;
+  background: oklch(99.5% 0.002 240deg / 0.95);
+  backdrop-filter: blur(16px) saturate(1.4);
+  border: 1px solid oklch(0% 0 0deg / 0.08);
   border-radius: 12px;
-  padding: 20px;
+  padding: 14px;
   box-shadow:
-    0 8px 24px rgb(0 0 0 / 0.12),
-    0 2px 8px rgb(0 0 0 / 0.04);
-  transform-origin: bottom right;
+    0 4px 16px oklch(0% 0 0deg / 0.08),
+    0 1px 4px oklch(0% 0 0deg / 0.04);
+  transform-origin: top right;
 }
 
-:deep(.dark) .settings-panel,
 .dark .settings-panel {
-  background: rgb(34 35 38 / 0.85);
-  border-color: rgb(255 255 255 / 0.08);
+  background: oklch(22% 0.012 250deg / 0.92);
+  border-color: oklch(100% 0 0deg / 0.08);
   box-shadow:
-    0 8px 24px rgb(0 0 0 / 0.3),
-    0 2px 8px rgb(0 0 0 / 0.2);
+    0 4px 16px oklch(0% 0 0deg / 0.3),
+    0 1px 4px oklch(0% 0 0deg / 0.15);
 }
 
-.setting-title {
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--color-foreground);
+.settings-section {
+  padding-bottom: 12px;
   margin-bottom: 12px;
-  letter-spacing: 0.02em;
+  border-bottom: 1px solid oklch(0% 0 0deg / 0.05);
 }
 
-:deep(.dark) .setting-title,
-.dark .setting-title {
-  color: #e3e5e7;
+.settings-section:last-child {
+  padding-bottom: 0;
+  margin-bottom: 0;
+  border-bottom: none;
 }
 
-/* --- Color Picker --- */
+.dark .settings-section {
+  border-bottom-color: oklch(100% 0 0deg / 0.06);
+}
+
+.settings-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: oklch(40% 0.02 240deg);
+  margin-bottom: 10px;
+  letter-spacing: 0.03em;
+}
+
+.dark .settings-label {
+  color: oklch(70% 0.015 250deg);
+}
+
+/* --- Color Picker (compact dots) --- */
 .color-grid {
-  display: grid;
-  grid-template-columns: repeat(5, 1fr);
-  gap: 10px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
 }
 
 .color-dot {
-  width: 100%;
-  aspect-ratio: 1;
-  border-radius: 8px;
+  position: relative;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
   border: 2px solid transparent;
   cursor: pointer;
-  transition: all 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
-  box-shadow: inset 0 0 0 1px rgb(0 0 0 / 0.1);
+  transition: all 0.15s cubic-bezier(0.16, 1, 0.3, 1);
+  background: transparent;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
-.color-dot:hover {
-  transform: scale(1.1) translateY(-2px);
-  box-shadow:
-    inset 0 0 0 1px rgb(0 0 0 / 0.1),
-    0 4px 8px rgb(0 0 0 / 0.15);
+.color-dot-inner {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  box-shadow: inset 0 0 0 1px oklch(0% 0 0deg / 0.1);
+  transition: transform 0.15s ease;
+}
+
+.color-dot:hover .color-dot-inner {
+  transform: scale(1.1);
 }
 
 .color-dot.is-active {
-  transform: scale(1.15);
-  border-color: #ffffff;
-  box-shadow:
-    0 0 0 2px #00a1d6,
-    0 4px 12px oklch(var(--primary) / 0.3);
-  z-index: 1;
+  border-color: var(--dot-color);
+  box-shadow: 0 0 0 1px oklch(0% 0 0deg / 0.06);
 }
 
-:deep(.dark) .color-dot.is-active,
-.dark .color-dot.is-active {
-  border-color: #222326;
+.color-dot.is-active .color-dot-inner {
+  transform: scale(0.85);
 }
 
-/* --- Position Buttons --- */
-.position-grid {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 8px;
+/* White color dot needs visible border */
+.color-dot:first-child .color-dot-inner {
+  box-shadow: inset 0 0 0 1px oklch(0% 0 0deg / 0.15);
 }
 
-.position-btn {
+.dark .color-dot:first-child .color-dot-inner {
+  box-shadow: inset 0 0 0 1px oklch(100% 0 0deg / 0.2);
+}
+
+/* --- Position Segmented Control --- */
+.position-seg {
   display: flex;
-  flex-direction: column;
+  gap: 1px;
+  background: oklch(0% 0 0deg / 0.06);
+  border-radius: 8px;
+  padding: 2px;
+}
+
+.dark .position-seg {
+  background: oklch(0% 0 0deg / 0.2);
+}
+
+.position-seg-item {
+  flex: 1;
+  display: flex;
   align-items: center;
   justify-content: center;
-  gap: 6px;
-  padding: 10px 4px;
-  border-radius: 8px;
-  font-size: 12px;
-  color: #757575;
-  background-color: var(--color-secondary);
-  border: 1px solid transparent;
-  cursor: pointer;
-  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
-}
-
-.position-btn:hover {
-  background-color: var(--color-secondary);
-  color: var(--color-foreground);
-}
-
-.position-btn.is-active {
-  color: var(--color-primary);
-  background: oklch(var(--primary) / 0.1);
-  border-color: oklch(var(--primary) / 0.3);
-  font-weight: 500;
-}
-
-:deep(.dark) .position-btn,
-.dark .position-btn {
-  background: #2f3134;
-  color: var(--color-muted-foreground);
-}
-
-:deep(.dark) .position-btn:hover,
-.dark .position-btn:hover {
-  background: #3e4043;
-  color: #e3e5e7;
-}
-
-:deep(.dark) .position-btn.is-active,
-.dark .position-btn.is-active {
-  color: var(--color-primary);
-  background: oklch(var(--primary) / 0.15);
-  border-color: oklch(var(--primary) / 0.4);
-}
-
-/* --- Historical Danmu --- */
-.history-date-input {
-  height: 30px;
-  border-radius: 6px;
-  background-color: var(--color-secondary);
-  border: 1px solid transparent;
-  padding: 0 8px;
-  font-size: 12px;
-  color: var(--color-foreground);
-  outline: none;
-  transition: all 0.2s ease;
-}
-
-.history-date-input:focus {
-  border-color: var(--color-primary);
-  background-color: var(--color-card);
-}
-
-:deep(.dark) .history-date-input,
-.dark .history-date-input {
-  background: #2f3134;
-  color: #e3e5e7;
-}
-
-.history-load-btn {
-  padding: 4px 12px;
+  gap: 4px;
+  padding: 6px 0;
   border-radius: 6px;
   font-size: 12px;
   font-weight: 500;
-  background-color: var(--color-primary);
-  color: white;
+  color: oklch(50% 0.02 240deg);
+  background: transparent;
   border: none;
   cursor: pointer;
-  transition: all 0.15s ease;
-  white-space: nowrap;
+  transition: all 0.18s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
-.history-load-btn:hover:not(:disabled) {
-  background: #0091c2;
+.position-seg-item:hover {
+  color: var(--color-foreground);
 }
 
-.history-load-btn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
+.position-seg-item.is-active {
+  color: var(--color-primary);
+  background: var(--color-card);
+  box-shadow: 0 1px 3px oklch(0% 0 0deg / 0.06);
 }
 
-/* --- Animations --- */
-.panel-fade-enter-active,
-.panel-fade-leave-active {
+.dark .position-seg-item {
+  color: oklch(60% 0.015 250deg);
+}
+
+.dark .position-seg-item:hover {
+  color: oklch(85% 0.01 250deg);
+}
+
+.dark .position-seg-item.is-active {
+  color: var(--color-primary);
+  background: oklch(28.% 0.015 250deg);
+  box-shadow: 0 1px 3px oklch(0% 0 0deg / 0.2);
+}
+
+/* --- Panel Animation --- */
+.panel-pop-enter-active,
+.panel-pop-leave-active {
   transition:
-    opacity 0.3s cubic-bezier(0.16, 1, 0.3, 1),
-    transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+    opacity 0.2s cubic-bezier(0.16, 1, 0.3, 1),
+    transform 0.2s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
-.panel-fade-enter-from,
-.panel-fade-leave-to {
+.panel-pop-enter-from,
+.panel-pop-leave-to {
   opacity: 0;
-  transform: translateY(12px) scale(0.96);
+  transform: translateY(-6px) scale(0.97);
 }
 </style>

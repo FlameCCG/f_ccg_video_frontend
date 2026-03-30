@@ -1,12 +1,25 @@
 <script setup lang="ts">
 import { ref, onMounted, onBeforeUnmount, computed, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import { UploadCloud, Image as ImageIcon, X, Loader2, Plus } from 'lucide-vue-next'
+import {
+  UploadCloud,
+  Image as ImageIcon,
+  X,
+  Loader2,
+  Plus,
+  Play,
+  Pause,
+  RotateCcw,
+  CheckCircle2,
+  RefreshCw,
+} from 'lucide-vue-next'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { useToast } from '@/components/ui/toast/use-toast'
 import ScheduledPublishPicker from '@/components/creator/ScheduledPublishPicker.vue'
+import TagInput from '@/components/creator/TagInput.vue'
+import BatchOperationDialog from '@/components/creator/BatchOperationDialog.vue'
 import {
   Dialog,
   DialogContent,
@@ -42,6 +55,7 @@ interface VideoPart {
     | 'success'
     | 'error'
     | 'canceled'
+    | 'paused'
   hash: string
   filePath: string
   instant: boolean
@@ -49,17 +63,56 @@ interface VideoPart {
   abortController?: AbortController
 }
 
+interface VideoWorkForm {
+  title: string
+  description: string
+  partitionId: number | undefined
+  tags: string[]
+  tagInput: string
+  isOriginal: boolean
+  publishType: 'immediate' | 'scheduled'
+  publishTime: string
+}
+
+interface VideoWork {
+  id: string
+  parts: VideoPart[]
+  form: VideoWorkForm
+  coverFile: File | null
+  coverPreview: string
+}
+
+const createWorkForm = (): VideoWorkForm => ({
+  title: '',
+  description: '',
+  partitionId: undefined,
+  tags: [],
+  tagInput: '',
+  isOriginal: true,
+  publishType: 'immediate',
+  publishTime: '',
+})
+
+const createWork = (initialParts: VideoPart[] = []): VideoWork => ({
+  id: Math.random().toString(36).substring(2, 9),
+  parts: initialParts,
+  form: createWorkForm(),
+  coverFile: null,
+  coverPreview: '',
+})
+
 // State
 const isDragging = ref(false)
-const parts = ref<VideoPart[]>([])
+const works = ref<VideoWork[]>([])
+const activeWorkIndex = ref(0)
 const uploadRootRef = ref<HTMLElement | null>(null)
 const initialFileInputRef = ref<HTMLInputElement | null>(null)
 const appendFileInputRef = ref<HTMLInputElement | null>(null)
+const addWorkFileInputRef = ref<HTMLInputElement | null>(null)
 
 const partitions = ref<Partition[]>([])
-const coverFile = ref<File | null>(null)
-const coverPreview = ref('')
 const isPublishing = ref(false)
+const showBatchDialog = ref(false)
 
 const storageConfig = ref<StorageConfig>({
   maxChunkSize: 10,
@@ -89,23 +142,17 @@ const COMMON_VIDEO_FORMAT_TEXT = `${VIDEO_FILE_EXTENSIONS.slice(0, 6).join(' / '
 const SCHEDULE_MIN_DELAY_MS = 5 * 60 * 1000
 const SCHEDULE_MAX_DELAY_MS = 14 * 24 * 60 * 60 * 1000
 
+// Active work computed
+const activeWork = computed(() => works.value[activeWorkIndex.value])
+const activeParts = computed(() => activeWork.value?.parts ?? [])
+const allParts = computed(() => works.value.flatMap((w) => w.parts))
+
 const isUploadingAny = computed(() =>
-  parts.value.some((p) =>
+  allParts.value.some((p) =>
     ['pending', 'hashing', 'checking', 'uploading', 'merging'].includes(p.status)
   )
 )
-
-// Form State
-const form = ref({
-  title: '',
-  description: '',
-  partitionId: undefined as number | undefined,
-  tags: [] as string[],
-  tagInput: '',
-  isOriginal: true,
-  publishType: 'immediate',
-  publishTime: '',
-})
+const showPartLabels = computed(() => activeParts.value.length > 1)
 
 // Cover Setting State
 const showCoverSetting = ref(false)
@@ -122,10 +169,10 @@ const scheduleBoundaryBase = ref(Date.now())
 let localPreviewObjectUrl = ''
 let scheduleBoundaryTimer: ReturnType<typeof setInterval> | undefined
 const canCaptureCover = computed(() =>
-  Boolean(parts.value[0] && previewVideoUrl.value && !previewVideoError.value)
+  Boolean(activeParts.value[0] && previewVideoUrl.value && !previewVideoError.value)
 )
 const coverDialogTip = computed(() => {
-  if (!parts.value[0]) return '请先上传视频后再设置封面'
+  if (!activeParts.value[0]) return '请先上传视频后再设置封面'
   if (canCaptureCover.value) return '支持拖动视频进度条截取当前帧，也支持直接上传自定义封面'
   if (previewVideoUrl.value) return '当前视频浏览器无法预览，仅支持本地上传自定义封面'
   return '当前视频预览源尚未就绪，请先上传自定义封面'
@@ -165,15 +212,6 @@ const formatLocalDateTime = (date: Date) => {
   return `${year}-${month}-${day}T${hour}:${minute}`
 }
 
-const formatScheduledRangeText = (date: Date) =>
-  new Intl.DateTimeFormat('zh-CN', {
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: false,
-  }).format(date)
-
 const ceilDateToMinute = (date: Date) => {
   const next = new Date(date)
   if (next.getSeconds() !== 0 || next.getMilliseconds() !== 0) {
@@ -203,8 +241,6 @@ const getScheduleWindowEnd = () =>
 
 const scheduledPublishMinValue = computed(() => formatLocalDateTime(getScheduleWindowStart()))
 const scheduledPublishMaxValue = computed(() => formatLocalDateTime(getScheduleWindowEnd()))
-const scheduledPublishMinLabel = computed(() => formatScheduledRangeText(getScheduleWindowStart()))
-const scheduledPublishMaxLabel = computed(() => formatScheduledRangeText(getScheduleWindowEnd()))
 
 const normalizeScheduledPublishTime = (value: string) => {
   const parsed = parseLocalDateTime(value)
@@ -248,7 +284,7 @@ const revokeLocalPreviewObjectUrl = () => {
 }
 
 const syncPreviewVideoUrl = () => {
-  const firstPart = parts.value[0]
+  const firstPart = activeParts.value[0]
   previewVideoError.value = false
 
   if (!firstPart) {
@@ -269,8 +305,9 @@ const syncPreviewVideoUrl = () => {
 }
 
 const openCoverSetting = () => {
-  tempCoverPreview.value = coverPreview.value
-  tempCoverFile.value = coverFile.value
+  if (!activeWork.value) return
+  tempCoverPreview.value = activeWork.value.coverPreview
+  tempCoverFile.value = activeWork.value.coverFile
   showCoverSetting.value = true
 }
 
@@ -316,8 +353,10 @@ const onPreviewVideoError = () => {
 }
 
 const confirmCoverSetting = () => {
-  coverPreview.value = tempCoverPreview.value
-  coverFile.value = tempCoverFile.value
+  if (activeWork.value) {
+    activeWork.value.coverPreview = tempCoverPreview.value
+    activeWork.value.coverFile = tempCoverFile.value
+  }
   showCoverSetting.value = false
 }
 
@@ -337,7 +376,12 @@ onMounted(async () => {
 })
 
 watch(
-  () => [parts.value[0]?.id, parts.value[0]?.status, parts.value[0]?.filePath],
+  () => [
+    activeWorkIndex.value,
+    activeParts.value[0]?.id,
+    activeParts.value[0]?.status,
+    activeParts.value[0]?.filePath,
+  ],
   () => {
     syncPreviewVideoUrl()
   },
@@ -345,20 +389,26 @@ watch(
 )
 
 watch(
-  () => form.value.publishType,
+  () => activeWork.value?.form.publishType,
   (publishType) => {
-    if (publishType !== 'scheduled') return
+    if (!activeWork.value || publishType !== 'scheduled') return
     refreshScheduleBoundary()
-    form.value.publishTime =
-      normalizeScheduledPublishTime(form.value.publishTime) || scheduledPublishMinValue.value
+    activeWork.value.form.publishTime =
+      normalizeScheduledPublishTime(activeWork.value.form.publishTime) ||
+      scheduledPublishMinValue.value
   }
 )
 
 watch([scheduledPublishMinValue, scheduledPublishMaxValue], () => {
-  if (form.value.publishType !== 'scheduled' || !form.value.publishTime) return
-  const normalized = normalizeScheduledPublishTime(form.value.publishTime)
-  if (normalized && normalized !== form.value.publishTime) {
-    form.value.publishTime = normalized
+  if (
+    !activeWork.value ||
+    activeWork.value.form.publishType !== 'scheduled' ||
+    !activeWork.value.form.publishTime
+  )
+    return
+  const normalized = normalizeScheduledPublishTime(activeWork.value.form.publishTime)
+  if (normalized && normalized !== activeWork.value.form.publishTime) {
+    activeWork.value.form.publishTime = normalized
   }
 })
 
@@ -495,15 +545,12 @@ const handleWindowDrop = (e: DragEvent) => {
 }
 
 // Concurrency & retry helpers
-const MAX_CONCURRENT_UPLOADS = 5
 const activeUploads = ref(0)
-
-const pendingCount = computed(() => parts.value.filter((p) => p.status === 'pending').length)
 
 const queuePosition = (part: VideoPart): number => {
   if (part.status !== 'pending') return 0
   let pos = 0
-  for (const p of parts.value) {
+  for (const p of allParts.value) {
     if (p.id === part.id) return pos + 1
     if (p.status === 'pending') pos++
   }
@@ -577,8 +624,12 @@ const isLikelyVideoFile = (file: File) => {
 }
 
 const processUploadQueue = () => {
-  while (activeUploads.value < MAX_CONCURRENT_UPLOADS) {
-    const next = parts.value.find((p) => p.status === 'pending')
+  while (activeUploads.value < storageConfig.value.maxUploadNum) {
+    let next: VideoPart | undefined
+    for (const work of works.value) {
+      next = work.parts.find((p) => p.status === 'pending')
+      if (next) break
+    }
     if (!next) break
     next.status = 'hashing'
     activeUploads.value++
@@ -612,9 +663,10 @@ const handleFilesSelect = (files: FileList | File[]) => {
   }
 
   const maxNum = storageConfig.value.maxUploadNum
-  const remaining = maxNum - parts.value.length
+  const currentParts = activeWork.value?.parts ?? []
+  const remaining = maxNum - currentParts.length
   if (remaining <= 0) {
-    toast({ title: `最多上传 ${maxNum} 个分P`, variant: 'destructive' })
+    toast({ title: `当前作品最多 ${maxNum} 个分P`, variant: 'destructive' })
     return
   }
 
@@ -670,26 +722,40 @@ const handleFilesSelect = (files: FileList | File[]) => {
     instant: false,
   }))
 
-  if (!form.value.title && newParts[0]) {
-    form.value.title = newParts[0].title
+  if (activeWork.value) {
+    if (!activeWork.value.form.title && newParts[0]) {
+      activeWork.value.form.title = newParts[0].title
+    }
+    activeWork.value.parts.push(...newParts)
+  } else {
+    newParts.forEach((part) => {
+      const work = createWork([part])
+      work.form.title = part.title
+      works.value.push(work)
+    })
+    activeWorkIndex.value = 0
   }
-
-  parts.value.push(...newParts)
   processUploadQueue()
 }
 
-const uploadPart = async (part: VideoPart) => {
+const uploadPart = async (part: VideoPart, isResume = false) => {
   part.abortController = new AbortController()
   const signal = part.abortController.signal
 
   try {
-    part.progress = 0
-    part.errorMessage = ''
-    part.instant = false
+    if (!isResume) {
+      part.progress = 0
+      part.errorMessage = ''
+      part.instant = false
+    } else {
+      part.errorMessage = ''
+    }
 
-    part.hash = await calculateFullSHA256(part.file, signal, (pct) => {
-      part.progress = pct
-    })
+    if (!isResume || !part.hash) {
+      part.hash = await calculateFullSHA256(part.file, signal, (pct) => {
+        part.progress = pct
+      })
+    }
 
     // Phase 2: check status (秒传 / 断点续传)
     part.status = 'checking'
@@ -769,7 +835,7 @@ const uploadPart = async (part: VideoPart) => {
     }
   } catch (error: unknown) {
     if ((error instanceof Error && error.message === 'canceled') || signal.aborted) {
-      part.status = 'canceled'
+      if (part.status !== 'paused') part.status = 'canceled'
     } else {
       part.status = 'error'
       const err = error as { response?: { data?: { msg?: string } }; message?: string }
@@ -780,120 +846,237 @@ const uploadPart = async (part: VideoPart) => {
 }
 
 const removePart = (index: number) => {
-  const part = parts.value[index]
+  if (!activeWork.value) return
+  const part = activeWork.value.parts[index]
   const removedFirst = index === 0
   if (part?.abortController) {
     part.abortController.abort()
   }
-  parts.value.splice(index, 1)
+  activeWork.value.parts.splice(index, 1)
   if (removedFirst) previewVideoError.value = false
   processUploadQueue()
 }
 
+const pausePart = (part: VideoPart) => {
+  if (!['hashing', 'checking', 'uploading', 'merging'].includes(part.status)) return
+  part.status = 'paused'
+  part.abortController?.abort()
+}
+
+const resumePart = (part: VideoPart) => {
+  if (part.status !== 'paused' && part.status !== 'error' && part.status !== 'canceled') return
+  part.status = 'hashing'
+  activeUploads.value++
+  void uploadPart(part, true).finally(() => {
+    activeUploads.value--
+    processUploadQueue()
+  })
+}
+
+const removeWork = (index: number) => {
+  const work = works.value[index]
+  if (!work) return
+  work.parts.forEach((p) => p.abortController?.abort())
+  works.value.splice(index, 1)
+  if (activeWorkIndex.value >= works.value.length) {
+    activeWorkIndex.value = Math.max(0, works.value.length - 1)
+  }
+  previewVideoError.value = false
+}
+
+const onAddWorkFileChange = (e: Event) => {
+  const target = e.target as HTMLInputElement
+  if (!target.files?.length) return
+  const allFiles = Array.from(target.files)
+  const videoFiles = allFiles.filter(isLikelyVideoFile)
+  if (videoFiles.length === 0) {
+    toast({ title: '没有可上传的视频文件', variant: 'destructive' })
+    target.value = ''
+    return
+  }
+  const validFiles = videoFiles.filter((f) => f.size <= maxFileSizeBytes.value)
+  if (validFiles.length === 0) {
+    toast({ title: '所选文件未通过校验', variant: 'destructive' })
+    target.value = ''
+    return
+  }
+  validFiles.forEach((file) => {
+    const part: VideoPart = {
+      id: Math.random().toString(36).substring(2, 9),
+      file,
+      title: file.name.replace(/\.[^/.]+$/, ''),
+      progress: 0,
+      status: 'pending',
+      hash: '',
+      filePath: '',
+      instant: false,
+    }
+    const work = createWork([part])
+    work.form.title = part.title
+    works.value.push(work)
+  })
+  activeWorkIndex.value = works.value.length - 1
+  target.value = ''
+  processUploadQueue()
+}
+
+const replaceFileInputRef = ref<HTMLInputElement | null>(null)
+const replaceTargetPartIndex = ref<number | null>(null)
+
+const openReplacePicker = (index: number) => {
+  replaceTargetPartIndex.value = index
+  replaceFileInputRef.value?.click()
+}
+
+const onReplaceFileChange = (e: Event) => {
+  const target = e.target as HTMLInputElement
+  if (!target.files?.length || replaceTargetPartIndex.value === null) return
+  const file = target.files[0]
+  if (!file || !activeWork.value) return
+
+  const reason = getVideoFileRejectionReason(file)
+  if (reason) {
+    toast({ title: '无法更换', description: `${file.name} ${reason}`, variant: 'destructive' })
+    target.value = ''
+    return
+  }
+  if (file.size > storageConfig.value.maxFileSize * 1024 * 1024) {
+    toast({
+      title: '无法更换',
+      description: `文件大于 ${storageConfig.value.maxFileSize}MB`,
+      variant: 'destructive',
+    })
+    target.value = ''
+    return
+  }
+
+  const part = activeWork.value.parts[replaceTargetPartIndex.value]
+  if (!part) return
+  if (part.abortController) {
+    part.abortController.abort()
+  }
+
+  const oldName = part.file.name.replace(/\.[^/.]+$/, '')
+  if (part.title === oldName || !part.title) {
+    part.title = file.name.replace(/\.[^/.]+$/, '')
+  }
+
+  part.file = file
+  part.progress = 0
+  part.status = 'pending'
+  part.hash = ''
+  part.filePath = ''
+  part.errorMessage = ''
+  part.instant = false
+
+  target.value = ''
+  replaceTargetPartIndex.value = null
+
+  processUploadQueue()
+}
+
+const handleBatchApply = (data: { isOriginal: boolean; tags: string[] }) => {
+  for (const work of works.value) {
+    work.form.isOriginal = data.isOriginal
+    if (data.tags.length > 0) {
+      const merged = [...new Set([...work.form.tags, ...data.tags])]
+      work.form.tags = merged.slice(0, 10)
+    }
+  }
+  toast({ title: '批量设置已应用' })
+}
+
+const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+  if (works.value.length > 0) {
+    e.preventDefault()
+    e.returnValue = ''
+  }
+}
+
+onMounted(() => {
+  window.addEventListener('beforeunload', handleBeforeUnload)
+})
+
 onBeforeUnmount(() => {
   revokeLocalPreviewObjectUrl()
-  parts.value.forEach((p) => p.abortController?.abort())
+  allParts.value.forEach((p) => p.abortController?.abort())
   if (scheduleBoundaryTimer) {
     clearInterval(scheduleBoundaryTimer)
   }
   window.removeEventListener('dragover', handleWindowDragOver)
   window.removeEventListener('drop', handleWindowDrop)
+  window.removeEventListener('beforeunload', handleBeforeUnload)
 })
-
-// Tags
-const addTag = () => {
-  const val = form.value.tagInput.trim()
-  if (val && !form.value.tags.includes(val) && form.value.tags.length < 10) {
-    form.value.tags.push(val)
-  }
-  form.value.tagInput = ''
-}
-const removeTag = (index: number) => {
-  form.value.tags.splice(index, 1)
-}
 
 // Publish
 const handlePublish = async () => {
-  if (parts.value.length === 0) {
-    toast({ title: '请至少上传一个视频分P', variant: 'destructive' })
+  if (works.value.length === 0) {
+    toast({ title: '请至少添加一个作品', variant: 'destructive' })
     return
   }
-  if (parts.value.some((p) => p.status !== 'success')) {
-    toast({ title: '请等待所有视频上传完成', variant: 'destructive' })
-    return
-  }
-  if (!form.value.title) {
-    toast({ title: '请填写标题', variant: 'destructive' })
-    return
-  }
-  if (!form.value.partitionId) {
-    toast({ title: '请选择分区', variant: 'destructive' })
-    return
-  }
-  if (!coverFile.value && !coverPreview.value) {
-    toast({ title: '请上传封面', variant: 'destructive' })
-    return
-  }
-
-  let publishTimeStr = undefined
-  if (form.value.publishType === 'scheduled') {
-    refreshScheduleBoundary()
-    if (!form.value.publishTime) {
-      toast({ title: '请选择定时发布时间', variant: 'destructive' })
+  for (let i = 0; i < works.value.length; i++) {
+    const work = works.value[i]!
+    const wLabel = works.value.length > 1 ? `作品${i + 1}：` : ''
+    if (work.parts.length === 0) {
+      toast({ title: `${wLabel}请至少上传一个视频`, variant: 'destructive' })
+      activeWorkIndex.value = i
       return
     }
-    const normalizedPublishTime = normalizeScheduledPublishTime(form.value.publishTime)
-    if (!normalizedPublishTime) {
-      toast({ title: '发布时间格式不正确', variant: 'destructive' })
+    if (work.parts.some((p) => p.status !== 'success')) {
+      toast({ title: `${wLabel}请等待所有视频上传完成`, variant: 'destructive' })
+      activeWorkIndex.value = i
       return
     }
-    if (normalizedPublishTime !== form.value.publishTime) {
-      form.value.publishTime = normalizedPublishTime
-    }
-    const d = new Date(normalizedPublishTime)
-    if (isNaN(d.getTime())) {
-      toast({ title: '发布时间格式不正确', variant: 'destructive' })
+    if (!work.form.title) {
+      toast({ title: `${wLabel}请填写标题`, variant: 'destructive' })
+      activeWorkIndex.value = i
       return
     }
-    const minDate = getScheduleWindowStart()
-    const maxDate = getScheduleWindowEnd()
-    if (d.getTime() < minDate.getTime() || d.getTime() > maxDate.getTime()) {
-      toast({
-        title: '定时发布时间超出允许范围',
-        description: `请选择 ${scheduledPublishMinLabel.value} 至 ${scheduledPublishMaxLabel.value} 之间的时间`,
-        variant: 'destructive',
-      })
+    if (!work.form.partitionId) {
+      toast({ title: `${wLabel}请选择分区`, variant: 'destructive' })
+      activeWorkIndex.value = i
       return
     }
-    // 后端需要 RFC3339 格式的时间字符串
-    publishTimeStr = d.toISOString()
+    if (!work.coverFile && !work.coverPreview) {
+      toast({ title: `${wLabel}请上传封面`, variant: 'destructive' })
+      activeWorkIndex.value = i
+      return
+    }
   }
 
   try {
     isPublishing.value = true
-
-    let coverUrl = ''
-    if (coverFile.value) {
-      const coverRes = await uploadImage(parts.value[0]?.hash || '', coverFile.value)
-      coverUrl = coverRes.imageUrl
+    for (const work of works.value) {
+      let publishTimeStr: string | undefined
+      if (work.form.publishType === 'scheduled') {
+        const normalized = normalizeScheduledPublishTime(work.form.publishTime)
+        if (!normalized) {
+          toast({ title: '发布时间格式不正确', variant: 'destructive' })
+          return
+        }
+        publishTimeStr = new Date(normalized).toISOString()
+      }
+      let coverUrl = ''
+      if (work.coverFile) {
+        const coverRes = await uploadImage(work.parts[0]?.hash || '', work.coverFile)
+        coverUrl = coverRes.imageUrl
+      }
+      await publishVideo({
+        title: work.form.title,
+        description: work.form.description,
+        partitionId: work.form.partitionId!,
+        isOriginal: work.form.isOriginal,
+        coverUrl,
+        publishTime: publishTimeStr,
+        parts: work.parts.map((p) => ({
+          title: p.title,
+          filePath: p.filePath,
+          fileName: p.file.name,
+          fileHash: p.hash,
+        })),
+      })
     }
-
-    await publishVideo({
-      title: form.value.title,
-      description: form.value.description,
-      partitionId: form.value.partitionId,
-      isOriginal: form.value.isOriginal,
-      coverUrl: coverUrl,
-      publishTime: publishTimeStr,
-      parts: parts.value.map((p) => ({
-        title: p.title,
-        filePath: p.filePath,
-        fileName: p.file.name,
-        fileHash: p.hash,
-      })),
-    })
-
-    toast({ title: '发布成功' })
+    toast({ title: works.value.length > 1 ? `${works.value.length} 个作品发布成功` : '发布成功' })
     void router.push('/creator/content')
   } catch (error) {
     console.error('Publish failed', error)
@@ -929,10 +1112,25 @@ const handlePublish = async () => {
       class="hidden"
       @change="onFileChange"
     />
+    <input
+      ref="addWorkFileInputRef"
+      type="file"
+      :accept="VIDEO_INPUT_ACCEPT"
+      multiple
+      class="hidden"
+      @change="onAddWorkFileChange"
+    />
+    <input
+      ref="replaceFileInputRef"
+      type="file"
+      :accept="VIDEO_INPUT_ACCEPT"
+      class="hidden"
+      @change="onReplaceFileChange"
+    />
 
     <!-- Step 1: Upload Area -->
     <div
-      v-if="parts.length === 0"
+      v-if="works.length === 0"
       class="bg-card rounded-3xl border-2 border-dashed p-16 transition-all duration-300 flex flex-col items-center justify-center min-h-[440px] hover:border-primary/50 hover:bg-muted/10"
       :class="{ 'border-primary bg-primary/5 scale-[1.02] shadow-xl': isDragging }"
     >
@@ -957,109 +1155,225 @@ const handlePublish = async () => {
 
     <!-- Step 2: Form Area -->
     <div v-else class="space-y-8">
-      <!-- Parts List Section -->
+      <!-- Video Works Section -->
       <div class="bg-card rounded-2xl border p-8 shadow-sm">
-        <div class="flex items-center justify-between mb-8">
+        <div class="flex items-center justify-between mb-6">
           <h2 class="text-2xl font-bold tracking-tight">发布视频</h2>
-          <div class="flex items-center gap-3 text-sm text-muted-foreground">
-            <span>共 {{ parts.length }} P</span>
-            <span v-if="activeUploads > 0" class="text-primary">
-              {{ activeUploads }} 个上传中
-            </span>
-            <span v-if="pendingCount > 0" class="text-orange-500">
-              {{ pendingCount }} 个排队中
-            </span>
-          </div>
-        </div>
-
-        <div class="space-y-3 mb-4">
-          <div
-            v-for="(part, index) in parts"
-            :key="part.id"
-            class="flex items-center gap-4 p-4 rounded-lg border bg-muted/20"
+          <Button
+            variant="outline"
+            size="sm"
+            class="hover:border-primary hover:text-primary hover:bg-primary/5"
+            @click="showBatchDialog = true"
+            >批量操作</Button
           >
-            <div
-              class="flex-shrink-0 w-8 h-8 rounded bg-muted flex items-center justify-center text-muted-foreground font-medium"
-            >
-              P{{ index + 1 }}
-            </div>
-            <div class="flex-grow min-w-0">
-              <div class="flex items-center justify-between mb-1">
-                <Input
-                  :model-value="part.title"
-                  class="h-8 text-sm max-w-[300px] border-transparent hover:border-input focus-visible:border-input bg-transparent px-2 -ml-2"
-                  placeholder="分P标题"
-                  @update:model-value="(v) => (part.title = String(v))"
-                />
-                <span class="text-xs text-muted-foreground truncate ml-4" :title="part.file.name">
-                  {{ part.file.name }} ({{ (part.file.size / 1024 / 1024).toFixed(2) }} MB)
-                </span>
-              </div>
-              <div class="flex items-center gap-3">
-                <div class="flex-grow bg-muted rounded-full h-1.5 overflow-hidden">
-                  <div
-                    class="h-full transition-all duration-300"
-                    :class="{
-                      'bg-primary': ['uploading', 'success'].includes(part.status),
-                      'bg-destructive': part.status === 'error',
-                      'bg-orange-400': ['hashing', 'checking', 'merging'].includes(part.status),
-                      'bg-muted-foreground': ['pending', 'canceled'].includes(part.status),
-                    }"
-                    :style="{ width: `${part.progress}%` }"
-                  ></div>
-                </div>
-                <span
-                  class="text-xs w-20 text-right"
-                  :class="{
-                    'text-primary': part.status === 'success',
-                    'text-destructive': part.status === 'error',
-                    'text-orange-500': ['hashing', 'checking', 'merging'].includes(part.status),
-                    'text-muted-foreground': ['pending', 'uploading', 'canceled'].includes(
-                      part.status
-                    ),
-                  }"
-                >
-                  <template v-if="part.status === 'success'">{{
-                    part.instant ? '秒传成功' : '上传成功'
-                  }}</template>
-                  <template v-else-if="part.status === 'error'">
-                    <span :title="part.errorMessage">上传失败</span>
-                  </template>
-                  <template v-else-if="part.status === 'pending'">
-                    排队 #{{ queuePosition(part) }}
-                  </template>
-                  <template v-else-if="part.status === 'hashing'">计算哈希</template>
-                  <template v-else-if="part.status === 'checking'">校验中</template>
-                  <template v-else-if="part.status === 'merging'">合并中</template>
-                  <template v-else-if="part.status === 'canceled'">已取消</template>
-                  <template v-else>{{ part.progress }}%</template>
-                </span>
-              </div>
-            </div>
-            <Button
-              variant="ghost"
-              size="icon"
-              class="flex-shrink-0 text-muted-foreground hover:text-destructive"
-              @click="removePart(index)"
-            >
-              <X class="h-4 w-4" />
-            </Button>
-          </div>
         </div>
 
-        <Button
-          variant="outline"
-          class="w-full border-dashed"
-          :disabled="parts.length >= storageConfig.maxUploadNum"
-          @click="openVideoPicker('append')"
-        >
-          <Plus class="mr-2 h-4 w-4" />
-          添加分P（还可添加 {{ storageConfig.maxUploadNum - parts.length }} 个）
-        </Button>
+        <!-- Work Tabs -->
+        <div class="flex items-center gap-2 mb-4 overflow-x-auto pb-2 pt-2 pr-2 upload-tabs-scroll">
+          <div
+            v-for="(work, wIdx) in works"
+            :key="work.id"
+            class="upload-work-tab flex-shrink-0 relative flex flex-col items-start gap-1 p-3 rounded-lg border cursor-pointer transition-all w-[200px] group"
+            :class="
+              activeWorkIndex === wIdx
+                ? 'bg-[#00a1d6] text-white border-[#00a1d6] shadow-sm'
+                : 'bg-card text-foreground border-border hover:border-[#00a1d6]/50'
+            "
+            @click="activeWorkIndex = wIdx"
+          >
+            <div class="w-full pr-4">
+              <span class="truncate block text-[13px] font-medium w-full text-left">{{
+                work.form.title || work.parts[0]?.file.name || `作品${wIdx + 1}`
+              }}</span>
+            </div>
+            <div
+              v-if="work.parts.length > 0 && work.parts.every((p) => p.status === 'success')"
+              class="flex items-center gap-1 shrink-0 mt-0.5"
+              :class="activeWorkIndex === wIdx ? 'text-white/90' : 'text-[#22c55e]'"
+            >
+              <CheckCircle2
+                class="w-3.5 h-3.5"
+                :class="
+                  activeWorkIndex === wIdx
+                    ? 'fill-white text-[#00a1d6]'
+                    : 'fill-[#22c55e] text-white'
+                "
+              />
+              <span class="text-[11px] font-medium">上传完成</span>
+            </div>
+            <div
+              v-else-if="
+                work.parts.length > 0 &&
+                work.parts.some((p) =>
+                  ['uploading', 'hashing', 'checking', 'merging', 'pending'].includes(p.status)
+                )
+              "
+              class="flex items-center gap-1 shrink-0 mt-0.5"
+              :class="activeWorkIndex === wIdx ? 'text-white/80' : 'text-primary'"
+            >
+              <Loader2 class="w-3 h-3 animate-spin" />
+              <span class="text-[11px] font-medium">上传中</span>
+            </div>
+            <div v-else class="h-4"></div>
+
+            <button
+              v-if="works.length > 1"
+              class="absolute top-2 right-2 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"
+              :class="
+                activeWorkIndex === wIdx
+                  ? 'text-white/80 hover:text-white'
+                  : 'text-muted-foreground hover:text-foreground'
+              "
+              @click.stop="removeWork(wIdx)"
+            >
+              <X class="w-3.5 h-3.5" />
+            </button>
+          </div>
+          <button
+            class="flex-shrink-0 flex items-center gap-1 px-4 py-2.5 rounded-lg border border-dashed text-sm text-muted-foreground hover:text-foreground hover:bg-muted/40 transition-colors"
+            @click="addWorkFileInputRef?.click()"
+          >
+            <Plus class="h-3.5 w-3.5" />
+            添加视频
+          </button>
+        </div>
+
+        <!-- Active Work Parts -->
+        <template v-if="activeWork">
+          <Button
+            variant="ghost"
+            size="sm"
+            class="text-primary hover:bg-primary/10 mb-3"
+            :disabled="activeParts.length >= storageConfig.maxUploadNum"
+            @click="openVideoPicker('append')"
+          >
+            <Plus class="mr-1 h-3.5 w-3.5" />
+            添加分P
+          </Button>
+
+          <div class="space-y-2">
+            <div
+              v-for="(part, index) in activeParts"
+              :key="part.id"
+              class="flex items-center gap-4 p-4 rounded-lg border bg-muted/20"
+            >
+              <div
+                v-if="showPartLabels"
+                class="flex-shrink-0 w-8 h-8 rounded bg-primary/10 text-primary flex items-center justify-center font-semibold text-sm"
+              >
+                P{{ index + 1 }}
+              </div>
+              <div
+                v-else
+                class="flex-shrink-0 w-8 h-8 rounded bg-primary/10 text-primary flex items-center justify-center"
+              >
+                <Play class="h-4 w-4" />
+              </div>
+              <div class="flex-grow min-w-0">
+                <div class="flex items-center justify-between mb-1">
+                  <span class="text-sm font-medium truncate" :title="part.file.name">{{
+                    part.file.name
+                  }}</span>
+                  <div
+                    v-if="part.status === 'success'"
+                    class="flex items-center gap-1.5 ml-3 shrink-0 text-[#22c55e]"
+                  >
+                    <CheckCircle2 class="w-[16px] h-[16px] fill-[#22c55e] text-white" />
+                    <span class="text-xs font-medium">{{
+                      part?.instant ? '秒传完成' : '上传完成'
+                    }}</span>
+                  </div>
+                </div>
+                <div v-if="part.status !== 'success'" class="flex items-center gap-3">
+                  <div class="flex-grow bg-muted rounded-full h-1.5 overflow-hidden">
+                    <div
+                      class="h-full transition-all duration-300"
+                      :class="{
+                        'bg-primary': part.status === 'uploading',
+                        'bg-destructive': part.status === 'error',
+                        'bg-orange-400': ['hashing', 'checking', 'merging'].includes(part.status),
+                        'bg-muted-foreground': ['pending', 'canceled', 'paused'].includes(
+                          part.status
+                        ),
+                      }"
+                      :style="{ width: `${part.progress}%` }"
+                    ></div>
+                  </div>
+                  <span
+                    class="text-xs w-16 text-right shrink-0"
+                    :class="{
+                      'text-destructive': part.status === 'error',
+                      'text-orange-500': ['hashing', 'checking', 'merging'].includes(part.status),
+                      'text-muted-foreground': [
+                        'pending',
+                        'uploading',
+                        'canceled',
+                        'paused',
+                      ].includes(part.status),
+                    }"
+                  >
+                    <template v-if="part.status === 'error'"
+                      ><span :title="part.errorMessage">上传失败</span></template
+                    >
+                    <template v-else-if="part.status === 'pending'"
+                      >排队 #{{ queuePosition(part) }}</template
+                    >
+                    <template v-else-if="part.status === 'hashing'">计算哈希</template>
+                    <template v-else-if="part.status === 'checking'">校验中</template>
+                    <template v-else-if="part.status === 'merging'">合并中</template>
+                    <template v-else-if="part.status === 'canceled'">已取消</template>
+                    <template v-else-if="part.status === 'paused'">已暂停</template>
+                    <template v-else>{{ part.progress }}%</template>
+                  </span>
+                </div>
+              </div>
+              <div class="flex items-center gap-1 shrink-0">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  class="h-7 text-xs text-primary hover:bg-primary/10 px-2"
+                  @click="openReplacePicker(index)"
+                >
+                  <RefreshCw class="h-3.5 w-3.5 mr-1" />更换视频
+                </Button>
+                <Button
+                  v-if="['uploading', 'hashing', 'checking'].includes(part.status)"
+                  variant="ghost"
+                  size="icon"
+                  class="h-7 w-7 text-muted-foreground hover:text-primary hover:bg-primary/10"
+                  @click="pausePart(part)"
+                >
+                  <Pause class="h-3.5 w-3.5" />
+                </Button>
+                <Button
+                  v-if="
+                    part.status === 'paused' ||
+                    part.status === 'error' ||
+                    part.status === 'canceled'
+                  "
+                  variant="ghost"
+                  size="icon"
+                  class="h-7 w-7 text-primary hover:bg-primary/10"
+                  @click="resumePart(part)"
+                >
+                  <RotateCcw class="h-3.5 w-3.5" />
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  class="h-7 w-7 text-muted-foreground hover:text-destructive hover:bg-destructive/10"
+                  @click="removePart(index)"
+                >
+                  <X class="h-3.5 w-3.5" />
+                </Button>
+              </div>
+            </div>
+          </div>
+        </template>
       </div>
 
       <!-- Basic Settings Section -->
-      <div class="bg-card rounded-2xl border p-8 shadow-sm">
+      <div v-if="activeWork" class="bg-card rounded-2xl border p-8 shadow-sm">
         <h2 class="text-2xl font-bold tracking-tight mb-8">基本设置</h2>
 
         <div class="max-w-4xl space-y-10">
@@ -1071,11 +1385,13 @@ const handlePublish = async () => {
               <!-- Main Cover -->
               <div
                 class="relative w-[240px] aspect-video rounded-xl border-2 overflow-hidden group bg-muted/30 transition-all duration-300 hover:shadow-lg hover:border-primary/50"
-                :class="!coverPreview ? 'border-dashed' : 'border-transparent shadow-md'"
+                :class="
+                  !activeWork?.coverPreview ? 'border-dashed' : 'border-transparent shadow-md'
+                "
               >
                 <img
-                  v-if="coverPreview"
-                  :src="coverPreview"
+                  v-if="activeWork?.coverPreview"
+                  :src="activeWork.coverPreview"
                   class="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
                 />
                 <div
@@ -1095,7 +1411,7 @@ const handlePublish = async () => {
                   <Button size="sm" variant="secondary" class="h-7 text-xs"> 封面设置 </Button>
                 </div>
                 <div
-                  v-if="!coverPreview"
+                  v-if="!activeWork?.coverPreview"
                   class="absolute inset-0 cursor-pointer"
                   @click="openCoverSetting"
                 ></div>
@@ -1112,12 +1428,18 @@ const handlePublish = async () => {
             <Label for="title" class="text-base">标题 <span class="text-red-500">*</span></Label>
             <Input
               id="title"
-              :model-value="form.title"
+              :model-value="activeWork?.form.title ?? ''"
               placeholder="给视频起个响亮的标题吧"
               class="text-lg"
-              @update:model-value="(v) => (form.title = String(v))"
+              @update:model-value="
+                (v) => {
+                  if (activeWork) activeWork.form.title = String(v)
+                }
+              "
             />
-            <div class="text-xs text-muted-foreground text-right">{{ form.title.length }}/80</div>
+            <div class="text-xs text-muted-foreground text-right">
+              {{ activeWork?.form.title.length ?? 0 }}/80
+            </div>
           </div>
 
           <!-- Type (Original / Copied) -->
@@ -1126,7 +1448,7 @@ const handlePublish = async () => {
             <div class="flex gap-6 mt-2">
               <label class="flex items-center gap-2 cursor-pointer">
                 <input
-                  v-model="form.isOriginal"
+                  v-model="activeWork.form.isOriginal"
                   type="radio"
                   :value="true"
                   class="accent-primary w-4 h-4"
@@ -1135,7 +1457,7 @@ const handlePublish = async () => {
               </label>
               <label class="flex items-center gap-2 cursor-pointer">
                 <input
-                  v-model="form.isOriginal"
+                  v-model="activeWork.form.isOriginal"
                   type="radio"
                   :value="false"
                   class="accent-primary w-4 h-4"
@@ -1154,11 +1476,15 @@ const handlePublish = async () => {
                 :key="p.id"
                 class="px-3 py-2.5 rounded-xl border text-center text-sm cursor-pointer transition-all duration-200"
                 :class="
-                  form.partitionId === p.id
+                  activeWork?.form.partitionId === p.id
                     ? 'bg-primary text-primary-foreground font-medium shadow-md shadow-primary/30 scale-105 border-transparent'
                     : 'hover:bg-muted/80 hover:scale-105 border-border/60 bg-card'
                 "
-                @click="form.partitionId = p.id"
+                @click="
+                  () => {
+                    if (activeWork) activeWork.form.partitionId = p.id
+                  }
+                "
               >
                 {{ p.name }}
               </div>
@@ -1168,23 +1494,14 @@ const handlePublish = async () => {
           <!-- Tags -->
           <div class="space-y-2">
             <Label class="text-base">标签</Label>
-            <div class="flex flex-wrap gap-2 mb-2">
-              <span
-                v-for="(tag, index) in form.tags"
-                :key="index"
-                class="bg-primary/10 text-primary px-3 py-1.5 rounded-full text-sm flex items-center gap-1"
-              >
-                {{ tag }}
-                <X class="h-3 w-3 cursor-pointer hover:text-primary/70" @click="removeTag(index)" />
-              </span>
-            </div>
-            <input
-              v-model="form.tagInput"
-              type="text"
-              class="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-              placeholder="输入标签后按回车添加"
-              :disabled="form.tags.length >= 10"
-              @keydown.enter.prevent="addTag"
+            <TagInput
+              :model-value="activeWork.form.tags"
+              :max="10"
+              @update:model-value="
+                (v) => {
+                  if (activeWork) activeWork.form.tags = v
+                }
+              "
             />
           </div>
 
@@ -1193,10 +1510,16 @@ const handlePublish = async () => {
             <Label for="desc" class="text-base">简介</Label>
             <textarea
               id="desc"
-              v-model="form.description"
+              :value="activeWork?.form.description ?? ''"
               class="flex w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 min-h-[120px] resize-y"
               placeholder="填写更全面的相关信息，让更多人能找到你的视频"
               rows="4"
+              @input="
+                (e) => {
+                  if (activeWork)
+                    activeWork.form.description = (e.target as HTMLTextAreaElement).value
+                }
+              "
             ></textarea>
           </div>
 
@@ -1207,7 +1530,7 @@ const handlePublish = async () => {
               <div class="flex gap-6">
                 <label class="flex items-center gap-2 cursor-pointer">
                   <input
-                    v-model="form.publishType"
+                    v-model="activeWork.form.publishType"
                     type="radio"
                     value="immediate"
                     class="accent-primary w-4 h-4"
@@ -1216,7 +1539,7 @@ const handlePublish = async () => {
                 </label>
                 <label class="flex items-center gap-2 cursor-pointer">
                   <input
-                    v-model="form.publishType"
+                    v-model="activeWork.form.publishType"
                     type="radio"
                     value="scheduled"
                     class="accent-primary w-4 h-4"
@@ -1226,10 +1549,10 @@ const handlePublish = async () => {
               </div>
 
               <div
-                v-if="form.publishType === 'scheduled'"
+                v-if="activeWork?.form.publishType === 'scheduled'"
                 class="mt-3 flex items-center gap-4 rounded-2xl border border-border/60 bg-muted/20 p-4"
               >
-                <ScheduledPublishPicker v-model="form.publishTime" />
+                <ScheduledPublishPicker v-model="activeWork.form.publishTime" />
                 <div class="text-sm text-muted-foreground whitespace-nowrap">
                   (目前支持最早≥5分钟，最晚≤15天)
                 </div>
@@ -1251,6 +1574,13 @@ const handlePublish = async () => {
         </Button>
       </div>
     </div>
+
+    <!-- Batch Operations Dialog -->
+    <BatchOperationDialog
+      :open="showBatchDialog"
+      @update:open="showBatchDialog = $event"
+      @apply="handleBatchApply"
+    />
 
     <!-- Cover Setting Dialog -->
     <Dialog :open="showCoverSetting" @update:open="showCoverSetting = $event">
@@ -1380,6 +1710,19 @@ const handlePublish = async () => {
 .cover-dialog-scroll {
   scrollbar-width: thin;
   scrollbar-color: oklch(var(--foreground) / 0.15) transparent;
+}
+
+.upload-tabs-scroll::-webkit-scrollbar {
+  height: 4px;
+}
+
+.upload-tabs-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.upload-tabs-scroll::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: oklch(var(--foreground) / 0.12);
 }
 
 .cover-dialog-scroll::-webkit-scrollbar {

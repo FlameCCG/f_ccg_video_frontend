@@ -77,15 +77,15 @@ onMounted(async () => {
 
 <template>
   <div class="mx-auto mt-6 pb-8 max-w-[1800px] px-4 sm:px-6 lg:px-8">
-    <!-- Hero Section: Carousel + Featured Videos using same grid as below -->
-    <div
-      class="mb-6 grid auto-rows-fr grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5"
-    >
-      <!-- Carousel Banner (spans 2 columns on lg) -->
+    <div class="mb-6 grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
       <div
-        class="col-span-2 row-span-2 overflow-hidden rounded-lg sm:col-span-2 md:col-span-2 lg:col-span-2"
+        class="col-span-2 overflow-hidden rounded-lg sm:col-span-2 md:col-span-2 lg:col-span-2 lg:row-span-2 relative"
       >
-        <Carousel :items="banners" :autoplay="true" :interval="5000" class="h-full" />
+        <div
+          class="block w-full h-full lg:h-auto lg:absolute lg:top-0 lg:left-0 lg:right-0 lg:bottom-[79px]"
+        >
+          <Carousel :items="banners" :autoplay="true" :interval="5000" class="h-full w-full" />
+        </div>
       </div>
 
       <!-- Featured Videos (same grid cells as below) -->
@@ -104,7 +104,6 @@ onMounted(async () => {
 
     <!-- Video Grid -->
     <InfiniteScroll :loading="loading" :finished="finished" @load-more="handleLoadMore">
-      <!-- Skeleton Loading -->
       <div
         v-if="initialLoading"
         class="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5"

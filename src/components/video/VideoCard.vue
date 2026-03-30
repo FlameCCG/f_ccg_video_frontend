@@ -145,14 +145,14 @@ const handleClick = () => {
     </div>
 
     <!-- Video Info -->
-    <div :class="[variant === 'compact' ? 'px-1 py-1' : 'px-0 py-2']">
+    <div :class="[variant === 'compact' ? 'px-1 py-1' : 'px-0 py-2 h-[78px]']">
       <!-- Title -->
       <h3
         class="font-medium text-foreground transition-colors group-hover:text-primary"
         :class="[
           variant === 'compact'
             ? 'line-clamp-1 text-[11px] leading-tight'
-            : 'mb-1.5 line-clamp-2 text-sm leading-5',
+            : 'mb-1.5 line-clamp-2 text-sm leading-5 h-[40px]',
         ]"
         v-html="sanitizedTitleHtml"
       ></h3>
@@ -160,7 +160,7 @@ const handleClick = () => {
       <!-- Author & Time Info (default mode only) -->
       <div
         v-if="variant === 'default'"
-        class="flex items-center gap-2 text-xs text-muted-foreground"
+        class="flex items-center gap-2 text-xs text-muted-foreground h-[16px] leading-[16px]"
       >
         <div class="flex items-center gap-1 min-w-0">
           <!-- UP Icon -->

@@ -31,10 +31,6 @@ export interface ImageUploadResult {
   imageUrl: string
 }
 
-export interface RecommendCoverResult {
-  covers: string[]
-}
-
 // ============================================================================
 // 5.5 视频上传 API
 // ============================================================================
@@ -109,20 +105,5 @@ export const uploadImage = (fileHash: string, cover: File): Promise<ImageUploadR
     headers: {
       'Content-Type': 'multipart/form-data',
     },
-  })
-}
-
-/**
- * 查询推荐封面
- * GET /common/video/upload/cover/recommend
- */
-export const getRecommendedCovers = (
-  fileHash: string,
-  count = 6,
-  config?: Record<string, unknown>
-): Promise<RecommendCoverResult> => {
-  return request.get('/common/video/upload/cover/recommend', {
-    params: { fileHash, count },
-    ...config,
   })
 }

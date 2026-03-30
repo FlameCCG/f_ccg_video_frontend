@@ -760,9 +760,6 @@ const privacySettings = [
   { key: 'openFans' as const, label: '公开我的粉丝列表' },
   { key: 'openLikeVideo' as const, label: '公开最近点赞的视频' },
   { key: 'openCoinVideo' as const, label: '公开最近投币的视频' },
-  { key: 'openLikeArticle' as const, label: '公开我的点赞文章' },
-  { key: 'openCoinArticle' as const, label: '公开我的投币文章' },
-  { key: 'openFollowAnime' as const, label: '公开我的追番追剧' },
 ]
 </script>
 
@@ -791,9 +788,9 @@ const privacySettings = [
           <Navbar class="text-white" />
         </div>
         <div
-          class="absolute bottom-0 left-0 right-0 z-10 flex items-end px-8 pb-4 pt-24 bg-gradient-to-t from-black/60 to-transparent"
+          class="absolute bottom-0 left-0 right-0 z-10 flex items-end pb-4 pt-24 bg-gradient-to-t from-black/60 to-transparent"
         >
-          <div class="w-full flex items-end">
+          <div class="w-full px-4 md:px-8 xl:px-[140px] flex items-end">
             <AppAvatar
               :src="user.avatar"
               :name="user.username"
@@ -848,9 +845,8 @@ const privacySettings = [
         </div>
       </div>
 
-      <!-- Tab Bar -->
       <div class="bg-card border-b border-border sticky top-0 z-40 shadow-sm">
-        <div class="flex items-center px-6 h-[50px]">
+        <div class="w-full px-4 md:px-8 xl:px-[140px] flex items-center h-[50px]">
           <div class="flex gap-6 h-full">
             <button
               v-for="t in tabs"
@@ -912,7 +908,7 @@ const privacySettings = [
       </div>
 
       <!-- Main Content -->
-      <div class="px-6 pt-5 pb-12">
+      <div class="w-full px-4 md:px-8 xl:px-[140px] pt-5 pb-12">
         <!-- ==================== HOME TAB ==================== -->
         <div v-if="activeTab === 'home'" class="flex gap-5 items-start">
           <div class="flex-1 min-w-0 space-y-8">
@@ -951,7 +947,7 @@ const privacySettings = [
                   </button>
                 </div>
               </div>
-              <div v-if="homeVideos.length > 0" class="grid grid-cols-5 gap-x-3 gap-y-4">
+              <div v-if="homeVideos.length > 0" class="grid grid-cols-5 gap-5">
                 <div
                   v-for="v in homeVideos"
                   :key="v.id"
@@ -981,7 +977,7 @@ const privacySettings = [
             <!-- Liked Videos -->
             <div v-if="likedVideos.length > 0">
               <h3 class="text-[16px] font-bold text-foreground mb-4">最近点赞的视频</h3>
-              <div class="grid grid-cols-5 gap-x-3 gap-y-4">
+              <div class="grid grid-cols-5 gap-5">
                 <div
                   v-for="v in likedVideos.slice(0, 10)"
                   :key="v.id"
@@ -1005,7 +1001,7 @@ const privacySettings = [
             <!-- Coined Videos -->
             <div v-if="coinedVideos.length > 0">
               <h3 class="text-[16px] font-bold text-foreground mb-4">最近投币的视频</h3>
-              <div class="grid grid-cols-5 gap-x-3 gap-y-4">
+              <div class="grid grid-cols-5 gap-5">
                 <div
                   v-for="v in coinedVideos.slice(0, 10)"
                   :key="v.id"
@@ -1040,7 +1036,7 @@ const privacySettings = [
                   查看更多 <ChevronRight :size="14" />
                 </button>
               </div>
-              <div class="grid grid-cols-5 gap-x-3 gap-y-4">
+              <div class="grid grid-cols-5 gap-5">
                 <div
                   v-for="f in folders.slice(0, 5)"
                   :key="f.id"
@@ -1405,7 +1401,7 @@ const privacySettings = [
               </div>
             </div>
 
-            <div v-if="videos.length > 0" class="grid grid-cols-4 gap-x-3 gap-y-5">
+            <div v-if="videos.length > 0" class="grid grid-cols-6 gap-5">
               <div v-for="v in videos" :key="v.id" class="u-video-card" @click="goVideo(v.id)">
                 <div class="uvc-cover">
                   <img :src="v.cover" />
@@ -1502,7 +1498,7 @@ const privacySettings = [
               </div>
             </div>
 
-            <div v-if="folderVideos.length > 0" class="grid grid-cols-4 gap-x-3 gap-y-5">
+            <div v-if="folderVideos.length > 0" class="grid grid-cols-6 gap-5">
               <div
                 v-for="v in folderVideos"
                 :key="v.id"
@@ -1559,13 +1555,17 @@ const privacySettings = [
             >
               <span class="text-[13px] text-foreground">{{ s.label }}</span>
               <button
-                class="relative w-[40px] h-[22px] rounded-full transition-colors"
-                :class="(userConf as Record<string, unknown>)[s.key] ? 'bg-primary' : 'bg-[#ccc]'"
+                class="relative w-[40px] h-[22px] rounded-full transition-colors cursor-pointer"
+                :class="
+                  (userConf as Record<string, unknown>)[s.key]
+                    ? 'bg-primary'
+                    : 'bg-black/10 dark:bg-white/15'
+                "
                 :disabled="confSaving"
                 @click="toggleConf(s.key)"
               >
                 <span
-                  class="absolute top-[2px] w-[18px] h-[18px] rounded-full bg-card shadow transition-transform"
+                  class="absolute left-0 top-[2px] w-[18px] h-[18px] rounded-full bg-white shadow transition-transform"
                   :class="
                     (userConf as Record<string, unknown>)[s.key]
                       ? 'translate-x-[20px]'

@@ -595,52 +595,105 @@ watch(activeRecordTab, (tab) => {
         <section v-else-if="activeTab === 'privacy' && userConfig" class="sec-anim">
           <h3 class="form-title">隐私设置</h3>
           <p class="form-sub">控制其他用户可以看到的个人信息</p>
-          <div class="priv-list">
-            <div class="priv-row">
-              <div>
+          <div class="priv-grid">
+            <label class="priv-card">
+              <div class="priv-card-info">
                 <strong>公开收藏</strong>
-                <p>其他人可以看到你的收藏夹</p>
+                <span>其他人可以看到你的收藏夹</span>
               </div>
-              <label class="sw"
-                ><input v-model="userConfig.openCollect" type="checkbox" /><span></span
-              ></label>
-            </div>
-            <div class="priv-row">
-              <div>
+              <div
+                class="relative inline-flex h-5 w-9 shrink-0 cursor-pointer items-center rounded-full transition-colors duration-200"
+                :class="
+                  userConfig.openCollect
+                    ? 'bg-[var(--color-primary)]'
+                    : 'bg-black/10 dark:bg-white/15'
+                "
+              >
+                <input v-model="userConfig.openCollect" type="checkbox" class="sr-only" />
+                <span
+                  class="pointer-events-none block h-4 w-4 rounded-full bg-white shadow-sm ring-0 transition-transform duration-200"
+                  :class="userConfig.openCollect ? 'translate-x-[18px]' : 'translate-x-[2px]'"
+                ></span>
+              </div>
+            </label>
+            <label class="priv-card">
+              <div class="priv-card-info">
                 <strong>公开粉丝列表</strong>
-                <p>其他人可以看到你的粉丝</p>
+                <span>其他人可以看到你的粉丝</span>
               </div>
-              <label class="sw"
-                ><input v-model="userConfig.openFans" type="checkbox" /><span></span
-              ></label>
-            </div>
-            <div class="priv-row">
-              <div>
+              <div
+                class="relative inline-flex h-5 w-9 shrink-0 cursor-pointer items-center rounded-full transition-colors duration-200"
+                :class="
+                  userConfig.openFans ? 'bg-[var(--color-primary)]' : 'bg-black/10 dark:bg-white/15'
+                "
+              >
+                <input v-model="userConfig.openFans" type="checkbox" class="sr-only" />
+                <span
+                  class="pointer-events-none block h-4 w-4 rounded-full bg-white shadow-sm ring-0 transition-transform duration-200"
+                  :class="userConfig.openFans ? 'translate-x-[18px]' : 'translate-x-[2px]'"
+                ></span>
+              </div>
+            </label>
+            <label class="priv-card">
+              <div class="priv-card-info">
                 <strong>公开关注列表</strong>
-                <p>其他人可以看到你的关注</p>
+                <span>其他人可以看到你的关注</span>
               </div>
-              <label class="sw"
-                ><input v-model="userConfig.openFollow" type="checkbox" /><span></span
-              ></label>
-            </div>
-            <div class="priv-row">
-              <div>
+              <div
+                class="relative inline-flex h-5 w-9 shrink-0 cursor-pointer items-center rounded-full transition-colors duration-200"
+                :class="
+                  userConfig.openFollow
+                    ? 'bg-[var(--color-primary)]'
+                    : 'bg-black/10 dark:bg-white/15'
+                "
+              >
+                <input v-model="userConfig.openFollow" type="checkbox" class="sr-only" />
+                <span
+                  class="pointer-events-none block h-4 w-4 rounded-full bg-white shadow-sm ring-0 transition-transform duration-200"
+                  :class="userConfig.openFollow ? 'translate-x-[18px]' : 'translate-x-[2px]'"
+                ></span>
+              </div>
+            </label>
+            <label class="priv-card">
+              <div class="priv-card-info">
                 <strong>公开点赞视频</strong>
-                <p>其他人可以看到你点赞的视频</p>
+                <span>其他人可以看到你点赞的视频</span>
               </div>
-              <label class="sw"
-                ><input v-model="userConfig.openLikeVideo" type="checkbox" /><span></span
-              ></label>
-            </div>
-            <div class="priv-row">
-              <div>
+              <div
+                class="relative inline-flex h-5 w-9 shrink-0 cursor-pointer items-center rounded-full transition-colors duration-200"
+                :class="
+                  userConfig.openLikeVideo
+                    ? 'bg-[var(--color-primary)]'
+                    : 'bg-black/10 dark:bg-white/15'
+                "
+              >
+                <input v-model="userConfig.openLikeVideo" type="checkbox" class="sr-only" />
+                <span
+                  class="pointer-events-none block h-4 w-4 rounded-full bg-white shadow-sm ring-0 transition-transform duration-200"
+                  :class="userConfig.openLikeVideo ? 'translate-x-[18px]' : 'translate-x-[2px]'"
+                ></span>
+              </div>
+            </label>
+            <label class="priv-card">
+              <div class="priv-card-info">
                 <strong>公开投币视频</strong>
-                <p>其他人可以看到你投币的视频</p>
+                <span>其他人可以看到你投币的视频</span>
               </div>
-              <label class="sw"
-                ><input v-model="userConfig.openCoinVideo" type="checkbox" /><span></span
-              ></label>
-            </div>
+              <div
+                class="relative inline-flex h-5 w-9 shrink-0 cursor-pointer items-center rounded-full transition-colors duration-200"
+                :class="
+                  userConfig.openCoinVideo
+                    ? 'bg-[var(--color-primary)]'
+                    : 'bg-black/10 dark:bg-white/15'
+                "
+              >
+                <input v-model="userConfig.openCoinVideo" type="checkbox" class="sr-only" />
+                <span
+                  class="pointer-events-none block h-4 w-4 rounded-full bg-white shadow-sm ring-0 transition-transform duration-200"
+                  :class="userConfig.openCoinVideo ? 'translate-x-[18px]' : 'translate-x-[2px]'"
+                ></span>
+              </div>
+            </label>
           </div>
           <button class="btn-pri" :disabled="saving" @click="handleSavePrivacy">
             <Save :size="14" /> {{ saving ? '保存中...' : '保存设置' }}
@@ -1295,78 +1348,52 @@ watch(activeRecordTab, (tab) => {
 }
 
 /* Privacy */
-.priv-list {
-  display: flex;
-  flex-direction: column;
+.priv-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 10px;
+  margin-bottom: 20px;
 }
 
-.priv-row {
+.priv-card {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 14px 0;
-  border-bottom: 1px solid #f1f2f3;
+  gap: 16px;
+  padding: 14px 16px;
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  background-color: var(--color-secondary);
+  cursor: pointer;
+  transition: border-color 0.15s;
 }
 
-.priv-row:last-child {
-  border-bottom: none;
+.priv-card:hover {
+  border-color: var(--color-primary);
 }
 
-.priv-row strong {
+.priv-card-info {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.priv-card-info strong {
   font-size: 13px;
   font-weight: 600;
   color: var(--color-foreground);
 }
 
-.priv-row p {
+.priv-card-info span {
   font-size: 11px;
   color: var(--color-muted-foreground);
-  margin-top: 2px;
 }
 
-/* Switch */
-.sw {
-  position: relative;
-  display: inline-block;
-  width: 40px;
-  height: 22px;
-  cursor: pointer;
-  flex-shrink: 0;
-}
-
-.sw input {
-  opacity: 0;
-  width: 0;
-  height: 0;
-}
-
-.sw span {
-  position: absolute;
-  inset: 0;
-  background-color: var(--color-secondary);
-  border-radius: 11px;
-  transition: background 0.2s;
-}
-
-.sw span::before {
-  content: '';
-  position: absolute;
-  width: 16px;
-  height: 16px;
-  left: 3px;
-  bottom: 3px;
-  background-color: var(--color-card);
-  border-radius: 50%;
-  box-shadow: 0 1px 2px rgb(0 0 0 / 0.12);
-  transition: transform 0.2s;
-}
-
-.sw input:checked + span {
-  background-color: var(--color-primary);
-}
-
-.sw input:checked + span::before {
-  transform: translateX(18px);
+@media (width <= 600px) {
+  .priv-grid {
+    grid-template-columns: 1fr;
+  }
 }
 
 /* Security */

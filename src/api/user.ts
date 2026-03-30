@@ -161,10 +161,7 @@ export interface UserConfig {
   openFollow: boolean
   openLike?: boolean // 文档响应示例保留该字段，作为 openLikeVideo 的兼容读字段
   openLikeVideo: boolean
-  openLikeArticle: boolean
   openCoinVideo: boolean
-  openCoinArticle: boolean
-  openFollowAnime: boolean
   homeStyleID: number
   bannerId: number
   bannerUrl: string
@@ -176,10 +173,7 @@ export interface UpdateUserConfigParams {
   openFans?: boolean
   openFollow?: boolean
   openLikeVideo?: boolean
-  openLikeArticle?: boolean
   openCoinVideo?: boolean
-  openCoinArticle?: boolean
-  openFollowAnime?: boolean
   homeStyleID?: number
   bannerId?: number
   bannerUrl?: string

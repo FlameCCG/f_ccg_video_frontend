@@ -41,30 +41,30 @@ const navItems = [
 </script>
 
 <template>
-  <div class="min-h-screen bg-muted/30 flex flex-col">
+  <div class="flex min-h-screen flex-col overflow-x-clip bg-muted/30">
     <!-- Top Navbar -->
     <header
       class="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60"
     >
-      <div class="flex h-14 items-center px-6 justify-between">
+      <div class="flex h-14 items-center justify-between px-4 sm:px-6">
         <!-- Left: Logo & Links -->
-        <div class="flex items-center gap-6">
-          <router-link to="/creator/home" class="flex items-center gap-2">
+        <div class="flex min-w-0 items-center gap-3 sm:gap-6">
+          <router-link to="/creator/home" class="flex shrink-0 items-center gap-2">
             <img src="/logo.png" alt="Logo" class="h-8 w-auto object-contain" />
-            <span class="text-lg font-bold text-primary tracking-tight">创作中心</span>
+            <span class="text-base font-bold tracking-tight text-primary sm:text-lg">创作中心</span>
           </router-link>
-          <div class="h-4 w-px bg-border"></div>
+          <div class="hidden h-4 w-px bg-border sm:block"></div>
           <router-link
             to="/"
-            class="flex items-center gap-1.5 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors"
+            class="flex items-center gap-1 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground sm:gap-1.5 sm:text-sm"
           >
             <MonitorPlay class="h-4 w-4" />
-            主站
+            <span class="hidden sm:inline">主站</span>
           </router-link>
         </div>
 
         <!-- Right: User Avatar -->
-        <div class="flex items-center gap-4">
+        <div class="flex items-center gap-2 sm:gap-4">
           <template v-if="authStore.isLoggedIn">
             <DropdownMenu>
               <DropdownMenuTrigger as-child>
@@ -119,7 +119,7 @@ const navItems = [
     </header>
 
     <!-- Main Content -->
-    <div class="flex-1 flex max-w-[1400px] w-full mx-auto">
+    <div class="mx-auto flex w-full max-w-[1400px] flex-1">
       <!-- Left Sidebar -->
       <aside class="w-64 shrink-0 border-r bg-background hidden md:block">
         <div class="p-6 flex flex-col gap-6 sticky top-14">
@@ -157,7 +157,7 @@ const navItems = [
       </aside>
 
       <!-- Main View -->
-      <main class="flex-1 p-6 min-w-0">
+      <main class="min-w-0 flex-1 p-4 sm:p-6">
         <RouterView />
       </main>
     </div>

@@ -8,13 +8,7 @@ import {
   type PlayerDanmuPayload,
 } from '@/api/danmu'
 import { toast } from 'vue-sonner'
-import {
-  Send,
-  Settings2,
-  ArrowUpToLine,
-  ArrowDownToLine,
-  MoveHorizontal,
-} from 'lucide-vue-next'
+import { Send, Settings2, ArrowUpToLine, ArrowDownToLine, MoveHorizontal } from 'lucide-vue-next'
 
 const props = defineProps<{
   videoId: number
@@ -208,39 +202,39 @@ onBeforeUnmount(() => {
 
     <Transition name="panel-pop">
       <div v-if="showSettings" ref="settingsPanelRef" class="settings-panel">
-          <!-- Color Picker -->
-          <div class="settings-section">
-            <p class="settings-label">弹幕颜色</p>
-            <div class="color-grid">
-              <button
-                v-for="color in PRESET_COLORS"
-                :key="color"
-                class="color-dot"
-                :class="{ 'is-active': selectedColor === color }"
-                :style="{ '--dot-color': color }"
-                @click="selectedColor = color"
-              >
-                <span class="color-dot-inner" :style="{ backgroundColor: color }" />
-              </button>
-            </div>
+        <!-- Color Picker -->
+        <div class="settings-section">
+          <p class="settings-label">弹幕颜色</p>
+          <div class="color-grid">
+            <button
+              v-for="color in PRESET_COLORS"
+              :key="color"
+              class="color-dot"
+              :class="{ 'is-active': selectedColor === color }"
+              :style="{ '--dot-color': color }"
+              @click="selectedColor = color"
+            >
+              <span class="color-dot-inner" :style="{ backgroundColor: color }" />
+            </button>
           </div>
+        </div>
 
-          <!-- Position (Segmented Control) -->
-          <div class="settings-section">
-            <p class="settings-label">弹幕位置</p>
-            <div class="position-seg">
-              <button
-                v-for="pos in positionOptions"
-                :key="pos.value"
-                class="position-seg-item"
-                :class="{ 'is-active': selectedPosition === pos.value }"
-                @click="selectedPosition = pos.value"
-              >
-                <component :is="pos.icon" :size="14" />
-                <span>{{ pos.label }}</span>
-              </button>
-            </div>
+        <!-- Position (Segmented Control) -->
+        <div class="settings-section">
+          <p class="settings-label">弹幕位置</p>
+          <div class="position-seg">
+            <button
+              v-for="pos in positionOptions"
+              :key="pos.value"
+              class="position-seg-item"
+              :class="{ 'is-active': selectedPosition === pos.value }"
+              @click="selectedPosition = pos.value"
+            >
+              <component :is="pos.icon" :size="14" />
+              <span>{{ pos.label }}</span>
+            </button>
           </div>
+        </div>
       </div>
     </Transition>
   </div>
@@ -305,11 +299,11 @@ onBeforeUnmount(() => {
 }
 
 .dark .danmu-input::placeholder {
-  color: oklch(55.% 0.015 250deg);
+  color: oklch(55% 0.015 250deg);
 }
 
 .dark .danmu-input:hover:not(:disabled) {
-  background: oklch(28.% 0.012 250deg);
+  background: oklch(28% 0.012 250deg);
 }
 
 .dark .danmu-input:focus {
@@ -326,7 +320,7 @@ onBeforeUnmount(() => {
   width: 34px;
   height: 34px;
   border-radius: 8px;
-  color: oklch(55.% 0.02 240deg);
+  color: oklch(55% 0.02 240deg);
   background: transparent;
   transition: all 0.18s cubic-bezier(0.16, 1, 0.3, 1);
   cursor: pointer;
@@ -570,7 +564,7 @@ onBeforeUnmount(() => {
 
 .dark .position-seg-item.is-active {
   color: var(--color-primary);
-  background: oklch(28.% 0.015 250deg);
+  background: oklch(28% 0.015 250deg);
   box-shadow: 0 1px 3px oklch(0% 0 0deg / 0.2);
 }
 

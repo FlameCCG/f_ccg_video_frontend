@@ -1,14 +1,16 @@
 <script setup lang="ts">
 import { ref, onMounted, onBeforeUnmount, computed, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import { UploadCloud, Image as ImageIcon, X, Loader2, Plus, Check } from 'lucide-vue-next'
+import { UploadCloud, Image as ImageIcon, X, Loader2, Plus } from 'lucide-vue-next'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { useToast } from '@/components/ui/toast/use-toast'
+import ScheduledPublishPicker from '@/components/creator/ScheduledPublishPicker.vue'
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogHeader,
   DialogTitle,
   DialogFooter,
@@ -18,7 +20,6 @@ import {
   getUploadStatus,
   completeUpload,
   uploadImage,
-  getRecommendedCovers,
   type UploadStatusResult,
 } from '@/api/upload'
 import { publishVideo, getPartitions, type Partition } from '@/api/video'
@@ -51,6 +52,9 @@ interface VideoPart {
 // State
 const isDragging = ref(false)
 const parts = ref<VideoPart[]>([])
+const uploadRootRef = ref<HTMLElement | null>(null)
+const initialFileInputRef = ref<HTMLInputElement | null>(null)
+const appendFileInputRef = ref<HTMLInputElement | null>(null)
 
 const partitions = ref<Partition[]>([])
 const coverFile = ref<File | null>(null)
@@ -66,6 +70,24 @@ const storageConfig = ref<StorageConfig>({
 
 const chunkSizeBytes = computed(() => storageConfig.value.chunkSize * 1024 * 1024)
 const maxFileSizeBytes = computed(() => storageConfig.value.maxFileSize * 1024 * 1024)
+const VIDEO_FILE_EXTENSIONS = [
+  'mp4',
+  'm4v',
+  'mov',
+  'webm',
+  'mkv',
+  'avi',
+  'wmv',
+  'flv',
+  'mpeg',
+  'mpg',
+  'ts',
+  'm2ts',
+] as const
+const VIDEO_INPUT_ACCEPT = `video/*,${VIDEO_FILE_EXTENSIONS.map((ext) => `.${ext}`).join(',')}`
+const COMMON_VIDEO_FORMAT_TEXT = `${VIDEO_FILE_EXTENSIONS.slice(0, 6).join(' / ')} 等常见格式`
+const SCHEDULE_MIN_DELAY_MS = 5 * 60 * 1000
+const SCHEDULE_MAX_DELAY_MS = 14 * 24 * 60 * 60 * 1000
 
 const isUploadingAny = computed(() =>
   parts.value.some((p) =>
@@ -87,23 +109,27 @@ const form = ref({
 
 // Cover Setting State
 const showCoverSetting = ref(false)
-const coverSettingMode = ref<'upload' | 'frame'>('upload')
 const frameVideoRef = ref<HTMLVideoElement | null>(null)
 const previewVideoUrl = ref('')
 const previewVideoError = ref(false)
-const recommendedCovers = ref<string[]>([])
-const isExtractingFrames = ref(false)
 const tempCoverPreview = ref('')
 const tempCoverFile = ref<File | null>(null)
 const UPLOAD_STATUS_TIMEOUT = 6000
 const UPLOAD_CHUNK_TIMEOUT = 60000
 const COMPLETE_UPLOAD_TIMEOUT = 5 * 60 * 1000
-const COVER_EXTRACT_TIMEOUT = 8000
-const RECOMMENDED_COVER_TIMEOUT = 20000
+const scheduleBoundaryBase = ref(Date.now())
 
-let coverExtractJobId = 0
-let recommendedCoverLoadingHash = ''
 let localPreviewObjectUrl = ''
+let scheduleBoundaryTimer: ReturnType<typeof setInterval> | undefined
+const canCaptureCover = computed(() =>
+  Boolean(parts.value[0] && previewVideoUrl.value && !previewVideoError.value)
+)
+const coverDialogTip = computed(() => {
+  if (!parts.value[0]) return '请先上传视频后再设置封面'
+  if (canCaptureCover.value) return '支持拖动视频进度条截取当前帧，也支持直接上传自定义封面'
+  if (previewVideoUrl.value) return '当前视频浏览器无法预览，仅支持本地上传自定义封面'
+  return '当前视频预览源尚未就绪，请先上传自定义封面'
+})
 
 const emptyUploadStatus = (fileHash: string): UploadStatusResult => ({
   fileHash,
@@ -112,41 +138,106 @@ const emptyUploadStatus = (fileHash: string): UploadStatusResult => ({
   uploadedChunks: [],
 })
 
-const waitForVideoEvent = (
-  video: HTMLVideoElement,
-  successEvent: 'loadedmetadata' | 'seeked',
-  timeoutMs: number,
-  ready?: () => boolean
-): Promise<void> => {
-  if (ready?.()) {
-    return Promise.resolve()
+const parseLocalDateTime = (value: string) => {
+  if (!value) return null
+  const match = value.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})$/)
+  if (!match) {
+    return null
   }
 
-  return new Promise((resolve, reject) => {
-    const timer = window.setTimeout(() => {
-      cleanup()
-      reject(new Error(`wait for ${successEvent} timed out`))
-    }, timeoutMs)
+  const [, yearRaw, monthRaw, dayRaw, hourRaw, minuteRaw] = match
+  const year = Number(yearRaw)
+  const month = Number(monthRaw)
+  const day = Number(dayRaw)
+  const hour = Number(hourRaw)
+  const minute = Number(minuteRaw)
+  const parsed = new Date(year, month - 1, day, hour, minute, 0, 0)
+  if (isNaN(parsed.getTime())) return null
+  return parsed
+}
 
-    const onSuccess = () => {
-      cleanup()
-      resolve()
-    }
+const formatLocalDateTime = (date: Date) => {
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  const hour = String(date.getHours()).padStart(2, '0')
+  const minute = String(date.getMinutes()).padStart(2, '0')
+  return `${year}-${month}-${day}T${hour}:${minute}`
+}
 
-    const onError = () => {
-      cleanup()
-      reject(new Error(`video ${successEvent} failed`))
-    }
+const formatScheduledRangeText = (date: Date) =>
+  new Intl.DateTimeFormat('zh-CN', {
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  }).format(date)
 
-    const cleanup = () => {
-      window.clearTimeout(timer)
-      video.removeEventListener(successEvent, onSuccess)
-      video.removeEventListener('error', onError)
-    }
+const ceilDateToMinute = (date: Date) => {
+  const next = new Date(date)
+  if (next.getSeconds() !== 0 || next.getMilliseconds() !== 0) {
+    next.setSeconds(0, 0)
+    next.setMinutes(next.getMinutes() + 1)
+  } else {
+    next.setSeconds(0, 0)
+  }
+  return next
+}
 
-    video.addEventListener(successEvent, onSuccess, { once: true })
-    video.addEventListener('error', onError, { once: true })
-  })
+const floorDateToMinute = (date: Date) => {
+  const next = new Date(date)
+  next.setSeconds(0, 0)
+  return next
+}
+
+const refreshScheduleBoundary = () => {
+  scheduleBoundaryBase.value = Date.now()
+}
+
+const getScheduleWindowStart = () =>
+  ceilDateToMinute(new Date(scheduleBoundaryBase.value + SCHEDULE_MIN_DELAY_MS))
+
+const getScheduleWindowEnd = () =>
+  floorDateToMinute(new Date(scheduleBoundaryBase.value + SCHEDULE_MAX_DELAY_MS))
+
+const scheduledPublishMinValue = computed(() => formatLocalDateTime(getScheduleWindowStart()))
+const scheduledPublishMaxValue = computed(() => formatLocalDateTime(getScheduleWindowEnd()))
+const scheduledPublishMinLabel = computed(() => formatScheduledRangeText(getScheduleWindowStart()))
+const scheduledPublishMaxLabel = computed(() => formatScheduledRangeText(getScheduleWindowEnd()))
+
+const normalizeScheduledPublishTime = (value: string) => {
+  const parsed = parseLocalDateTime(value)
+  if (!parsed) return ''
+
+  const minDate = getScheduleWindowStart()
+  const maxDate = getScheduleWindowEnd()
+  if (parsed.getTime() < minDate.getTime()) return formatLocalDateTime(minDate)
+  if (parsed.getTime() > maxDate.getTime()) return formatLocalDateTime(maxDate)
+  return formatLocalDateTime(parsed)
+}
+
+const getFileExtension = (fileName: string) => {
+  const match = fileName.toLowerCase().match(/\.([^.]+)$/)
+  return match?.[1] ?? ''
+}
+
+const getVideoFileRejectionReason = (file: File) => {
+  if (file.type.startsWith('video/')) return ''
+  const extension = getFileExtension(file.name)
+  if (
+    extension &&
+    VIDEO_FILE_EXTENSIONS.includes(extension as (typeof VIDEO_FILE_EXTENSIONS)[number])
+  ) {
+    return ''
+  }
+  return `不支持的格式：${file.name}`
+}
+
+const formatRejectedSummary = (values: string[], fallback: string) => {
+  if (values.length === 0) return fallback
+  const visible = values.slice(0, 2).join('、')
+  return values.length > 2 ? `${visible} 等 ${values.length} 个` : visible
 }
 
 const revokeLocalPreviewObjectUrl = () => {
@@ -177,144 +268,10 @@ const syncPreviewVideoUrl = () => {
   previewVideoUrl.value = localPreviewObjectUrl
 }
 
-const extractFrames = async (file: File) => {
-  const currentJobId = ++coverExtractJobId
-  isExtractingFrames.value = true
-  recommendedCovers.value = []
-
-  const video = document.createElement('video')
-  const objectUrl = URL.createObjectURL(file)
-  video.src = objectUrl
-  video.muted = true
-  video.playsInline = true
-  video.preload = 'metadata'
-  video.load()
-
-  try {
-    await waitForVideoEvent(
-      video,
-      'loadedmetadata',
-      COVER_EXTRACT_TIMEOUT,
-      () => video.readyState >= 1
-    )
-    if (currentJobId !== coverExtractJobId) return
-
-    const duration = Number.isFinite(video.duration) ? video.duration : 0
-    if (duration <= 0 || video.videoWidth <= 0 || video.videoHeight <= 0) {
-      throw new Error('invalid video metadata')
-    }
-
-    const numFrames = 6
-    const timestamps = Array.from(
-      { length: numFrames },
-      (_, i) => (duration / (numFrames + 1)) * (i + 1)
-    )
-
-    const canvas = document.createElement('canvas')
-    const ctx = canvas.getContext('2d')
-    if (!ctx) {
-      throw new Error('canvas context unavailable')
-    }
-
-    for (const time of timestamps) {
-      if (currentJobId !== coverExtractJobId) return
-
-      const safeTime = Math.min(time, Math.max(duration - 0.1, 0))
-      video.currentTime = safeTime
-      await waitForVideoEvent(video, 'seeked', COVER_EXTRACT_TIMEOUT)
-      if (currentJobId !== coverExtractJobId) return
-
-      canvas.width = video.videoWidth
-      canvas.height = video.videoHeight
-      ctx.drawImage(video, 0, 0, canvas.width, canvas.height)
-      recommendedCovers.value.push(canvas.toDataURL('image/jpeg', 0.9))
-    }
-
-    if (
-      currentJobId === coverExtractJobId &&
-      !coverPreview.value &&
-      recommendedCovers.value.length > 0 &&
-      recommendedCovers.value[0]
-    ) {
-      await selectRecommendedCover(recommendedCovers.value[0])
-    }
-  } catch (error) {
-    if (currentJobId !== coverExtractJobId) return
-    recommendedCovers.value = []
-    console.error('Extract recommended covers failed', error)
-  } finally {
-    if (currentJobId === coverExtractJobId) {
-      isExtractingFrames.value = false
-      const firstPart = parts.value[0]
-      if (recommendedCovers.value.length === 0 && firstPart?.status === 'success') {
-        void loadRecommendedCoversFromServer(firstPart)
-      }
-    }
-    URL.revokeObjectURL(objectUrl)
-    video.removeAttribute('src')
-    video.load()
-  }
-}
-
-const dataUrlToCoverFile = async (dataUrl: string) => {
-  const res = await fetch(dataUrl)
-  const blob = await res.blob()
-  return new File([blob], 'cover.jpg', { type: 'image/jpeg' })
-}
-
-const loadRecommendedCoversFromServer = async (part: VideoPart) => {
-  if (!part.hash || part.status !== 'success') return
-  if (parts.value[0]?.id !== part.id) return
-  if (recommendedCovers.value.length > 0) return
-  if (recommendedCoverLoadingHash === part.hash) return
-
-  recommendedCoverLoadingHash = part.hash
-  isExtractingFrames.value = true
-  try {
-    const res = await getRecommendedCovers(part.hash, 6, {
-      timeout: RECOMMENDED_COVER_TIMEOUT,
-      silent: true,
-    })
-    if (parts.value[0]?.id !== part.id) return
-    recommendedCovers.value = res.covers || []
-    if (!coverPreview.value && recommendedCovers.value[0]) {
-      await selectRecommendedCover(recommendedCovers.value[0])
-    }
-  } catch (error) {
-    console.error('Load recommended covers from server failed', error)
-    toast({ title: '推荐封面生成失败，请手动上传或截取封面', variant: 'destructive' })
-  } finally {
-    if (recommendedCoverLoadingHash === part.hash) {
-      recommendedCoverLoadingHash = ''
-    }
-    isExtractingFrames.value = false
-  }
-}
-
-const selectRecommendedCover = async (dataUrl: string) => {
-  coverPreview.value = dataUrl
-  coverFile.value = await dataUrlToCoverFile(dataUrl)
-}
-
-const applyRecommendedCoverInDialog = async (dataUrl: string) => {
-  tempCoverPreview.value = dataUrl
-  tempCoverFile.value = await dataUrlToCoverFile(dataUrl)
-}
-
 const openCoverSetting = () => {
   tempCoverPreview.value = coverPreview.value
   tempCoverFile.value = coverFile.value
-  coverSettingMode.value = parts.value[0] ? 'frame' : 'upload'
   showCoverSetting.value = true
-
-  const firstPart = parts.value[0]
-  if (
-    firstPart?.status === 'success' &&
-    recommendedCovers.value.length === 0 &&
-    !isExtractingFrames.value
-  ) {
-    void loadRecommendedCoversFromServer(firstPart)
-  }
 }
 
 const onTempCoverChange = (e: Event) => {
@@ -329,7 +286,7 @@ const onTempCoverChange = (e: Event) => {
 
 const captureFrame = () => {
   if (!frameVideoRef.value || previewVideoError.value) {
-    toast({ title: '当前视频无法直接预览，请从推荐封面中选择', variant: 'destructive' })
+    toast({ title: '当前视频无法直接预览，请上传自定义封面', variant: 'destructive' })
     return
   }
   const video = frameVideoRef.value
@@ -356,14 +313,6 @@ const captureFrame = () => {
 
 const onPreviewVideoError = () => {
   previewVideoError.value = true
-  const firstPart = parts.value[0]
-  if (
-    firstPart?.status === 'success' &&
-    recommendedCovers.value.length === 0 &&
-    !isExtractingFrames.value
-  ) {
-    void loadRecommendedCoversFromServer(firstPart)
-  }
 }
 
 const confirmCoverSetting = () => {
@@ -380,6 +329,11 @@ onMounted(async () => {
   if (configRes.status === 'fulfilled') {
     storageConfig.value = configRes.value.site.storage
   }
+
+  refreshScheduleBoundary()
+  scheduleBoundaryTimer = window.setInterval(refreshScheduleBoundary, 30000)
+  window.addEventListener('dragover', handleWindowDragOver)
+  window.addEventListener('drop', handleWindowDrop)
 })
 
 watch(
@@ -389,6 +343,24 @@ watch(
   },
   { immediate: true }
 )
+
+watch(
+  () => form.value.publishType,
+  (publishType) => {
+    if (publishType !== 'scheduled') return
+    refreshScheduleBoundary()
+    form.value.publishTime =
+      normalizeScheduledPublishTime(form.value.publishTime) || scheduledPublishMinValue.value
+  }
+)
+
+watch([scheduledPublishMinValue, scheduledPublishMaxValue], () => {
+  if (form.value.publishType !== 'scheduled' || !form.value.publishTime) return
+  const normalized = normalizeScheduledPublishTime(form.value.publishTime)
+  if (normalized && normalized !== form.value.publishTime) {
+    form.value.publishTime = normalized
+  }
+})
 
 // Full-file SHA-256 via Web Worker with progress reporting
 const calculateFullSHA256 = (
@@ -463,18 +435,33 @@ const calculateFullSHA256 = (
 
 // Drag and Drop
 const onDragOver = (e: DragEvent) => {
+  if (!hasDraggedFiles(e.dataTransfer)) return
   e.preventDefault()
+  e.stopPropagation()
+  if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy'
+  isDragging.value = true
+}
+const onDragEnter = (e: DragEvent) => {
+  if (!hasDraggedFiles(e.dataTransfer)) return
+  e.preventDefault()
+  e.stopPropagation()
   isDragging.value = true
 }
 const onDragLeave = (e: DragEvent) => {
+  if (!hasDraggedFiles(e.dataTransfer)) return
   e.preventDefault()
+  e.stopPropagation()
+  const nextTarget = e.relatedTarget as Node | null
+  if (nextTarget && uploadRootRef.value?.contains(nextTarget)) return
   isDragging.value = false
 }
 const onDrop = (e: DragEvent) => {
+  if (!hasDraggedFiles(e.dataTransfer)) return
   e.preventDefault()
+  e.stopPropagation()
   isDragging.value = false
-  const files = e.dataTransfer?.files
-  if (files && files.length > 0) {
+  const files = getFilesFromDataTransfer(e.dataTransfer)
+  if (files.length > 0) {
     handleFilesSelect(files)
   }
 }
@@ -485,6 +472,26 @@ const onFileChange = (e: Event) => {
     handleFilesSelect(files)
   }
   target.value = ''
+}
+
+const openVideoPicker = (target: 'initial' | 'append') => {
+  const input = target === 'initial' ? initialFileInputRef.value : appendFileInputRef.value
+  input?.click()
+}
+
+const handleWindowDragOver = (e: DragEvent) => {
+  if (!hasDraggedFiles(e.dataTransfer)) return
+  e.preventDefault()
+}
+
+const handleWindowDrop = (e: DragEvent) => {
+  if (!hasDraggedFiles(e.dataTransfer)) return
+  e.preventDefault()
+
+  const target = e.target as Node | null
+  if (target && uploadRootRef.value?.contains(target)) {
+    onDrop(e)
+  }
 }
 
 // Concurrency & retry helpers
@@ -501,6 +508,24 @@ const queuePosition = (part: VideoPart): number => {
     if (p.status === 'pending') pos++
   }
   return 0
+}
+
+const hasDraggedFiles = (dataTransfer: DataTransfer | null | undefined) => {
+  if (!dataTransfer) return false
+  return Array.from(dataTransfer.types ?? []).includes('Files')
+}
+
+const getFilesFromDataTransfer = (dataTransfer: DataTransfer | null | undefined) => {
+  if (!dataTransfer) return []
+
+  if (dataTransfer.files?.length) {
+    return Array.from(dataTransfer.files)
+  }
+
+  return Array.from(dataTransfer.items ?? [])
+    .filter((item) => item.kind === 'file')
+    .map((item) => item.getAsFile())
+    .filter((file): file is File => file instanceof File)
 }
 
 let isCompleting = false
@@ -547,6 +572,10 @@ const withRetry = async <T,>(
   throw new Error('Max retries reached')
 }
 
+const isLikelyVideoFile = (file: File) => {
+  return !getVideoFileRejectionReason(file)
+}
+
 const processUploadQueue = () => {
   while (activeUploads.value < MAX_CONCURRENT_UPLOADS) {
     const next = parts.value.find((p) => p.status === 'pending')
@@ -561,9 +590,24 @@ const processUploadQueue = () => {
 }
 
 const handleFilesSelect = (files: FileList | File[]) => {
-  const videoFiles = Array.from(files).filter((f) => f.type.startsWith('video/'))
+  const allFiles = Array.from(files)
+  const unsupportedFiles = allFiles
+    .map((file) => ({ file, reason: getVideoFileRejectionReason(file) }))
+    .filter((entry) => entry.reason)
+
+  const videoFiles = allFiles.filter(isLikelyVideoFile)
   if (videoFiles.length === 0) {
-    toast({ title: '请上传视频文件', variant: 'destructive' })
+    toast({
+      title: '没有可上传的视频文件',
+      description:
+        unsupportedFiles.length > 0
+          ? `${formatRejectedSummary(
+              unsupportedFiles.map((entry) => entry.file.name),
+              '所选文件'
+            )} 未被识别为常见视频格式，请检查扩展名或重新导出。`
+          : `请上传 ${COMMON_VIDEO_FORMAT_TEXT}。`,
+      variant: 'destructive',
+    })
     return
   }
 
@@ -575,19 +619,44 @@ const handleFilesSelect = (files: FileList | File[]) => {
   }
 
   const filesToAdd = videoFiles.slice(0, remaining)
-  if (filesToAdd.length < videoFiles.length) {
-    toast({ title: `已达上限，仅添加前 ${filesToAdd.length} 个文件` })
-  }
+  const ignoredByLimit = videoFiles.slice(remaining)
 
   const oversized = filesToAdd.filter((f) => f.size > maxFileSizeBytes.value)
+  const validFiles = filesToAdd.filter((f) => f.size <= maxFileSizeBytes.value)
+
+  const uploadIssues: string[] = []
+  if (unsupportedFiles.length > 0) {
+    uploadIssues.push(
+      `格式不支持：${formatRejectedSummary(
+        unsupportedFiles.map((entry) => entry.file.name),
+        '部分文件'
+      )}`
+    )
+  }
+  if (ignoredByLimit.length > 0) {
+    uploadIssues.push(
+      `超出本次最多 ${maxNum} 个分P：${formatRejectedSummary(
+        ignoredByLimit.map((file) => file.name),
+        '部分文件'
+      )}`
+    )
+  }
   if (oversized.length > 0) {
+    uploadIssues.push(
+      `超过 ${storageConfig.value.maxFileSize}MB：${formatRejectedSummary(
+        oversized.map((file) => file.name),
+        '部分文件'
+      )}`
+    )
+  }
+  if (uploadIssues.length > 0) {
     toast({
-      title: `${oversized.length} 个文件超过 ${storageConfig.value.maxFileSize}MB 限制，已跳过`,
-      variant: 'destructive',
+      title: validFiles.length > 0 ? '部分文件未加入上传队列' : '所选文件未通过上传校验',
+      description: uploadIssues.join('；'),
+      variant: validFiles.length > 0 ? undefined : 'destructive',
     })
   }
 
-  const validFiles = filesToAdd.filter((f) => f.size <= maxFileSizeBytes.value)
   if (validFiles.length === 0) return
 
   const newParts: VideoPart[] = validFiles.map((file) => ({
@@ -605,13 +674,8 @@ const handleFilesSelect = (files: FileList | File[]) => {
     form.value.title = newParts[0].title
   }
 
-  const isFirstVideo = parts.value.length === 0
   parts.value.push(...newParts)
   processUploadQueue()
-
-  if (isFirstVideo && newParts[0]) {
-    void extractFrames(newParts[0].file)
-  }
 }
 
 const uploadPart = async (part: VideoPart) => {
@@ -700,13 +764,6 @@ const uploadPart = async (part: VideoPart) => {
       )
       part.filePath = res.filePath
       part.status = 'success'
-      if (
-        parts.value[0]?.id === part.id &&
-        recommendedCovers.value.length === 0 &&
-        !isExtractingFrames.value
-      ) {
-        void loadRecommendedCoversFromServer(part)
-      }
     } finally {
       releaseCompleteLock()
     }
@@ -729,29 +786,18 @@ const removePart = (index: number) => {
     part.abortController.abort()
   }
   parts.value.splice(index, 1)
-  if (removedFirst) {
-    coverExtractJobId++
-    recommendedCoverLoadingHash = ''
-    isExtractingFrames.value = false
-    recommendedCovers.value = []
-    const nextFirstPart = parts.value[0]
-    if (nextFirstPart) {
-      if (nextFirstPart.status === 'success') {
-        void loadRecommendedCoversFromServer(nextFirstPart)
-      } else {
-        void extractFrames(nextFirstPart.file)
-      }
-    }
-  }
+  if (removedFirst) previewVideoError.value = false
   processUploadQueue()
 }
 
 onBeforeUnmount(() => {
-  coverExtractJobId++
-  recommendedCoverLoadingHash = ''
-  isExtractingFrames.value = false
   revokeLocalPreviewObjectUrl()
   parts.value.forEach((p) => p.abortController?.abort())
+  if (scheduleBoundaryTimer) {
+    clearInterval(scheduleBoundaryTimer)
+  }
+  window.removeEventListener('dragover', handleWindowDragOver)
+  window.removeEventListener('drop', handleWindowDrop)
 })
 
 // Tags
@@ -791,13 +837,32 @@ const handlePublish = async () => {
 
   let publishTimeStr = undefined
   if (form.value.publishType === 'scheduled') {
+    refreshScheduleBoundary()
     if (!form.value.publishTime) {
       toast({ title: '请选择定时发布时间', variant: 'destructive' })
       return
     }
-    const d = new Date(form.value.publishTime)
+    const normalizedPublishTime = normalizeScheduledPublishTime(form.value.publishTime)
+    if (!normalizedPublishTime) {
+      toast({ title: '发布时间格式不正确', variant: 'destructive' })
+      return
+    }
+    if (normalizedPublishTime !== form.value.publishTime) {
+      form.value.publishTime = normalizedPublishTime
+    }
+    const d = new Date(normalizedPublishTime)
     if (isNaN(d.getTime())) {
       toast({ title: '发布时间格式不正确', variant: 'destructive' })
+      return
+    }
+    const minDate = getScheduleWindowStart()
+    const maxDate = getScheduleWindowEnd()
+    if (d.getTime() < minDate.getTime() || d.getTime() > maxDate.getTime()) {
+      toast({
+        title: '定时发布时间超出允许范围',
+        description: `请选择 ${scheduledPublishMinLabel.value} 至 ${scheduledPublishMaxLabel.value} 之间的时间`,
+        variant: 'destructive',
+      })
       return
     }
     // 后端需要 RFC3339 格式的时间字符串
@@ -840,42 +905,62 @@ const handlePublish = async () => {
 </script>
 
 <template>
-  <div class="max-w-5xl mx-auto py-8 px-4">
+  <div
+    ref="uploadRootRef"
+    class="max-w-5xl mx-auto py-8 px-4"
+    @dragenter="onDragEnter"
+    @dragover="onDragOver"
+    @dragleave="onDragLeave"
+    @drop="onDrop"
+  >
+    <input
+      ref="initialFileInputRef"
+      type="file"
+      :accept="VIDEO_INPUT_ACCEPT"
+      multiple
+      class="hidden"
+      @change="onFileChange"
+    />
+    <input
+      ref="appendFileInputRef"
+      type="file"
+      :accept="VIDEO_INPUT_ACCEPT"
+      multiple
+      class="hidden"
+      @change="onFileChange"
+    />
+
     <!-- Step 1: Upload Area -->
     <div
       v-if="parts.length === 0"
-      class="bg-card rounded-xl border-2 border-dashed p-16 transition-colors flex flex-col items-center justify-center min-h-[400px]"
-      :class="{ 'border-primary bg-primary/5': isDragging }"
-      @dragover="onDragOver"
-      @dragleave="onDragLeave"
-      @drop="onDrop"
+      class="bg-card rounded-3xl border-2 border-dashed p-16 transition-all duration-300 flex flex-col items-center justify-center min-h-[440px] hover:border-primary/50 hover:bg-muted/10"
+      :class="{ 'border-primary bg-primary/5 scale-[1.02] shadow-xl': isDragging }"
     >
-      <div class="h-24 w-24 bg-primary/10 rounded-full flex items-center justify-center mb-6">
+      <div
+        class="h-24 w-24 bg-primary/10 rounded-full flex items-center justify-center mb-6 transition-transform duration-500 group-hover:scale-110"
+      >
         <UploadCloud class="h-12 w-12 text-primary" />
       </div>
-      <h3 class="text-2xl font-semibold mb-3">拖拽视频到此处，或点击上传</h3>
-      <p class="text-muted-foreground mb-8 text-center max-w-md">
-        支持 mp4, webm 格式，单文件不超过 {{ storageConfig.maxFileSize }}MB，最多
-        {{ storageConfig.maxUploadNum }} 个分P。建议上传 1080P 以上高清视频。
+      <h3 class="text-3xl font-bold tracking-tight mb-4">拖拽视频到此处，或点击上传</h3>
+      <p class="text-muted-foreground mb-10 text-center max-w-lg leading-relaxed">
+        支持 {{ COMMON_VIDEO_FORMAT_TEXT }}，单文件不超过 {{ storageConfig.maxFileSize }}MB，最多
+        {{ storageConfig.maxUploadNum }} 个分P。若文件未进入列表，会直接提示具体原因。
       </p>
-      <Button size="lg" class="relative overflow-hidden cursor-pointer text-lg px-8 py-6">
+      <Button
+        size="lg"
+        class="cursor-pointer text-lg px-10 py-7 rounded-2xl shadow-lg shadow-primary/20 hover:shadow-primary/30 transition-all font-medium"
+        @click="openVideoPicker('initial')"
+      >
         选择视频
-        <input
-          type="file"
-          accept="video/*"
-          multiple
-          class="absolute inset-0 opacity-0 cursor-pointer"
-          @change="onFileChange"
-        />
       </Button>
     </div>
 
     <!-- Step 2: Form Area -->
     <div v-else class="space-y-8">
       <!-- Parts List Section -->
-      <div class="bg-card rounded-xl border p-6 shadow-sm">
-        <div class="flex items-center justify-between mb-6">
-          <h2 class="text-xl font-bold flex items-center gap-2">发布视频</h2>
+      <div class="bg-card rounded-2xl border p-8 shadow-sm">
+        <div class="flex items-center justify-between mb-8">
+          <h2 class="text-2xl font-bold tracking-tight">发布视频</h2>
           <div class="flex items-center gap-3 text-sm text-muted-foreground">
             <span>共 {{ parts.length }} P</span>
             <span v-if="activeUploads > 0" class="text-primary">
@@ -964,27 +1049,20 @@ const handlePublish = async () => {
 
         <Button
           variant="outline"
-          class="w-full border-dashed relative overflow-hidden"
+          class="w-full border-dashed"
           :disabled="parts.length >= storageConfig.maxUploadNum"
+          @click="openVideoPicker('append')"
         >
           <Plus class="mr-2 h-4 w-4" />
           添加分P（还可添加 {{ storageConfig.maxUploadNum - parts.length }} 个）
-          <input
-            type="file"
-            accept="video/*"
-            multiple
-            class="absolute inset-0 opacity-0 cursor-pointer"
-            :disabled="parts.length >= storageConfig.maxUploadNum"
-            @change="onFileChange"
-          />
         </Button>
       </div>
 
       <!-- Basic Settings Section -->
-      <div class="bg-card rounded-xl border p-6 shadow-sm">
-        <h2 class="text-xl font-bold mb-6">基本设置</h2>
+      <div class="bg-card rounded-2xl border p-8 shadow-sm">
+        <h2 class="text-2xl font-bold tracking-tight mb-8">基本设置</h2>
 
-        <div class="max-w-4xl space-y-8">
+        <div class="max-w-4xl space-y-10">
           <!-- Cover -->
           <div class="space-y-4">
             <Label class="text-base">视频封面 <span class="text-red-500">*</span></Label>
@@ -992,16 +1070,22 @@ const handlePublish = async () => {
             <div class="flex flex-col gap-4">
               <!-- Main Cover -->
               <div
-                class="relative w-[240px] aspect-video rounded-lg border-2 overflow-hidden group bg-muted/30"
-                :class="!coverPreview ? 'border-dashed' : 'border-transparent'"
+                class="relative w-[240px] aspect-video rounded-xl border-2 overflow-hidden group bg-muted/30 transition-all duration-300 hover:shadow-lg hover:border-primary/50"
+                :class="!coverPreview ? 'border-dashed' : 'border-transparent shadow-md'"
               >
-                <img v-if="coverPreview" :src="coverPreview" class="w-full h-full object-cover" />
+                <img
+                  v-if="coverPreview"
+                  :src="coverPreview"
+                  class="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
+                />
                 <div
                   v-else
                   class="absolute inset-0 flex flex-col items-center justify-center text-muted-foreground"
                 >
-                  <ImageIcon class="h-8 w-8 mb-2 opacity-50" />
-                  <span class="text-sm">点击设置封面</span>
+                  <ImageIcon
+                    class="h-8 w-8 mb-2 opacity-50 group-hover:scale-110 transition-transform"
+                  />
+                  <span class="text-sm font-medium">点击设置封面</span>
                 </div>
 
                 <div
@@ -1017,47 +1101,8 @@ const handlePublish = async () => {
                 ></div>
               </div>
 
-              <!-- Recommended Covers -->
-              <div class="bg-muted/30 p-4 rounded-lg border max-w-full">
-                <p class="text-sm text-muted-foreground mb-3">
-                  系统默认选中第一帧为视频封面，以下为更多智能推荐封面
-                </p>
-                <div class="flex gap-3 overflow-x-auto pb-2">
-                  <div
-                    v-if="isExtractingFrames"
-                    class="flex items-center gap-2 text-sm text-muted-foreground h-[68px]"
-                  >
-                    <Loader2 class="h-4 w-4 animate-spin" />
-                    正在生成推荐封面...
-                  </div>
-                  <template v-else>
-                    <div
-                      v-for="(cover, index) in recommendedCovers"
-                      :key="index"
-                      class="relative w-[120px] aspect-video rounded border-2 cursor-pointer flex-shrink-0 overflow-hidden transition-colors"
-                      :class="
-                        coverPreview === cover
-                          ? 'border-primary'
-                          : 'border-transparent hover:border-primary/50'
-                      "
-                      @click="selectRecommendedCover(cover)"
-                    >
-                      <img :src="cover" class="w-full h-full object-cover" />
-                      <div
-                        v-if="coverPreview === cover"
-                        class="absolute inset-0 bg-black/20 flex items-center justify-center"
-                      >
-                        <Check class="h-6 w-6 text-white drop-shadow-md" />
-                      </div>
-                    </div>
-                  </template>
-                  <div
-                    v-if="!isExtractingFrames && recommendedCovers.length === 0"
-                    class="text-sm text-muted-foreground h-[68px] flex items-center"
-                  >
-                    上传视频后将自动生成推荐封面
-                  </div>
-                </div>
+              <div class="rounded-lg border bg-muted/30 p-4 text-sm text-muted-foreground">
+                <p>{{ coverDialogTip }}</p>
               </div>
             </div>
           </div>
@@ -1101,17 +1146,17 @@ const handlePublish = async () => {
           </div>
 
           <!-- Partition -->
-          <div class="space-y-2">
+          <div class="space-y-3">
             <Label class="text-base">分区 <span class="text-red-500">*</span></Label>
-            <div class="grid grid-cols-3 sm:grid-cols-5 md:grid-cols-8 gap-2 mt-2">
+            <div class="grid grid-cols-3 sm:grid-cols-5 md:grid-cols-8 gap-3 mt-2">
               <div
                 v-for="p in partitions"
                 :key="p.id"
-                class="px-3 py-2 rounded-lg border text-center text-sm cursor-pointer transition-colors"
+                class="px-3 py-2.5 rounded-xl border text-center text-sm cursor-pointer transition-all duration-200"
                 :class="
                   form.partitionId === p.id
-                    ? 'bg-primary/10 border-primary text-primary font-medium'
-                    : 'hover:bg-muted'
+                    ? 'bg-primary text-primary-foreground font-medium shadow-md shadow-primary/30 scale-105 border-transparent'
+                    : 'hover:bg-muted/80 hover:scale-105 border-border/60 bg-card'
                 "
                 @click="form.partitionId = p.id"
               >
@@ -1180,14 +1225,14 @@ const handlePublish = async () => {
                 </label>
               </div>
 
-              <div v-if="form.publishType === 'scheduled'" class="flex items-center gap-4">
-                <Input
-                  type="datetime-local"
-                  :model-value="form.publishTime"
-                  class="w-[250px]"
-                  @update:model-value="(v) => (form.publishTime = String(v))"
-                />
-                <span class="text-sm text-muted-foreground">请选择至少2小时后的时间</span>
+              <div
+                v-if="form.publishType === 'scheduled'"
+                class="mt-3 flex items-center gap-4 rounded-2xl border border-border/60 bg-muted/20 p-4"
+              >
+                <ScheduledPublishPicker v-model="form.publishTime" />
+                <div class="text-sm text-muted-foreground whitespace-nowrap">
+                  (目前支持最早≥5分钟，最晚≤15天)
+                </div>
               </div>
             </div>
           </div>
@@ -1197,7 +1242,7 @@ const handlePublish = async () => {
       <!-- Actions -->
       <div class="flex items-center justify-end gap-4 pt-4">
         <Button
-          class="px-10 py-6 text-lg"
+          class="px-12 py-7 text-lg rounded-2xl font-semibold shadow-lg shadow-primary/20 hover:shadow-primary/30 transition-all"
           :disabled="isPublishing || isUploadingAny"
           @click="handlePublish"
         >
@@ -1209,131 +1254,120 @@ const handlePublish = async () => {
 
     <!-- Cover Setting Dialog -->
     <Dialog :open="showCoverSetting" @update:open="showCoverSetting = $event">
-      <DialogContent class="sm:max-w-[700px]">
-        <DialogHeader>
+      <DialogContent
+        class="flex max-h-[min(90vh,860px)] flex-col overflow-hidden p-0 sm:max-w-[760px]"
+      >
+        <DialogHeader class="border-b border-border/70 px-6 py-5">
           <DialogTitle>设置封面</DialogTitle>
+          <DialogDescription class="sr-only">
+            设置视频封面，可上传自定义图片；若浏览器支持视频预览，也可以截取当前帧。
+          </DialogDescription>
         </DialogHeader>
 
-        <div class="space-y-6 py-4">
-          <div class="flex gap-4 border-b pb-4">
-            <Button
-              :variant="coverSettingMode === 'upload' ? 'default' : 'ghost'"
-              @click="coverSettingMode = 'upload'"
-              >本地上传</Button
-            >
-            <Button
-              :variant="coverSettingMode === 'frame' ? 'default' : 'ghost'"
-              :disabled="!parts[0]"
-              @click="coverSettingMode = 'frame'"
-              >截取视频帧</Button
-            >
+        <div class="cover-dialog-scroll flex-1 space-y-5 overflow-y-auto px-6 py-5">
+          <div
+            class="rounded-2xl border border-border/70 bg-muted/30 px-4 py-3 text-sm text-muted-foreground"
+          >
+            {{ coverDialogTip }}
           </div>
 
-          <div v-if="coverSettingMode === 'upload'" class="space-y-4">
-            <div
-              class="relative aspect-video rounded-lg border-2 border-dashed overflow-hidden group bg-muted/30 cursor-pointer transition-colors hover:border-primary/50 max-w-md mx-auto"
-            >
-              <img
-                v-if="tempCoverPreview"
-                :src="tempCoverPreview"
-                class="w-full h-full object-cover"
-              />
+          <div
+            class="grid gap-5"
+            :class="canCaptureCover ? 'lg:grid-cols-[minmax(0,1.2fr)_260px]' : 'lg:grid-cols-1'"
+          >
+            <div v-if="canCaptureCover" class="space-y-4">
               <div
-                v-else
-                class="absolute inset-0 flex flex-col items-center justify-center text-muted-foreground"
+                class="relative aspect-video max-h-[38vh] min-h-[220px] overflow-hidden rounded-2xl bg-black flex items-center justify-center"
               >
-                <UploadCloud class="h-10 w-10 mb-3 opacity-50" />
-                <span class="text-sm font-medium">点击上传封面</span>
-                <span class="text-xs mt-1 opacity-70">建议比例 16:9</span>
-              </div>
-
-              <div
-                v-if="tempCoverPreview"
-                class="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center"
-              >
-                <span class="text-white text-sm font-medium">更换封面</span>
-              </div>
-              <input
-                type="file"
-                accept="image/*"
-                class="absolute inset-0 opacity-0 cursor-pointer"
-                @change="onTempCoverChange"
-              />
-            </div>
-          </div>
-
-          <div v-else-if="coverSettingMode === 'frame' && parts[0]" class="space-y-4">
-            <div
-              class="relative aspect-video bg-black rounded-lg overflow-hidden flex items-center justify-center"
-            >
-              <video
-                v-if="previewVideoUrl"
-                ref="frameVideoRef"
-                :src="previewVideoUrl"
-                controls
-                class="w-full h-full"
-                crossorigin="anonymous"
-                @loadeddata="previewVideoError = false"
-                @error="onPreviewVideoError"
-              ></video>
-              <div
-                v-else
-                class="absolute inset-0 flex items-center justify-center text-sm text-white/70"
-              >
-                暂无可预览视频
-              </div>
-              <div
-                v-if="previewVideoError"
-                class="absolute inset-0 flex items-center justify-center bg-black/70 px-6 text-center text-sm text-white"
-              >
-                当前视频浏览器无法直接预览，已自动尝试服务端生成推荐封面
-              </div>
-            </div>
-            <div class="flex justify-between items-center bg-muted/50 p-3 rounded-lg">
-              <span class="text-sm text-muted-foreground"
-                >拖动进度条，点击右侧按钮截取当前画面作为封面</span
-              >
-              <Button :disabled="previewVideoError || !previewVideoUrl" @click="captureFrame">
-                截取当前帧
-              </Button>
-            </div>
-
-            <div v-if="tempCoverPreview" class="mt-4">
-              <p class="text-sm font-medium mb-2">已截取封面预览：</p>
-              <div class="w-[200px] aspect-video rounded border overflow-hidden">
-                <img :src="tempCoverPreview" class="w-full h-full object-cover" />
-              </div>
-            </div>
-
-            <div v-if="recommendedCovers.length > 0" class="space-y-3">
-              <p class="text-sm font-medium">推荐封面</p>
-              <div class="flex gap-3 overflow-x-auto pb-2">
-                <button
-                  v-for="(cover, index) in recommendedCovers"
-                  :key="index"
-                  type="button"
-                  class="relative w-[120px] aspect-video rounded border-2 overflow-hidden transition-colors"
-                  :class="
-                    tempCoverPreview === cover
-                      ? 'border-primary'
-                      : 'border-transparent hover:border-primary/50'
-                  "
-                  @click="void applyRecommendedCoverInDialog(cover)"
+                <video
+                  v-if="previewVideoUrl"
+                  ref="frameVideoRef"
+                  :src="previewVideoUrl"
+                  controls
+                  class="h-full w-full"
+                  crossorigin="anonymous"
+                  @loadeddata="previewVideoError = false"
+                  @error="onPreviewVideoError"
+                ></video>
+                <div
+                  v-else
+                  class="absolute inset-0 flex items-center justify-center px-6 text-center text-sm text-white/70"
                 >
-                  <img :src="cover" class="w-full h-full object-cover" />
-                  <div
-                    v-if="tempCoverPreview === cover"
-                    class="absolute inset-0 bg-black/20 flex items-center justify-center"
-                  >
-                    <Check class="h-6 w-6 text-white drop-shadow-md" />
+                  暂无可预览视频
+                </div>
+              </div>
+              <div
+                class="flex flex-col gap-3 rounded-2xl bg-muted/45 p-4 sm:flex-row sm:items-center sm:justify-between"
+              >
+                <span class="text-sm leading-6 text-muted-foreground">
+                  拖动视频进度条到目标时间，点击右侧按钮截取当前画面
+                </span>
+                <Button
+                  class="shrink-0"
+                  :disabled="!previewVideoUrl || previewVideoError"
+                  @click="captureFrame"
+                >
+                  截取当前帧
+                </Button>
+              </div>
+            </div>
+
+            <div class="space-y-4">
+              <div
+                class="relative aspect-video overflow-hidden rounded-2xl border-2 border-dashed group bg-muted/30 cursor-pointer transition-colors hover:border-primary/50"
+              >
+                <img
+                  v-if="tempCoverPreview"
+                  :src="tempCoverPreview"
+                  class="h-full w-full object-cover"
+                />
+                <div
+                  v-else
+                  class="absolute inset-0 flex flex-col items-center justify-center px-6 text-center text-muted-foreground"
+                >
+                  <UploadCloud class="mb-3 h-10 w-10 opacity-50" />
+                  <span class="text-sm font-medium">点击上传封面</span>
+                  <span class="mt-1 text-xs opacity-70">建议比例 16:9</span>
+                </div>
+
+                <div
+                  v-if="tempCoverPreview"
+                  class="absolute inset-0 flex items-center justify-center bg-black/50 opacity-0 transition-opacity group-hover:opacity-100"
+                >
+                  <span class="text-sm font-medium text-white">更换封面</span>
+                </div>
+                <input
+                  type="file"
+                  accept="image/*"
+                  class="absolute inset-0 cursor-pointer opacity-0"
+                  @change="onTempCoverChange"
+                />
+              </div>
+
+              <div class="space-y-2">
+                <p class="text-sm font-medium text-foreground">当前封面预览</p>
+                <div
+                  class="flex aspect-video items-center justify-center overflow-hidden rounded-2xl border bg-muted/20"
+                >
+                  <img
+                    v-if="tempCoverPreview"
+                    :src="tempCoverPreview"
+                    class="h-full w-full object-cover"
+                  />
+                  <div v-else class="px-6 text-center text-sm text-muted-foreground">
+                    {{
+                      canCaptureCover
+                        ? '可以从视频中截帧，也可以直接上传自定义封面'
+                        : '当前视频浏览器无法预览，请直接上传自定义封面'
+                    }}
                   </div>
-                </button>
+                </div>
               </div>
             </div>
           </div>
         </div>
 
-        <DialogFooter>
+        <DialogFooter class="border-t border-border/70 px-6 py-4 sm:justify-end">
           <Button variant="outline" @click="showCoverSetting = false">取消</Button>
           <Button @click="confirmCoverSetting">确定</Button>
         </DialogFooter>
@@ -1341,3 +1375,28 @@ const handlePublish = async () => {
     </Dialog>
   </div>
 </template>
+
+<style>
+.cover-dialog-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: oklch(var(--foreground) / 0.15) transparent;
+}
+
+.cover-dialog-scroll::-webkit-scrollbar {
+  width: 6px;
+}
+
+.cover-dialog-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.cover-dialog-scroll::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: oklch(var(--foreground) / 0.15);
+  background-clip: padding-box;
+}
+
+.cover-dialog-scroll::-webkit-scrollbar-thumb:hover {
+  background: oklch(var(--foreground) / 0.25);
+}
+</style>

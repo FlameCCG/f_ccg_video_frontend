@@ -22,6 +22,10 @@ export interface LoginQQParams {
   code: string
 }
 
+export interface LoginGoogleParams {
+  code: string
+}
+
 export interface RefreshTokenParams {
   refreshToken: string
 }
@@ -315,6 +319,17 @@ export const loginByPassword = (params: LoginPwdParams): Promise<JwtToken> => {
  */
 export const loginByQQ = (params: LoginQQParams): Promise<JwtToken> => {
   return request.post('/common/user/login/qq', params)
+}
+
+/**
+ * Google登录
+ * POST /common/user/login/google
+ * 认证: 可选登录（客户端可携带 Token）
+ * 依赖接口: 无
+ * 接口说明: 使用 Google 授权码登录，未注册用户会自动注册
+ */
+export const loginByGoogle = (params: LoginGoogleParams): Promise<JwtToken> => {
+  return request.post('/common/user/login/google', params)
 }
 
 /**

@@ -4,10 +4,12 @@ import { toast } from 'vue-sonner'
 import {
   loginByPassword,
   loginByQQ,
+  loginByGoogle,
   refreshToken as refreshTokenApi,
   getCurrentUserInfo,
   type LoginPwdParams,
   type LoginQQParams,
+  type LoginGoogleParams,
   type UserInfo,
   type JwtToken,
 } from '@/api/user'
@@ -77,6 +79,24 @@ export const useAuthStore = defineStore(
       isLoading.value = true
       try {
         const tokens = await loginByQQ(params)
+        setAuthTokens(tokens)
+        await fetchUserInfo()
+        toast.success('登录成功')
+        return true
+      } catch {
+        return false
+      } finally {
+        isLoading.value = false
+      }
+    }
+
+    /**
+     * Google 登录
+     */
+    const loginWithGoogle = async (params: LoginGoogleParams): Promise<boolean> => {
+      isLoading.value = true
+      try {
+        const tokens = await loginByGoogle(params)
         setAuthTokens(tokens)
         await fetchUserInfo()
         toast.success('登录成功')
@@ -179,6 +199,7 @@ export const useAuthStore = defineStore(
       // Actions
       login,
       loginWithQQ,
+      loginWithGoogle,
       logout,
       refreshAccessToken,
       fetchUserInfo,

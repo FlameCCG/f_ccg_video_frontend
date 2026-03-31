@@ -160,6 +160,7 @@ const formatDateTime = (value: string) => {
 const formatLoginType = (value: string) => {
   if (value === 'pwd') return '密码登录'
   if (value === 'qq') return 'QQ 登录'
+  if (value === 'google') return 'Google 登录'
   return value || '未知方式'
 }
 

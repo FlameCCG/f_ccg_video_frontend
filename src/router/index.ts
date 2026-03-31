@@ -190,6 +190,16 @@ const routes: RouteRecordRaw[] = [
     component: () => import('@/views/auth/QQCallback.vue'),
     meta: { guest: true },
   },
+  {
+    path: '/oauth/google',
+    name: 'google-callback',
+    component: () => import('@/views/auth/GoogleCallback.vue'),
+    meta: { guest: true },
+  },
+  {
+    path: '/auth/google/callback',
+    redirect: '/oauth/google',
+  },
 ]
 
 const router = createRouter({

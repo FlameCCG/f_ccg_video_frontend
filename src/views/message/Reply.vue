@@ -1,0 +1,157 @@
+<script setup lang="ts">
+import { ref, onMounted } from 'vue'
+import {
+  getNotificationList,
+  type NotificationItem,
+  markNotificationsRead,
+} from '@/api/notification'
+import AppAvatar from '@/components/common/AppAvatar.vue'
+import { useNotificationStore } from '@/stores/notification'
+import { formatTimeAgo } from '@/utils/time'
+import { useRouter } from 'vue-router'
+import {
+  navigateToNotificationTarget,
+  resolveNotificationTarget,
+} from '@/utils/notification-target'
+
+const router = useRouter()
+
+const list = ref<NotificationItem[]>([])
+const loading = ref(true)
+const total = ref(0)
+const page = ref(1)
+const notificationStore = useNotificationStore()
+
+const fetchData = async () => {
+  try {
+    loading.value = true
+    const res = await getNotificationList({ category: 'reply', page: page.value, pageSize: 20 })
+    if (page.value === 1) {
+      list.value = res.list || []
+    } else {
+      list.value.push(...(res.list || []))
+    }
+    total.value = res.total || 0
+
+    const notificationIds = (res.list || []).map((item) => item.id)
+    const unreadCount = (res.list || []).filter((item) => !item.isRead).length
+    if (notificationIds.length > 0) {
+      await markNotificationsRead({ ids: notificationIds })
+      list.value = list.value.map((item) =>
+        notificationIds.includes(item.id) ? { ...item, isRead: true } : item
+      )
+      if (unreadCount > 0) {
+        notificationStore.markReplyRead(unreadCount)
+      }
+    }
+  } catch (error) {
+    console.error('Failed to load replies', error)
+  } finally {
+    loading.value = false
+  }
+}
+
+onMounted(() => {
+  void fetchData()
+})
+
+const canOpenTarget = (item: NotificationItem) => !!resolveNotificationTarget(item)
+
+const goReply = (item: NotificationItem) => {
+  void navigateToNotificationTarget(router, item)
+}
+</script>
+
+<template>
+  <div class="flex h-full flex-col">
+    <!-- Header -->
+    <div class="flex h-[50px] shrink-0 items-center justify-between border-b px-6">
+      <h2 class="text-[15px] font-medium text-foreground">回复我的</h2>
+    </div>
+
+    <!-- List -->
+    <div
+      class="flex-1 overflow-y-auto px-4 py-2 [&::-webkit-scrollbar-thumb]:rounded-[6px] [&::-webkit-scrollbar-thumb]:bg-muted-foreground/20 hover:[&::-webkit-scrollbar-thumb]:bg-muted-foreground/40 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar]:w-1.5"
+    >
+      <div
+        v-if="loading && list.length === 0"
+        class="flex items-center justify-center p-10 text-muted-foreground"
+      >
+        加载中...
+      </div>
+
+      <div
+        v-else-if="list.length === 0"
+        class="flex flex-col items-center justify-center p-20 text-muted-foreground"
+      >
+        <div class="text-sm opacity-60">暂无新回复哦~</div>
+      </div>
+
+      <div v-else class="space-y-4">
+        <div
+          v-for="item in list"
+          :key="item.id"
+          class="flex gap-4 rounded-lg p-4 transition-colors hover:bg-muted/50"
+        >
+          <!-- Left Avatar -->
+          <div class="shrink-0 pt-1">
+            <AppAvatar
+              :src="item.actionUserAvatar"
+              :name="item.actionUserName"
+              container-class="w-[46px] h-[46px] text-lg"
+              class="cursor-pointer transition-transform hover:scale-105"
+            />
+          </div>
+
+          <!-- Middle Content -->
+          <div class="flex min-w-0 flex-1 flex-col">
+            <div class="mb-1 text-sm">
+              <span class="font-medium text-foreground cursor-pointer hover:text-primary">
+                {{ item.actionUserName || '未知用户' }}
+              </span>
+              <span class="ml-2 text-muted-foreground">{{
+                item.title ? item.title.replace('有人', '') : '回复了你的评论'
+              }}</span>
+            </div>
+
+            <div v-if="item.content" class="mb-2">
+              <button
+                v-if="canOpenTarget(item)"
+                type="button"
+                class="-ml-2 inline-flex max-w-full cursor-pointer rounded-md px-2 py-1 text-left text-sm text-foreground transition-colors hover:bg-[#00aeec]/8 hover:text-[#00aeec]"
+                @click="goReply(item)"
+              >
+                <span class="break-words whitespace-pre-wrap">{{ item.content }}</span>
+              </button>
+              <div v-else class="break-words text-sm text-foreground">
+                {{ item.content }}
+              </div>
+            </div>
+
+            <div class="flex items-center gap-4 text-xs text-muted-foreground">
+              <span>{{
+                formatTimeAgo(
+                  Date.now() - 1000 * 60
+                ) /* Temporary fallback if no timestamp in item */
+              }}</span>
+              <!-- Optionally we should use item created time if available -->
+            </div>
+          </div>
+
+          <!-- Right Reference (Article/Video Thumbnail) -->
+          <div
+            v-if="item.videoTitle"
+            class="shrink-0 max-w-[120px] cursor-pointer"
+            @click="goReply(item)"
+          >
+            <div
+              class="h-[60px] overflow-hidden rounded bg-muted p-2 text-xs text-muted-foreground line-clamp-2 transition-colors hover:text-[#00aeec]"
+            >
+              {{ item.videoTitle }}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</template>

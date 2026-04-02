@@ -7,6 +7,11 @@ import request from './request'
 // Login Config
 export interface LoginConfig {
   qqLogin: boolean
+  googleLogin?: boolean
+  githubLogin?: boolean
+  gitHubLogin?: boolean
+  linuxdoLogin?: boolean
+  xLogin?: boolean
   usernamePwdLogin: boolean
   textGraphicCaptcha: boolean
   textClickCaptcha: boolean
@@ -31,6 +36,13 @@ export interface StorageConfig {
   maxUploadNum: number
 }
 
+export const DEFAULT_STORAGE_CONFIG: StorageConfig = {
+  maxChunkSize: 10,
+  chunkSize: 10,
+  maxFileSize: 100,
+  maxUploadNum: 10,
+}
+
 // Content Review Config
 export interface ContentReviewConfig {
   enable: boolean
@@ -40,7 +52,7 @@ export interface ContentReviewConfig {
 export interface SiteConfig {
   login: LoginConfig
   register: RegisterConfig
-  storage: StorageConfig
+  storage: Partial<StorageConfig> | null
   contentReview: ContentReviewConfig
 }
 
@@ -62,6 +74,62 @@ export interface SiteHeartbeatResult {
   online: number
 }
 
+export interface GetGithubLoginUrlParams {
+  state: string
+  codeChallenge?: string
+  codeChallengeMethod?: 'S256'
+}
+
+export interface GetGoogleLoginUrlParams {
+  state: string
+}
+
+export interface GetLinuxDoLoginUrlParams {
+  state: string
+}
+
+export interface GetXLoginUrlParams {
+  state: string
+  codeChallenge: string
+  codeChallengeMethod?: 'S256' | 'plain'
+}
+
+const normalizePositiveNumber = (value: unknown, fallback: number): number => {
+  if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) {
+    return fallback
+  }
+
+  return value
+}
+
+export const normalizeStorageConfig = (
+  storage: Partial<StorageConfig> | null | undefined
+): StorageConfig => {
+  const chunkSize = normalizePositiveNumber(storage?.chunkSize, DEFAULT_STORAGE_CONFIG.chunkSize)
+  const maxChunkSize = Math.max(
+    chunkSize,
+    normalizePositiveNumber(storage?.maxChunkSize, DEFAULT_STORAGE_CONFIG.maxChunkSize)
+  )
+
+  return {
+    chunkSize,
+    maxChunkSize,
+    maxFileSize: normalizePositiveNumber(storage?.maxFileSize, DEFAULT_STORAGE_CONFIG.maxFileSize),
+    maxUploadNum: Math.max(
+      1,
+      Math.floor(
+        normalizePositiveNumber(storage?.maxUploadNum, DEFAULT_STORAGE_CONFIG.maxUploadNum)
+      )
+    ),
+  }
+}
+
+export const hasStorageConfig = (
+  storage: Partial<StorageConfig> | null | undefined
+): storage is Partial<StorageConfig> => {
+  return Boolean(storage && Object.keys(storage).length > 0)
+}
+
 // ============================================================================
 // Site API
 // ============================================================================
@@ -75,6 +143,50 @@ export interface SiteHeartbeatResult {
  */
 export const getQQLoginUrl = (): Promise<string> => {
   return request.get('/common/site/qq-url')
+}
+
+/**
+ * 获取Google登录URL
+ * GET /common/site/google-url
+ * 认证: 无需登录
+ * 依赖接口: 无
+ * 接口说明: 获取 Google OAuth 登录跳转 URL
+ */
+export const getGoogleLoginUrl = (params?: GetGoogleLoginUrlParams): Promise<string> => {
+  return request.get('/common/site/google-url', { params })
+}
+
+/**
+ * 获取LinuxDo登录URL
+ * GET /common/site/linuxdo-url
+ * 认证: 无需登录
+ * 依赖接口: 无
+ * 接口说明: 获取 LinuxDo OAuth 登录跳转 URL
+ */
+export const getLinuxDoLoginUrl = (params: GetLinuxDoLoginUrlParams): Promise<string> => {
+  return request.get('/common/site/linuxdo-url', { params })
+}
+
+/**
+ * 获取GitHub登录URL
+ * GET /common/site/github-url
+ * 认证: 无需登录
+ * 依赖接口: 无
+ * 接口说明: 获取 GitHub OAuth 登录跳转 URL
+ */
+export const getGithubLoginUrl = (params?: GetGithubLoginUrlParams): Promise<string> => {
+  return request.get('/common/site/github-url', { params })
+}
+
+/**
+ * 获取X登录URL
+ * GET /common/site/x-url
+ * 认证: 无需登录
+ * 依赖接口: 无
+ * 接口说明: 获取 X OAuth 登录跳转 URL
+ */
+export const getXLoginUrl = (params: GetXLoginUrlParams): Promise<string> => {
+  return request.get('/common/site/x-url', { params })
 }
 
 /**

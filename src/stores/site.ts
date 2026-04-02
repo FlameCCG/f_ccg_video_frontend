@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
-import { getSiteConfig, type SiteConfig } from '@/api/site'
+import { getSiteConfig, normalizeStorageConfig, type SiteConfig } from '@/api/site'
 
 export const useSiteStore = defineStore('site', () => {
   // State
@@ -9,7 +9,14 @@ export const useSiteStore = defineStore('site', () => {
   const isLoaded = ref(false)
 
   // Getters - Login
+  // 配置未加载时一律 false，避免未拉到站点配置前误显 Google 等默认项
   const isQQLoginEnabled = computed(() => config.value?.login.qqLogin ?? false)
+  const isGoogleLoginEnabled = computed(() => config.value?.login.googleLogin ?? false)
+  const isGithubLoginEnabled = computed(
+    () => config.value?.login.githubLogin ?? config.value?.login.gitHubLogin ?? false
+  )
+  const isLinuxDoLoginEnabled = computed(() => config.value?.login.linuxdoLogin ?? false)
+  const isXLoginEnabled = computed(() => config.value?.login.xLogin ?? false)
   const isPasswordLoginEnabled = computed(() => config.value?.login.usernamePwdLogin ?? true)
   const isLoginGraphicsCaptchaEnabled = computed(
     () => config.value?.login.textGraphicCaptcha ?? false
@@ -24,10 +31,11 @@ export const useSiteStore = defineStore('site', () => {
   const isRegisterSlideCaptchaEnabled = computed(() => config.value?.register.slideCaptcha ?? false)
 
   // Getters - Storage
-  const maxChunkSize = computed(() => config.value?.storage.maxChunkSize ?? 20)
-  const chunkSize = computed(() => config.value?.storage.chunkSize ?? 10)
-  const maxFileSize = computed(() => config.value?.storage.maxFileSize ?? 100)
-  const maxUploadNum = computed(() => config.value?.storage.maxUploadNum ?? 10)
+  const normalizedStorage = computed(() => normalizeStorageConfig(config.value?.storage))
+  const maxChunkSize = computed(() => normalizedStorage.value.maxChunkSize)
+  const chunkSize = computed(() => normalizedStorage.value.chunkSize)
+  const maxFileSize = computed(() => normalizedStorage.value.maxFileSize)
+  const maxUploadNum = computed(() => normalizedStorage.value.maxUploadNum)
 
   // Getters - Content Review
   const isContentReviewEnabled = computed(() => config.value?.contentReview.enable ?? false)
@@ -49,9 +57,23 @@ export const useSiteStore = defineStore('site', () => {
     }
   }
 
+  /**
+   * 强制重新拉取站点配置。
+   * 保留旧 config / isLoaded，避免 UI（如 OAuth 按钮区）在刷新瞬间被拆掉导致闪烁。
+   */
   const refreshConfig = async (): Promise<boolean> => {
-    isLoaded.value = false
-    return fetchConfig()
+    isLoading.value = true
+    try {
+      const result = await getSiteConfig()
+      config.value = result.site
+      isLoaded.value = true
+      return true
+    } catch {
+      // 失败时保留旧配置，不把 isLoaded 打回 false
+      return isLoaded.value
+    } finally {
+      isLoading.value = false
+    }
   }
 
   return {
@@ -62,6 +84,10 @@ export const useSiteStore = defineStore('site', () => {
 
     // Getters - Login
     isQQLoginEnabled,
+    isGoogleLoginEnabled,
+    isGithubLoginEnabled,
+    isLinuxDoLoginEnabled,
+    isXLoginEnabled,
     isPasswordLoginEnabled,
     isLoginGraphicsCaptchaEnabled,
     isLoginClickCaptchaEnabled,

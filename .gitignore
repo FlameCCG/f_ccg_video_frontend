@@ -19,8 +19,11 @@ node_modules
 dist
 dist-ssr
 *.local
-.playwright-mcp
 
+# Live2D models (large binary assets)
+public/live2d-models/
+.playwright-mcp
+.grok
 # Test artifacts
 testAssets/
 test-*.png
@@ -35,3 +38,5 @@ test-*.png
 *.njsproj
 *.sln
 *.sw?
+.claude
+.mcp.json

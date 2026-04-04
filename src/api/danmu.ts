@@ -1,4 +1,7 @@
+import type { PaginatedResult } from './types'
 import request from './request'
+
+export type { PaginatedResult } from './types'
 
 // ============================================================================
 // Type Definitions
@@ -60,6 +63,8 @@ export interface DanmuListParams {
   page?: number
   pageSize?: number
   date?: string // YYYY-MM-DD
+  start?: number // milliseconds
+  end?: number // milliseconds
 }
 
 export interface CreatorDanmuItem {
@@ -93,9 +98,13 @@ export interface ReportDanmuParams {
   detail?: string
 }
 
-export interface PaginatedResult<T> {
-  list: T[]
+export interface DanmuListResult {
+  list: DanmuItem[]
   total: number
+  returned?: number
+  truncated?: boolean
+  start?: number
+  end?: number
 }
 
 export interface PlayerDanmuPayload {
@@ -108,6 +117,20 @@ export interface PlayerDanmuPayload {
   isLiked?: boolean
   createdAt?: string
   isSelf?: boolean
+}
+
+export const danmuMillisecondsToSeconds = (timeOffset: unknown): number => {
+  if (timeOffset === undefined || timeOffset === null) return 0
+  const num = Number(timeOffset)
+  if (!Number.isFinite(num) || num < 0) return 0
+  return num / 1000
+}
+
+export const danmuSecondsToMilliseconds = (time: unknown): number => {
+  if (time === undefined || time === null) return 0
+  const num = Number(time)
+  if (!Number.isFinite(num) || num < 0) return 0
+  return Math.round(num * 1000)
 }
 
 // ============================================================================
@@ -167,7 +190,7 @@ export const getDanmuHistory = (
  * 依赖接口: 无
  * 接口说明: 获取房间弹幕列表（按发送时间升序）
  */
-export const getDanmuList = (params: DanmuListParams): Promise<PaginatedResult<DanmuItem>> => {
+export const getDanmuList = (params: DanmuListParams): Promise<DanmuListResult> => {
   return request.get('/common/video/danmu/room/list', { params })
 }
 

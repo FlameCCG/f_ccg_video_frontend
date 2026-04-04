@@ -79,6 +79,7 @@ export const useVideoStore = defineStore(
     const commentCount = computed(() => currentVideo.value?.commentCount ?? 0)
 
     const watchProgress = computed(() => currentVideo.value?.watchProgress ?? 0)
+    let fetchRequestId = 0
 
     // Actions
 
@@ -86,11 +87,15 @@ export const useVideoStore = defineStore(
      * 获取视频详情
      */
     const fetchVideoDetail = async (id: number): Promise<boolean> => {
+      const requestId = ++fetchRequestId
       isLoading.value = true
       error.value = null
 
       try {
         const video = await getVideoDetail(id)
+        if (requestId !== fetchRequestId) {
+          return false
+        }
         currentVideo.value = video
 
         // Sync interaction state from video detail
@@ -102,10 +107,15 @@ export const useVideoStore = defineStore(
 
         return true
       } catch (e) {
+        if (requestId !== fetchRequestId) {
+          return false
+        }
         error.value = e instanceof Error ? e.message : '获取视频详情失败'
         return false
       } finally {
-        isLoading.value = false
+        if (requestId === fetchRequestId) {
+          isLoading.value = false
+        }
       }
     }
 
@@ -253,7 +263,9 @@ export const useVideoStore = defineStore(
      * 清除当前视频状态
      */
     const clearVideo = () => {
+      fetchRequestId++
       currentVideo.value = null
+      isLoading.value = false
       error.value = null
       interactionState.value = {
         isLiked: false,

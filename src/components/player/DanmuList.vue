@@ -1,7 +1,13 @@
 <script setup lang="ts">
-import { ref, onMounted, watch, computed } from 'vue'
-import { getDanmuList, type DanmuItem } from '@/api/danmu'
+import { ref, onMounted, watch, computed, nextTick } from 'vue'
+import {
+  danmuMillisecondsToSeconds,
+  danmuSecondsToMilliseconds,
+  getDanmuList,
+  type DanmuItem,
+} from '@/api/danmu'
 import { MoreVertical, ChevronUp, ChevronLeft, ChevronRight, ArrowLeft } from 'lucide-vue-next'
+import { formatClock } from '@/utils/format'
 
 const props = defineProps<{
   videoId: number
@@ -21,6 +27,7 @@ const viewMode = ref<'current' | 'history'>('current')
 const selectedDate = ref('')
 const showCalendar = ref(false)
 const availableDates = ref<Set<string>>(new Set())
+const probedMonths = ref<Set<string>>(new Set())
 const loadingDates = ref(false)
 
 const today = new Date()
@@ -81,13 +88,17 @@ const calendarDays = computed((): CalendarDay[] => {
 
   for (let d = 1; d <= daysInMonth; d++) {
     const dateStr = `${y}-${String(m + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`
+    const isToday = dateStr === todayStr
     days.push({
       day: d,
       dateStr,
       isCurrentMonth: true,
-      isToday: dateStr === todayStr,
+      isToday,
       isSelected: selectedDate.value === dateStr,
-      hasData: availableDates.value.has(dateStr),
+      // Today is always selectable: its danmu live in the realtime room and
+      // may not be returned by the date-indexed history probe, so don't gate
+      // it on `availableDates` or it becomes permanently un-clickable.
+      hasData: availableDates.value.has(dateStr) || isToday,
     })
   }
 
@@ -131,11 +142,18 @@ const nextMonth = () => {
 
 const probeMonthDates = async () => {
   if (!props.videoId) return
-  loadingDates.value = true
   const y = calendarYear.value
   const m = calendarMonth.value
+  const monthKey = `${y}-${m}`
+  // Probe each month only once. Re-firing the burst on every calendar reopen
+  // could partially fail (errors are swallowed), wiping previously-found dates
+  // and leaving them un-clickable.
+  if (probedMonths.value.has(monthKey)) return
+
+  loadingDates.value = true
   const daysInMonth = new Date(y, m + 1, 0).getDate()
-  const newDates = new Set<string>()
+  const found = new Set<string>()
+  let hadError = false
 
   const probes: Promise<void>[] = []
   for (let d = 1; d <= daysInMonth; d++) {
@@ -152,38 +170,47 @@ const probeMonthDates = async () => {
       })
         .then((res) => {
           if ((res.list?.length ?? 0) > 0 || (res.total ?? 0) > 0) {
-            newDates.add(dateStr)
+            found.add(dateStr)
           }
         })
-        .catch(() => {})
+        .catch(() => {
+          hadError = true
+        })
     )
   }
 
   await Promise.all(probes)
-  availableDates.value = newDates
+  // Merge into existing dates rather than replacing, so dates found earlier
+  // (or in other months) stay clickable.
+  const merged = new Set(availableDates.value)
+  found.forEach((d) => merged.add(d))
+  availableDates.value = merged
+  // Only cache the month when every probe succeeded; otherwise allow a retry
+  // so a transient failure doesn't permanently disable a date.
+  if (!hadError) probedMonths.value.add(monthKey)
   loadingDates.value = false
 }
 
 const selectDate = (day: CalendarDay) => {
   if (!day.isCurrentMonth || !day.hasData) return
+  // Clicking "today" returns to the live/current view so today's danmu always
+  // reload — the date-indexed history query may not include them.
+  if (day.isToday) {
+    exitHistoryMode()
+    return
+  }
   selectedDate.value = day.dateStr
   showCalendar.value = false
   void fetchList(day.dateStr)
 }
 
-const isSecondsFormat = () => {
-  return list.value.length > 0 && list.value.every((d) => d.timeOffset > 0 && d.timeOffset < 10000)
-}
-
 const formatTime = (ms: number): string => {
-  const totalSec = isSecondsFormat() ? ms : Math.floor(ms / 1000)
-  const min = Math.floor(totalSec / 60)
-  const sec = totalSec % 60
-  return `${String(min).padStart(2, '0')}:${String(sec).padStart(2, '0')}`
+  const totalSec = Math.floor(danmuMillisecondsToSeconds(ms))
+  return formatClock(totalSec)
 }
 
 const getRealTime = (ms: number): number => {
-  return isSecondsFormat() ? ms : ms / 1000
+  return danmuMillisecondsToSeconds(ms)
 }
 
 const formatDate = (dateStr: string): string => {
@@ -209,7 +236,7 @@ const fetchList = async (date?: string) => {
       date?: string
     } = {
       videoId: props.videoId,
-      pageSize: 200,
+      pageSize: 500,
     }
     if (props.partId) params.partId = props.partId
     if (date) params.date = date
@@ -252,6 +279,42 @@ const displayCount = computed(() => {
   return totalCount.value || list.value.length
 })
 
+const scrollRef = ref<HTMLElement | null>(null)
+
+const addDanmu = (danmu: {
+  id?: number
+  text: string
+  time: number
+  color: string
+  mode: 0 | 1 | 2
+  createdAt?: string
+}) => {
+  if (viewMode.value !== 'current') return
+  const item: DanmuItem = {
+    id: danmu.id ?? Date.now(),
+    videoId: props.videoId,
+    videoPartId: props.partId ?? 0,
+    userId: 0,
+    content: danmu.text,
+    timeOffset: danmuSecondsToMilliseconds(danmu.time),
+    color: danmu.color,
+    fontSize: 25,
+    position: danmu.mode,
+    likeCount: 0,
+    isLiked: false,
+    createdAt: danmu.createdAt ?? new Date().toISOString(),
+  }
+  list.value.push(item)
+  totalCount.value++
+  void nextTick(() => {
+    if (scrollRef.value) {
+      scrollRef.value.scrollTop = scrollRef.value.scrollHeight
+    }
+  })
+}
+
+defineExpose({ addDanmu })
+
 onMounted(() => void fetchList())
 watch(
   () => [props.videoId, props.partId],
@@ -259,6 +322,8 @@ watch(
     viewMode.value = 'current'
     selectedDate.value = ''
     showCalendar.value = false
+    availableDates.value = new Set()
+    probedMonths.value = new Set()
     void fetchList()
   }
 )
@@ -266,37 +331,41 @@ watch(
 
 <template>
   <div
-    class="danmu-panel flex flex-col rounded-lg border border-[#e3e5e7]"
+    class="danmu-panel flex flex-col rounded-lg border border-border"
     :class="{ 'is-collapsed': isCollapsed }"
   >
     <!-- Header -->
     <div
-      class="flex items-center justify-between px-4 py-2.5 cursor-pointer select-none border-b border-[#e3e5e7] hover:bg-[#f6f7f8] transition-colors rounded-t-lg"
-      style="background: #fff"
+      class="flex items-center justify-between px-4 py-2.5 cursor-pointer select-none border-b border-border hover:bg-secondary transition-colors rounded-t-lg"
+      style="background-color: var(--color-card)"
       @click="isCollapsed = !isCollapsed"
     >
       <div class="flex items-center gap-2">
         <button
           v-if="viewMode === 'history'"
-          class="flex items-center justify-center w-5 h-5 rounded hover:bg-[#e3e5e7] transition-colors"
+          class="flex items-center justify-center w-5 h-5 rounded hover:bg-accent transition-colors"
           title="返回"
           @click.stop="exitHistoryMode"
         >
-          <ArrowLeft :size="14" style="color: #61666d" />
+          <ArrowLeft :size="14" style="color: var(--color-muted-foreground)" />
         </button>
-        <span class="font-medium text-[14px]" style="color: #18191c">{{ headerTitle }}</span>
+        <span class="font-medium text-[14px]" style="color: var(--color-foreground)">{{
+          headerTitle
+        }}</span>
         <MoreVertical
           :size="16"
-          style="color: #9499a0"
-          class="hover:text-[#00a1d6] transition-colors"
+          style="color: var(--color-muted-foreground)"
+          class="hover:text-primary transition-colors"
           @click.stop
         />
       </div>
       <div class="flex items-center gap-2">
-        <span class="text-xs" style="color: #9499a0">{{ displayCount }}条</span>
+        <span class="text-xs" style="color: var(--color-muted-foreground)"
+          >{{ displayCount }}条</span
+        >
         <ChevronUp
           :size="18"
-          style="color: #9499a0"
+          style="color: var(--color-muted-foreground)"
           class="transition-transform duration-300"
           :class="{ 'rotate-180': isCollapsed }"
         />
@@ -307,20 +376,20 @@ watch(
     <div
       v-show="!isCollapsed"
       class="flex-1 overflow-hidden flex flex-col rounded-b-lg"
-      style="background: #fff"
+      style="background-color: var(--color-card)"
     >
       <!-- History mode: date display + calendar toggle -->
       <div
         v-if="viewMode === 'history'"
-        class="flex items-center justify-between px-4 py-2 border-b border-[#e3e5e7]"
-        style="background: #f6f7f8"
+        class="flex items-center justify-between px-4 py-2 border-b border-border"
+        style="background-color: var(--color-secondary)"
       >
-        <span class="text-xs" style="color: #61666d">
+        <span class="text-xs" style="color: var(--color-muted-foreground)">
           {{ selectedDate || '请选择日期' }}
         </span>
         <button
           class="text-xs px-2 py-1 rounded transition-colors"
-          style="color: #00a1d6"
+          style="color: var(--color-primary)"
           @click="toggleCalendar"
         >
           {{ showCalendar ? '收起' : '选择日期' }}
@@ -330,22 +399,24 @@ watch(
       <!-- Calendar popup (inline, compact) -->
       <div
         v-if="viewMode === 'history' && showCalendar"
-        class="border-b border-[#e3e5e7] px-3 py-2"
-        style="background: #fff"
+        class="border-b border-border px-3 py-2"
+        style="background-color: var(--color-card)"
       >
         <div class="flex items-center justify-between mb-1">
           <button
-            class="w-6 h-6 flex items-center justify-center rounded hover:bg-[#f1f2f3] transition-colors"
+            class="w-6 h-6 flex items-center justify-center rounded hover:bg-secondary transition-colors"
             @click="prevMonth"
           >
-            <ChevronLeft :size="14" style="color: #9499a0" />
+            <ChevronLeft :size="14" style="color: var(--color-muted-foreground)" />
           </button>
-          <span class="text-[12px] font-medium" style="color: #18191c">{{ calendarTitle }}</span>
+          <span class="text-[12px] font-medium" style="color: var(--color-foreground)">{{
+            calendarTitle
+          }}</span>
           <button
-            class="w-6 h-6 flex items-center justify-center rounded hover:bg-[#f1f2f3] transition-colors"
+            class="w-6 h-6 flex items-center justify-center rounded hover:bg-secondary transition-colors"
             @click="nextMonth"
           >
-            <ChevronRight :size="14" style="color: #9499a0" />
+            <ChevronRight :size="14" style="color: var(--color-muted-foreground)" />
           </button>
         </div>
 
@@ -354,7 +425,7 @@ watch(
             v-for="label in WEEKDAY_LABELS"
             :key="label"
             class="text-center text-[10px] py-0.5"
-            style="color: #9499a0"
+            style="color: var(--color-muted-foreground)"
           >
             {{ label }}
           </div>
@@ -380,14 +451,14 @@ watch(
         </div>
 
         <div v-if="loadingDates" class="text-center py-1">
-          <span class="text-[10px]" style="color: #9499a0">加载中...</span>
+          <span class="text-[10px]" style="color: var(--color-muted-foreground)">加载中...</span>
         </div>
       </div>
 
       <!-- Table header -->
       <div
         class="grid grid-cols-[50px_1fr_80px] gap-2 px-4 py-2 text-[12px] border-b"
-        style="color: #9499a0; border-color: rgb(227 229 231 / 0.5)"
+        style="color: var(--color-muted-foreground); border-color: var(--color-border)"
       >
         <div>时间</div>
         <div>弹幕内容</div>
@@ -395,13 +466,17 @@ watch(
       </div>
 
       <!-- List -->
-      <div class="danmu-scroll flex-1 overflow-y-auto px-2 py-1">
+      <div ref="scrollRef" class="danmu-scroll flex-1 overflow-y-auto px-2 py-1">
         <div v-if="loading" class="flex items-center justify-center py-10">
           <div
-            class="h-5 w-5 animate-spin rounded-full border-2 border-[#00a1d6]/30 border-t-[#00a1d6]"
+            class="h-5 w-5 animate-spin rounded-full border-2 border-primary/30 border-t-primary"
           ></div>
         </div>
-        <div v-else-if="list.length === 0" class="py-10 text-center text-xs" style="color: #9499a0">
+        <div
+          v-else-if="list.length === 0"
+          class="py-10 text-center text-xs"
+          style="color: var(--color-muted-foreground)"
+        >
           {{
             viewMode === 'history' && selectedDate
               ? '该日期无弹幕'
@@ -414,19 +489,22 @@ watch(
           <div
             v-for="item in list"
             :key="item.id"
-            class="grid grid-cols-[50px_1fr_80px] gap-2 px-2 py-1.5 text-[13px] hover:bg-[#f6f7f8] rounded transition-colors group items-center"
+            class="grid grid-cols-[50px_1fr_80px] gap-2 px-2 py-1.5 text-[13px] hover:bg-secondary rounded transition-colors group items-center"
           >
             <div
               class="cursor-pointer hover:underline tabular-nums"
-              style="color: #00a1d6"
+              style="color: var(--color-primary)"
               @click="seekTo(item.timeOffset)"
             >
               {{ formatTime(item.timeOffset) }}
             </div>
-            <div class="truncate" style="color: rgb(24 25 28 / 0.8)" :title="item.content">
+            <div class="truncate" style="color: var(--color-foreground)" :title="item.content">
               {{ item.content }}
             </div>
-            <div class="text-right text-xs tabular-nums" style="color: rgb(148 153 160 / 0.7)">
+            <div
+              class="text-right text-xs tabular-nums"
+              style="color: var(--color-muted-foreground)"
+            >
               {{ formatDate(item.createdAt) }}
             </div>
           </div>
@@ -437,11 +515,11 @@ watch(
       <div
         v-if="viewMode === 'current'"
         class="p-2 border-t"
-        style="border-color: rgb(227 229 231 / 0.5)"
+        style="border-color: var(--color-border)"
       >
         <button
           class="w-full py-1.5 text-xs font-medium rounded transition-colors"
-          style="color: #00a1d6; background: #f6f7f8"
+          style="color: var(--color-primary); background-color: var(--color-secondary)"
           @click="enterHistoryMode"
         >
           查看历史弹幕
@@ -451,82 +529,83 @@ watch(
   </div>
 </template>
 
-<style scoped>
+<style scoped lang="scss">
 .danmu-panel {
   height: 420px;
-  background: #fff;
-}
+  background-color: var(--color-card);
 
-.danmu-panel.is-collapsed {
-  height: auto;
+  &.is-collapsed {
+    height: auto;
+  }
 }
 
 .danmu-scroll {
   scrollbar-width: thin;
-  scrollbar-color: #e3e5e7 transparent;
+  scrollbar-color: var(--color-border) transparent;
+
+  &::-webkit-scrollbar {
+    width: 4px;
+
+    &-thumb {
+      background-color: var(--color-secondary);
+      border-radius: 2px;
+
+      &:hover {
+        background: var(--color-muted-foreground);
+      }
+    }
+  }
 }
 
-.danmu-scroll::-webkit-scrollbar {
-  width: 4px;
-}
-
-.danmu-scroll::-webkit-scrollbar-thumb {
-  background: #e3e5e7;
-  border-radius: 2px;
-}
-
-.danmu-scroll::-webkit-scrollbar-thumb:hover {
-  background: #c9ccd0;
-}
-
-/* Calendar day cells */
 .calendar-day {
   display: flex;
   align-items: center;
   justify-content: center;
   height: 28px;
   font-size: 11px;
-  color: #18191c;
+  color: var(--color-foreground);
   border-radius: 4px;
   border: none;
   background: transparent;
   cursor: pointer;
   transition: all 0.12s ease;
+
+  &:hover:not(:disabled) {
+    background-color: var(--color-secondary);
+  }
+
+  &.is-other {
+    color: var(--color-border);
+    pointer-events: none;
+  }
+
+  &.is-disabled {
+    color: var(--color-muted-foreground);
+    cursor: default;
+  }
+
+  &.is-active {
+    color: var(--color-foreground);
+    font-weight: 500;
+  }
+
+  &.is-today {
+    color: var(--color-primary);
+    font-weight: 600;
+    outline: 1px solid var(--color-primary);
+    outline-offset: -1px;
+  }
+
+  &.is-selected {
+    color: var(--color-primary-foreground);
+    background-color: var(--color-primary);
+    font-weight: 500;
+
+    &:hover {
+      background: oklch(from var(--color-primary) calc(l - 0.05) c h);
+    }
+  }
 }
 
-.calendar-day:hover:not(:disabled) {
-  background: #f1f2f3;
-}
-
-.calendar-day.is-other {
-  color: #e3e5e7;
-  pointer-events: none;
-}
-
-.calendar-day.is-disabled {
-  color: #c9ccd0;
-  cursor: default;
-}
-
-.calendar-day.is-active {
-  color: #18191c;
-  font-weight: 500;
-}
-
-.calendar-day.is-today {
-  color: #00a1d6;
-  font-weight: 600;
-  outline: 1px solid #00a1d6;
-  outline-offset: -1px;
-}
-
-.calendar-day.is-selected {
-  color: #fff;
-  background: #00a1d6;
-  font-weight: 500;
-}
-
-.calendar-day.is-selected:hover {
-  background: #0091c2;
-}
+/* Calendar day cells */
 </style>

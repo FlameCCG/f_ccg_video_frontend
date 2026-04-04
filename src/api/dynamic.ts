@@ -1,4 +1,7 @@
+import type { AuthorBrief } from './types'
 import request from './request'
+
+export type { AuthorBrief } from './types'
 
 // ============================================================================
 // Type Definitions
@@ -13,15 +16,6 @@ export const WorkType = {
 } as const
 
 export type WorkTypeValue = (typeof WorkType)[keyof typeof WorkType]
-
-/**
- * 作者简要信息
- */
-export interface AuthorBrief {
-  id: number
-  username: string
-  avatar: string
-}
 
 /**
  * 视频简要信息

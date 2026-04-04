@@ -7,7 +7,7 @@ import {
   type DialogContentProps,
   DialogPortal,
   useForwardPropsEmits,
-} from 'radix-vue'
+} from 'reka-ui'
 import { X } from 'lucide-vue-next'
 import { cn } from '@/lib/utils'
 import DialogOverlay from './DialogOverlay.vue'

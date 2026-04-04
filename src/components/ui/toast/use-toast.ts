@@ -1,14 +1,18 @@
 import type { Component, VNode } from 'vue'
 import type { ToastProps } from '.'
-import { computed, ref } from 'vue'
+import { computed, shallowRef } from 'vue'
 
 const TOAST_LIMIT = 1
 const TOAST_REMOVE_DELAY = 1000000
 
 export type StringOrVNode = string | VNode | (() => VNode)
 
-type ToasterToast = ToastProps & {
+type ToasterToast = {
   id: string
+  open?: boolean
+  class?: ToastProps['class']
+  variant?: ToastProps['variant']
+  onOpenChange?: ToastProps['onOpenChange']
   title?: string
   description?: StringOrVNode
   action?: Component
@@ -68,7 +72,7 @@ function addToRemoveQueue(toastId: string) {
   toastTimeouts.set(toastId, timeout)
 }
 
-const state = ref<State>({
+const state = shallowRef<State>({
   toasts: [],
 })
 

@@ -1,0 +1,450 @@
+// Main Styles Entry Point
+// 主题 token 真值 + base/components（SCSS）
+// Tailwind 入口见同目录 tailwind.css（纯 CSS，保证 utility 生成）
+// 暗色：html.dark 换变量，禁止 dark: 工具类
+
+@layer base {
+  :root {
+    color-scheme: light;
+    --brand-blue: oklch(64% 0.12 238deg);
+    --brand-pink: oklch(72% 0.11 32deg);
+    --accent-surface: oklch(95.6% 0.012 228deg);
+
+    --bg-surface-0: oklch(98.5% 0.006 230deg);
+    --bg-surface-1: oklch(96.8% 0.009 230deg);
+    --bg-surface-2: oklch(94.2% 0.014 230deg);
+
+    --text-1: oklch(25% 0.02 240deg);
+    --text-2: oklch(51% 0.018 238deg);
+    --border-color: oklch(89% 0.014 232deg);
+
+    --glass-bg: oklch(98.5% 0.008 228deg / 0.78);
+    --glass-border: oklch(87% 0.015 232deg / 0.55);
+    --glass-blur: 22px;
+
+    --signal-foreground: oklch(98.5% 0.004 230deg);
+    --media-overlay: oklch(29% 0.02 242deg / 0.72);
+    --media-overlay-text: oklch(97.8% 0.004 230deg);
+
+    --page-wash-1: oklch(82% 0.04 236deg / 0.22);
+    --page-wash-2: oklch(87% 0.03 34deg / 0.18);
+    --page-wash-3: oklch(97% 0.01 225deg / 0.92);
+
+    --banner-fallback-start: color-mix(in oklch, var(--brand-blue) 30%, var(--bg-surface-1));
+    --banner-fallback-end: color-mix(in oklch, var(--brand-pink) 34%, var(--bg-surface-2));
+
+    --signal-dynamic-start: oklch(72% 0.16 76deg);
+    --signal-dynamic-end: oklch(68% 0.16 32deg);
+    --signal-hot-start: oklch(66% 0.18 32deg);
+    --signal-hot-end: oklch(60% 0.16 350deg);
+    --signal-rank-start: oklch(62% 0.16 238deg);
+    --signal-rank-end: oklch(58% 0.16 270deg);
+
+    --status-success: oklch(64% 0.12 165deg);
+    --status-success-soft: color-mix(in oklch, var(--status-success) 18%, var(--bg-surface-1));
+    --status-success-border: color-mix(in oklch, var(--status-success) 34%, var(--border-color));
+    --status-success-ink: oklch(42% 0.085 165deg);
+
+    --status-warning: oklch(72% 0.13 76deg);
+    --status-warning-soft: color-mix(in oklch, var(--status-warning) 18%, var(--bg-surface-1));
+    --status-warning-border: color-mix(in oklch, var(--status-warning) 32%, var(--border-color));
+    --status-warning-ink: oklch(47% 0.08 74deg);
+
+    --status-danger: oklch(63% 0.16 22deg);
+    --status-danger-soft: color-mix(in oklch, var(--status-danger) 16%, var(--bg-surface-1));
+    --status-danger-border: color-mix(in oklch, var(--status-danger) 30%, var(--border-color));
+    --status-danger-ink: oklch(48% 0.11 22deg);
+
+    --status-info: oklch(64% 0.11 232deg);
+    --status-info-soft: color-mix(in oklch, var(--status-info) 16%, var(--bg-surface-1));
+    --status-info-border: color-mix(in oklch, var(--status-info) 28%, var(--border-color));
+    --status-info-ink: oklch(42% 0.075 232deg);
+
+    --shadow-surface-value: 0 1px 2px oklch(25% 0.02 240deg / 0.06);
+    --shadow-raised-value:
+      0 1px 2px oklch(25% 0.02 240deg / 0.05), 0 14px 36px -20px oklch(26% 0.03 240deg / 0.16);
+    --shadow-overlay-value:
+      0 18px 48px -24px oklch(22% 0.03 240deg / 0.24),
+      0 6px 18px -12px oklch(22% 0.02 240deg / 0.12);
+    --shadow-cinematic-value: 0 28px 84px -30px oklch(18% 0.02 240deg / 0.28);
+
+    --background: 0.985 0.006 230;
+    --foreground: 0.25 0.02 240;
+    --card: 0.968 0.009 230;
+    --card-foreground: 0.25 0.02 240;
+    --popover: 0.985 0.008 228;
+    --popover-foreground: 0.25 0.02 240;
+    --primary: 0.64 0.12 238;
+    --primary-foreground: 0.985 0.004 230;
+    --secondary: 0.942 0.014 230;
+    --secondary-foreground: 0.25 0.02 240;
+    --muted: 0.948 0.012 228;
+    --muted-foreground: 0.51 0.018 238;
+    --accent: 0.956 0.012 228;
+    --accent-foreground: 0.25 0.02 240;
+    --destructive: 0.63 0.16 22;
+    --destructive-foreground: 0.985 0.004 230;
+    --border: 0.89 0.014 232;
+    --input: 0.89 0.014 232;
+    --ring: 0.64 0.12 238;
+    --radius: 0.75rem;
+  }
+
+  .dark {
+    color-scheme: dark;
+
+    --brand-blue: oklch(74% 0.11 236deg);
+    --brand-pink: oklch(78% 0.1 30deg);
+    --accent-surface: oklch(23.5% 0.015 238deg);
+
+    --bg-surface-0: oklch(18% 0.011 242deg);
+    --bg-surface-1: oklch(21.5% 0.013 242deg);
+    --bg-surface-2: oklch(25.5% 0.016 240deg);
+
+    --text-1: oklch(95% 0.008 225deg);
+    --text-2: oklch(73% 0.014 230deg);
+    --border-color: oklch(31% 0.015 240deg);
+
+    --glass-bg: oklch(19% 0.012 240deg / 0.74);
+    --glass-border: oklch(34% 0.015 234deg / 0.5);
+
+    --signal-foreground: oklch(97.2% 0.006 225deg);
+    --media-overlay: oklch(18% 0.01 240deg / 0.76);
+    --media-overlay-text: oklch(96.5% 0.006 225deg);
+
+    --page-wash-1: oklch(40% 0.04 236deg / 0.18);
+    --page-wash-2: oklch(42% 0.04 28deg / 0.14);
+    --page-wash-3: oklch(20% 0.014 240deg / 0.92);
+
+    --banner-fallback-start: color-mix(in oklch, var(--brand-blue) 36%, var(--bg-surface-1));
+    --banner-fallback-end: color-mix(in oklch, var(--brand-pink) 30%, var(--bg-surface-2));
+
+    --signal-dynamic-start: oklch(76% 0.16 76deg);
+    --signal-dynamic-end: oklch(72% 0.16 32deg);
+    --signal-hot-start: oklch(70% 0.18 32deg);
+    --signal-hot-end: oklch(64% 0.16 350deg);
+    --signal-rank-start: oklch(68% 0.16 238deg);
+    --signal-rank-end: oklch(64% 0.16 270deg);
+
+    --status-success: oklch(72% 0.12 165deg);
+    --status-success-soft: color-mix(in oklch, var(--status-success) 24%, var(--bg-surface-1));
+    --status-success-border: color-mix(in oklch, var(--status-success) 40%, var(--border-color));
+    --status-success-ink: oklch(84% 0.08 165deg);
+
+    --status-warning: oklch(78% 0.13 76deg);
+    --status-warning-soft: color-mix(in oklch, var(--status-warning) 22%, var(--bg-surface-1));
+    --status-warning-border: color-mix(in oklch, var(--status-warning) 36%, var(--border-color));
+    --status-warning-ink: oklch(87% 0.07 78deg);
+
+    --status-danger: oklch(72% 0.15 22deg);
+    --status-danger-soft: color-mix(in oklch, var(--status-danger) 20%, var(--bg-surface-1));
+    --status-danger-border: color-mix(in oklch, var(--status-danger) 34%, var(--border-color));
+    --status-danger-ink: oklch(84% 0.08 24deg);
+
+    --status-info: oklch(75% 0.1 232deg);
+    --status-info-soft: color-mix(in oklch, var(--status-info) 22%, var(--bg-surface-1));
+    --status-info-border: color-mix(in oklch, var(--status-info) 34%, var(--border-color));
+    --status-info-ink: oklch(84% 0.06 232deg);
+
+    --shadow-surface-value: 0 1px 2px oklch(0% 0 0deg / 0.2);
+    --shadow-raised-value:
+      0 1px 2px oklch(0% 0 0deg / 0.22), 0 16px 38px -22px oklch(0% 0 0deg / 0.42);
+    --shadow-overlay-value:
+      0 20px 56px -28px oklch(0% 0 0deg / 0.52), 0 8px 20px -14px oklch(0% 0 0deg / 0.26);
+    --shadow-cinematic-value: 0 30px 96px -34px oklch(0% 0 0deg / 0.58);
+
+    --background: 0.18 0.011 242;
+    --foreground: 0.95 0.008 225;
+    --card: 0.215 0.013 242;
+    --card-foreground: 0.95 0.008 225;
+    --popover: 0.19 0.012 240;
+    --popover-foreground: 0.95 0.008 225;
+    --primary: 0.74 0.11 236;
+    --primary-foreground: 0.972 0.006 225;
+    --secondary: 0.255 0.016 240;
+    --secondary-foreground: 0.95 0.008 225;
+    --muted: 0.24 0.014 240;
+    --muted-foreground: 0.73 0.014 230;
+    --accent: 0.235 0.015 238;
+    --accent-foreground: 0.95 0.008 225;
+    --destructive: 0.72 0.15 22;
+    --destructive-foreground: 0.972 0.006 225;
+    --border: 0.31 0.015 240;
+    --input: 0.31 0.015 240;
+    --ring: 0.74 0.11 236;
+  }
+
+  * {
+    border-color: var(--color-border);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  button,
+  a[href],
+  [role='button'],
+  [role='link'],
+  input[type='button'],
+  input[type='submit'],
+  input[type='reset'] {
+    cursor: pointer;
+  }
+
+  *:focus-visible {
+    outline: 2px solid oklch(var(--ring));
+    outline-offset: 2px;
+  }
+
+  ::selection {
+    background: color-mix(in oklch, var(--brand-blue) 26%, transparent);
+    color: var(--color-foreground);
+  }
+
+  html {
+    /* 始终预留滚动条槽位，避免 Dialog 开关时 body 滚动锁导致整页左右跳动 */
+    scrollbar-gutter: stable;
+    overflow-y: scroll;
+  }
+
+  body {
+    background-color: var(--color-background);
+    background-image:
+      radial-gradient(circle at top left, var(--page-wash-1), transparent 34%),
+      radial-gradient(circle at top right, var(--page-wash-2), transparent 26%),
+      linear-gradient(180deg, var(--page-wash-3), transparent 26%);
+    color: var(--color-foreground);
+    font-family:
+      Inter,
+      system-ui,
+      -apple-system,
+      BlinkMacSystemFont,
+      'Segoe UI',
+      Roboto,
+      Helvetica,
+      Arial,
+      sans-serif;
+    overscroll-behavior-y: none;
+    transition:
+      background-color var(--duration-slow) var(--ease-out-quart),
+      color var(--duration-slow) var(--ease-out-quart);
+  }
+
+  /*
+   * reka-ui useBodyScrollLock 会在锁定时给 body 加 padding-right = 滚动条宽度。
+   * 与 html 的 scrollbar-gutter: stable / overflow-y: scroll 叠加时会造成开合瞬间位移。
+   * 关闭该补偿，仅保留 overflow:hidden 的滚动锁定。
+   */
+  body {
+    padding-right: 0 !important;
+    margin-right: 0 !important;
+  }
+}
+
+@layer components {
+  .skeleton-shimmer {
+    position: relative;
+    overflow: hidden;
+    background-color: var(--color-muted);
+
+    &::after {
+      content: '';
+      position: absolute;
+      inset: 0;
+      transform: translateX(-100%);
+      background-image: linear-gradient(
+        90deg,
+        transparent,
+        color-mix(in srgb, var(--color-foreground) 8%, transparent),
+        transparent
+      );
+      animation: shimmer 1.5s infinite ease-out;
+    }
+  }
+
+  @keyframes shimmer {
+    100% {
+      transform: translateX(100%);
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .skeleton-shimmer::after {
+      animation: none;
+      transform: none;
+      opacity: 0.35;
+    }
+  }
+
+  .hover-lift {
+    transition:
+      transform var(--duration-normal) var(--ease-out-expo),
+      box-shadow var(--duration-normal) var(--ease-out-expo),
+      opacity var(--duration-fast) linear;
+
+    &:hover {
+      transform: translateY(-4px) scale(1.01);
+      box-shadow: var(--shadow-overlay);
+    }
+  }
+
+  .glass-panel {
+    background-color: var(--glass-bg);
+    border: 1px solid var(--glass-border);
+    backdrop-filter: blur(var(--glass-blur));
+  }
+
+  .banner-fallback {
+    background-image: linear-gradient(
+      135deg,
+      var(--banner-fallback-start),
+      var(--banner-fallback-end)
+    );
+  }
+
+  .media-chip {
+    background: var(--media-overlay);
+    border: 1px solid color-mix(in oklch, var(--media-overlay-text) 12%, transparent);
+    color: var(--media-overlay-text);
+    backdrop-filter: blur(14px);
+    box-shadow: var(--shadow-surface);
+  }
+
+  .signal-badge-dynamic,
+  .signal-badge-hot,
+  .signal-badge-rank {
+    color: var(--signal-foreground);
+    box-shadow: var(--shadow-raised);
+  }
+
+  .signal-badge-dynamic {
+    background-image: linear-gradient(
+      135deg,
+      var(--signal-dynamic-start),
+      var(--signal-dynamic-end)
+    );
+  }
+
+  .signal-badge-hot {
+    background-image: linear-gradient(135deg, var(--signal-hot-start), var(--signal-hot-end));
+  }
+
+  .signal-badge-rank {
+    background-image: linear-gradient(135deg, var(--signal-rank-start), var(--signal-rank-end));
+  }
+
+  .status-verified-surface {
+    border-color: var(--status-success-border);
+    background: var(--status-success-soft);
+    color: var(--status-success-ink);
+
+    &:hover {
+      background: color-mix(in oklch, var(--status-success-soft) 82%, var(--status-success) 18%);
+    }
+  }
+
+  .status-dot-success {
+    background: var(--status-success);
+  }
+
+  .rank-badge-1,
+  .rank-badge-2,
+  .rank-badge-3,
+  .rank-badge-4 {
+    color: var(--signal-foreground);
+  }
+
+  .rank-badge-1 {
+    background: linear-gradient(180deg, var(--signal-hot-start), var(--signal-hot-end));
+  }
+
+  .rank-badge-2 {
+    background: linear-gradient(
+      180deg,
+      color-mix(in oklch, var(--signal-dynamic-start) 82%, white 18%),
+      var(--signal-dynamic-end)
+    );
+  }
+
+  .rank-badge-3 {
+    background: linear-gradient(
+      180deg,
+      color-mix(in oklch, var(--brand-pink) 74%, white 26%),
+      color-mix(in oklch, var(--brand-pink) 52%, var(--brand-blue) 48%)
+    );
+  }
+
+  .rank-badge-4 {
+    background: linear-gradient(
+      180deg,
+      color-mix(in oklch, var(--bg-surface-2) 86%, var(--brand-blue) 14%),
+      color-mix(in oklch, var(--border-color) 78%, var(--brand-blue) 22%)
+    );
+  }
+
+  .active-scale {
+    transition: transform 100ms var(--ease-out-quint);
+
+    &:active {
+      transform: scale(0.97);
+    }
+  }
+
+  .fade-hover {
+    transition: opacity var(--duration-fast) linear;
+
+    &:hover {
+      opacity: 0.8;
+    }
+  }
+
+  /* 状态表面：与 .dark 变量联动，替代 emerald/amber/red 等调色板 + dark: */
+  .status-surface-success {
+    border-color: var(--status-success-border);
+    background: var(--status-success-soft);
+    color: var(--status-success-ink);
+  }
+
+  .status-surface-warning {
+    border-color: var(--status-warning-border);
+    background: var(--status-warning-soft);
+    color: var(--status-warning-ink);
+  }
+
+  .status-surface-info {
+    border-color: var(--status-info-border);
+    background: var(--status-info-soft);
+    color: var(--status-info-ink);
+  }
+
+  .status-surface-danger {
+    border-color: var(--status-danger-border);
+    background: var(--status-danger-soft);
+    color: var(--status-danger-ink);
+  }
+
+  /* 半透明叠色：随 foreground 变量自适应亮/暗，替代 black/5 dark:white/10 */
+  .surface-tint {
+    background-color: color-mix(in oklch, var(--color-foreground) 6%, transparent);
+  }
+
+  .surface-tint-strong {
+    background-color: color-mix(in oklch, var(--color-foreground) 12%, transparent);
+  }
+
+  .border-tint {
+    border-color: color-mix(in oklch, var(--color-foreground) 12%, transparent);
+  }
+}
+
+/* Global accessibility guard: respect the user's reduced-motion preference.
+   Un-layered so it overrides component/utility transitions and animations. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}

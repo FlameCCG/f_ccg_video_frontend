@@ -93,6 +93,11 @@ export const getSlideCaptcha = (): Promise<SlideCaptcha> => {
  * - 是否需要提交 captchaID/captchaCode，应根据 GET /common/site/config 返回的 data.site.register.textGraphicCaptcha 判断
  * - 是否需要提交 slideCaptchaToken/slideCaptchaX/slideCaptchaY，应根据 GET /common/site/config 返回的 data.site.register.slideCaptcha 判断
  */
-export const sendEmailCaptcha = (params: SendEmailCaptchaParams): Promise<EmailCaptchaResult> => {
-  return request.post('/common/captcha/email', params)
+export const sendEmailCaptcha = (
+  params: SendEmailCaptchaParams,
+  options?: { silent?: boolean }
+): Promise<EmailCaptchaResult> => {
+  return request.post('/common/captcha/email', params, {
+    silent: options?.silent,
+  })
 }

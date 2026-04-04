@@ -1,13 +1,15 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, watch } from 'vue'
+import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
+import { useSiteStore } from '@/stores/site'
 import {
   getCurrentUserInfo,
   updateUserInfo,
   getUserConfig,
   updateUserConfig,
   changePassword,
+  bindEmail,
   getLoginIpRecords,
   getExpRecords,
   getCoinRecords,
@@ -19,8 +21,11 @@ import {
   type UserExpRecordItem,
   type UserCoinRecordItem,
 } from '@/api/user'
+import { sendEmailCaptcha } from '@/api/captcha'
 import { uploadImage, type ImageUploadResult } from '@/api/upload'
 import AppAvatar from '@/components/common/AppAvatar.vue'
+import GraphicsCaptcha from '@/components/captcha/GraphicsCaptcha.vue'
+import SlideCaptchaDialog from '@/components/captcha/SlideCaptchaDialog.vue'
 import { toast } from 'vue-sonner'
 import {
   Home,
@@ -37,10 +42,39 @@ import {
   Coins,
   ChevronLeft,
   ChevronRight,
+  Mail,
+  Send,
+  Loader2,
+  Sparkles,
 } from 'lucide-vue-next'
+import { levelColor } from '@/utils/format'
+
+interface SlideCaptchaExposed {
+  success: (result?: { token: string; x: number; y: number }) => void
+  fail: () => void
+  refresh: () => void
+  reset: () => void
+}
+
+/** 仅滑块/图形验证码校验失败（不含发送频率等业务错误） */
+const isCaptchaBusinessError = (message: string): boolean => {
+  const lower = message.toLowerCase()
+  return (
+    lower.includes('验证码错误') ||
+    lower.includes('验证码验证失败') ||
+    lower.includes('验证码已过期') ||
+    lower.includes('请填写图形验证码') ||
+    lower.includes('图形验证码') ||
+    lower.includes('captcha verification') ||
+    lower.includes('captcha expired') ||
+    lower.includes('slide captcha') ||
+    lower.includes('invalid slide captcha')
+  )
+}
 
 const router = useRouter()
 const authStore = useAuthStore()
+const siteStore = useSiteStore()
 
 type SideTab = 'profile' | 'privacy' | 'security' | 'records'
 type RecordTab = 'login' | 'exp' | 'coin'
@@ -56,6 +90,7 @@ const formUsername = ref('')
 const formDescription = ref('')
 const formGender = ref(0)
 const formBirthday = ref('')
+const profileLikeTagInput = ref('')
 const avatarUploading = ref(false)
 
 const oldPassword = ref('')
@@ -63,7 +98,23 @@ const newPassword = ref('')
 const confirmPassword = ref('')
 const showOldPwd = ref(false)
 const showNewPwd = ref(false)
+const showConfirmPwd = ref(false)
 const changingPwd = ref(false)
+// 绑定 / 换绑邮箱
+const bindEmailAddress = ref('')
+const bindEmailCode = ref('')
+const bindEmailID = ref('')
+const bindingEmail = ref(false)
+const isSendingBindEmail = ref(false)
+const bindEmailCountdown = ref(0)
+let bindEmailCountdownTimer: ReturnType<typeof setInterval> | null = null
+const graphicsCaptchaRef = ref<InstanceType<typeof GraphicsCaptcha> | null>(null)
+const graphicsCaptchaValue = ref<{ captchaID: string; captchaCode: string }>({
+  captchaID: '',
+  captchaCode: '',
+})
+const slideCaptchaOpen = ref(false)
+const slideCaptchaDialogRef = ref<SlideCaptchaExposed | null>(null)
 
 const RECORD_PAGE_SIZE = 8
 
@@ -82,31 +133,85 @@ const coinRecordTotal = ref(0)
 const coinRecordPage = ref(1)
 const coinRecordLoading = ref(false)
 
-const levelColor = (level: number): string => {
-  if (level >= 6) return '#ff6699'
-  if (level >= 4) return '#ffb636'
-  if (level >= 2) return '#7bcfa6'
-  return '#c0c0c0'
-}
-
+// 经验进度条百分比算法（修复了总是满格的 Bug，且与后端 thresholds 对齐）
 const expPct = computed(() => {
   if (!userInfo.value) return 0
-  const thresholds = [0, 200, 1500, 4500, 10800, 28800, 100000]
+  const thresholds = [0, 0, 1000, 3000, 6000, 10000, 20000]
   const lv = userInfo.value.level
   const exp = userInfo.value.exp
   if (lv >= 6) return 100
   const cur = thresholds[lv] ?? 0
   const next = thresholds[lv + 1] ?? cur
   if (next === cur) return 100
-  return Math.min(100, Math.round(((exp - cur) / (next - cur)) * 100))
+  const pct = Math.round(((exp - cur) / (next - cur)) * 100)
+  return Math.max(0, Math.min(100, pct))
 })
 
 const expNext = computed(() => {
   if (!userInfo.value) return 0
-  const thresholds = [0, 200, 1500, 4500, 10800, 28800, 100000]
+  const thresholds = [0, 0, 1000, 3000, 6000, 10000, 20000]
   const lv = userInfo.value.level
   return thresholds[lv + 1] ?? thresholds[6]!
 })
+
+/**
+ * 是否要求密码由后端 info.hasPassword 决定。
+ * - 已设置密码的账户必须提供当前密码。
+ * - 从未设置密码的第三方账户无需提供。
+ * - 字段缺失时保守要求密码。
+ */
+const requiresOldPassword = computed(() => {
+  if (!userInfo.value) return true
+  if (userInfo.value.hasPassword === undefined) return true
+  return userInfo.value.hasPassword
+})
+
+const canSendBindEmail = computed(() => {
+  if (bindEmailCountdown.value > 0 || isSendingBindEmail.value) return false
+  const email = bindEmailAddress.value.trim()
+  if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return false
+  // 换绑时不允许与当前邮箱相同
+  if (userInfo.value?.email && email.toLowerCase() === userInfo.value.email.toLowerCase()) {
+    return false
+  }
+  if (
+    siteStore.isRegisterGraphicsCaptchaEnabled &&
+    !graphicsCaptchaValue.value.captchaCode.trim()
+  ) {
+    return false
+  }
+  return true
+})
+
+const refreshGraphicsCaptcha = () => {
+  if (siteStore.isRegisterGraphicsCaptchaEnabled && graphicsCaptchaRef.value) {
+    void graphicsCaptchaRef.value.loadCaptcha()
+  }
+}
+
+const buildBindEmailCaptchaPayload = () => {
+  const payload: {
+    type: 3
+    email: string
+    captchaID?: string
+    captchaCode?: string
+    slideCaptchaToken?: string
+    slideCaptchaX?: number
+    slideCaptchaY?: number
+  } = {
+    type: 3,
+    email: bindEmailAddress.value.trim(),
+  }
+
+  if (siteStore.isRegisterGraphicsCaptchaEnabled) {
+    payload.captchaID = graphicsCaptchaValue.value.captchaID
+    payload.captchaCode = graphicsCaptchaValue.value.captchaCode
+  }
+
+  return payload
+}
+
+const bindEmailActionLabel = computed(() => (userInfo.value?.email ? '换绑邮箱' : '绑定邮箱'))
 
 const genderOptions = [
   { value: 0, label: '保密' },
@@ -127,12 +232,25 @@ const recordTabs: { key: RecordTab; label: string; icon: typeof Clock3 }[] = [
   { key: 'coin', label: '硬币记录', icon: Coins },
 ]
 
+const normalizeLikeTags = (tags?: string[] | null) => {
+  if (!Array.isArray(tags)) return []
+  return tags
+    .map((tag) => tag.trim())
+    .filter((tag, index, arr) => tag.length > 0 && arr.indexOf(tag) === index)
+}
+
 const fetchData = async () => {
   loading.value = true
   try {
     const [info, config] = await Promise.all([getCurrentUserInfo(), getUserConfig()])
-    userInfo.value = info
-    userConfig.value = config
+    userInfo.value = {
+      ...info,
+      likeTags: normalizeLikeTags(info.likeTags),
+    }
+    userConfig.value = {
+      ...config,
+      likeTags: normalizeLikeTags(config.likeTags),
+    }
     formUsername.value = info.username
     formDescription.value = info.description || ''
     formGender.value = info.gender
@@ -158,9 +276,22 @@ const formatDateTime = (value: string) => {
 }
 
 const formatLoginType = (value: string) => {
+  if (value === 'github') return 'GitHub 登录'
   if (value === 'pwd') return '密码登录'
   if (value === 'qq') return 'QQ 登录'
+  if (value === 'x') return 'X 登录'
+  if (value === 'google') return 'Google 登录'
   return value || '未知方式'
+}
+
+const formatRegisterSource = (value: string | undefined) => {
+  if (!value || value === 'email' || value === 'pwd') return '邮箱注册'
+  if (value === 'qq') return 'QQ 登录'
+  if (value === 'google') return 'Google 登录'
+  if (value === 'github') return 'GitHub 登录'
+  if (value === 'linuxdo') return 'LinuxDo 登录'
+  if (value === 'x') return 'X 登录'
+  return value
 }
 
 const loadLoginRecords = async (page = 1) => {
@@ -338,9 +469,51 @@ const handleSavePrivacy = async () => {
   }
 }
 
+const handleSaveLikeTags = async (silent = false) => {
+  if (!userConfig.value || saving.value) return
+  saving.value = true
+  const nextTags = normalizeLikeTags(userConfig.value.likeTags)
+  try {
+    await updateUserConfig({ likeTags: nextTags })
+    userConfig.value.likeTags = nextTags
+    if (userInfo.value) {
+      userInfo.value.likeTags = nextTags
+    }
+    authStore.updateUser({ likeTags: nextTags })
+    if (!silent) toast.success('个人标签已保存')
+  } catch {
+    toast.error('保存失败')
+  } finally {
+    saving.value = false
+  }
+}
+
+const addProfileLikeTag = async () => {
+  if (!userConfig.value) return
+  const nextTag = profileLikeTagInput.value.trim()
+  if (!nextTag) return
+  if (userConfig.value.likeTags.includes(nextTag)) {
+    profileLikeTagInput.value = ''
+    return
+  }
+  userConfig.value.likeTags = [...userConfig.value.likeTags, nextTag]
+  profileLikeTagInput.value = ''
+  await handleSaveLikeTags(true)
+}
+
+const removeProfileLikeTag = async (tag: string) => {
+  if (!userConfig.value) return
+  userConfig.value.likeTags = userConfig.value.likeTags.filter((item) => item !== tag)
+  await handleSaveLikeTags(true)
+}
+
 const handleChangePwd = async () => {
-  if (!newPassword.value || !oldPassword.value) {
+  if (!newPassword.value || !confirmPassword.value) {
     toast.warning('请填写完整')
+    return
+  }
+  if (requiresOldPassword.value && !oldPassword.value.trim()) {
+    toast.warning('请输入当前密码')
     return
   }
   if (newPassword.value !== confirmPassword.value) {
@@ -353,18 +526,179 @@ const handleChangePwd = async () => {
   }
   changingPwd.value = true
   try {
-    await changePassword({ oldPassword: oldPassword.value, newPassword: newPassword.value })
+    const params: { oldPassword?: string; newPassword: string } = {
+      newPassword: newPassword.value,
+    }
+    if (requiresOldPassword.value) {
+      params.oldPassword = oldPassword.value
+    } else if (oldPassword.value.trim()) {
+      // 第三方用户若主动填写了旧密码，一并提交
+      params.oldPassword = oldPassword.value
+    }
+
+    await changePassword(
+      {
+        oldPassword: params.oldPassword ?? '',
+        newPassword: params.newPassword,
+      },
+      { silent: true }
+    )
     toast.success('密码修改成功，请重新登录')
-    authStore.logout()
+    oldPassword.value = ''
+    newPassword.value = ''
+    confirmPassword.value = ''
+    // 使用 clearAuth 避免 logout 再弹一次「已退出登录」
+    authStore.clearAuth()
     void router.push('/')
-  } catch {
-    toast.error('密码修改失败')
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : '密码修改失败'
+    toast.error(message || '密码修改失败')
   } finally {
     changingPwd.value = false
   }
 }
 
-onMounted(fetchData)
+const startBindEmailCountdown = () => {
+  bindEmailCountdown.value = 60
+  if (bindEmailCountdownTimer) clearInterval(bindEmailCountdownTimer)
+  bindEmailCountdownTimer = setInterval(() => {
+    bindEmailCountdown.value--
+    if (bindEmailCountdown.value <= 0) {
+      if (bindEmailCountdownTimer) clearInterval(bindEmailCountdownTimer)
+      bindEmailCountdownTimer = null
+    }
+  }, 1000)
+}
+
+const handleSendBindEmailCode = () => {
+  if (!canSendBindEmail.value) {
+    if (
+      userInfo.value?.email &&
+      bindEmailAddress.value.trim().toLowerCase() === userInfo.value.email.toLowerCase()
+    ) {
+      toast.warning('新邮箱不能与当前邮箱相同')
+    } else if (!bindEmailAddress.value.trim()) {
+      toast.warning('请输入邮箱')
+    } else if (
+      siteStore.isRegisterGraphicsCaptchaEnabled &&
+      !graphicsCaptchaValue.value.captchaCode.trim()
+    ) {
+      toast.warning('请填写图形验证码')
+    }
+    return
+  }
+
+  if (siteStore.isRegisterSlideCaptchaEnabled) {
+    slideCaptchaOpen.value = true
+    return
+  }
+
+  void sendBindEmailCodeWithoutSlide()
+}
+
+const sendBindEmailCodeWithoutSlide = async () => {
+  isSendingBindEmail.value = true
+  try {
+    const result = await sendEmailCaptcha(buildBindEmailCaptchaPayload())
+    bindEmailID.value = result.emailID
+    toast.success('验证码已发送到您的邮箱')
+    startBindEmailCountdown()
+    refreshGraphicsCaptcha()
+  } catch {
+    refreshGraphicsCaptcha()
+    // toast 由 request 拦截器处理
+  } finally {
+    isSendingBindEmail.value = false
+  }
+}
+
+const handleSlideCaptchaConfirm = async (value: { token: string; x: number; y: number }) => {
+  isSendingBindEmail.value = true
+  try {
+    const result = await sendEmailCaptcha(
+      {
+        ...buildBindEmailCaptchaPayload(),
+        slideCaptchaToken: value.token,
+        slideCaptchaX: value.x,
+        slideCaptchaY: value.y,
+      },
+      { silent: true }
+    )
+    bindEmailID.value = result.emailID
+    slideCaptchaDialogRef.value?.success(value)
+    toast.success('验证码已发送到您的邮箱')
+    startBindEmailCountdown()
+    refreshGraphicsCaptcha()
+  } catch (error: unknown) {
+    slideCaptchaDialogRef.value?.fail()
+    refreshGraphicsCaptcha()
+    const message = error instanceof Error ? error.message : ''
+    if (message && (message.includes('图形验证码') || !isCaptchaBusinessError(message))) {
+      toast.error(message)
+    }
+  } finally {
+    isSendingBindEmail.value = false
+  }
+}
+
+const handleBindEmail = async () => {
+  const email = bindEmailAddress.value.trim()
+  const code = bindEmailCode.value.trim()
+  if (!email) {
+    toast.warning('请输入邮箱')
+    return
+  }
+  if (!bindEmailID.value || !code) {
+    toast.warning('请先获取并填写邮箱验证码')
+    return
+  }
+  if (userInfo.value?.email && email.toLowerCase() === userInfo.value.email.toLowerCase()) {
+    toast.warning('新邮箱不能与当前邮箱相同')
+    return
+  }
+
+  bindingEmail.value = true
+  try {
+    await bindEmail(
+      {
+        email,
+        emailID: bindEmailID.value,
+        emailCode: code,
+      },
+      { silent: true }
+    )
+    toast.success(userInfo.value?.email ? '邮箱换绑成功' : '邮箱绑定成功')
+    if (userInfo.value) {
+      userInfo.value.email = email
+    }
+    authStore.updateUser({ email })
+    bindEmailAddress.value = ''
+    bindEmailCode.value = ''
+    bindEmailID.value = ''
+    bindEmailCountdown.value = 0
+    if (bindEmailCountdownTimer) {
+      clearInterval(bindEmailCountdownTimer)
+      bindEmailCountdownTimer = null
+    }
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : '绑定失败'
+    toast.error(message || '绑定失败')
+  } finally {
+    bindingEmail.value = false
+  }
+}
+
+onMounted(() => {
+  void siteStore.fetchConfig()
+  void fetchData()
+})
+
+onUnmounted(() => {
+  if (bindEmailCountdownTimer) {
+    clearInterval(bindEmailCountdownTimer)
+    bindEmailCountdownTimer = null
+  }
+})
 
 watch(activeTab, (tab) => {
   if (tab === 'records') {
@@ -381,13 +715,30 @@ watch(activeRecordTab, (tab) => {
 
 <template>
   <div class="center-page">
-    <!-- Bilibili header banner -->
-    <div class="center-banner">
-      <img src="/logo.png" alt="bilibili" class="center-logo" />
+    <!-- Widescreen Bilibili blue banner with cloud decor -->
+    <div class="bili-banner">
+      <div class="bili-banner-sky">
+        <!-- SVG Clouds -->
+        <svg class="cloud-svg cloud-svg-back" viewBox="0 0 1000 60" preserveAspectRatio="none">
+          <path
+            d="M0,45 C150,25 200,60 350,35 C500,10 600,55 750,25 C900,0 950,45 1000,15 L1000,60 L0,60 Z"
+          />
+        </svg>
+        <svg class="cloud-svg cloud-svg-front" viewBox="0 0 1000 40" preserveAspectRatio="none">
+          <path
+            d="M0,30 C100,10 250,40 400,20 C550,5 700,30 850,15 C950,5 980,25 1000,10 L1000,40 L0,40 Z"
+          />
+        </svg>
+      </div>
+
+      <div class="bili-banner-content">
+        <img src="/logo.png" alt="bilibili" class="bili-logo" />
+      </div>
     </div>
 
+    <!-- Main Container (width: 980px) -->
     <div class="center-body">
-      <!-- Left sidebar -->
+      <!-- Left Sidebar Menu (width: 150px) -->
       <aside class="center-side">
         <div class="side-header">个人中心</div>
         <nav class="side-nav">
@@ -398,26 +749,26 @@ watch(activeRecordTab, (tab) => {
             :class="{ active: activeTab === item.key }"
             @click="activeTab = item.key"
           >
-            <component :is="item.icon" :size="16" />
-            {{ item.label }}
+            <component :is="item.icon" :size="14" />
+            <span>{{ item.label }}</span>
           </button>
           <button class="side-item" @click="router.push(`/user/${authStore.userId}`)">
-            <ExternalLink :size="16" />
-            个人空间
+            <ExternalLink :size="14" />
+            <span>个人空间</span>
           </button>
         </nav>
       </aside>
 
-      <!-- Main content -->
+      <!-- Right Content Main Box (width: 820px) -->
       <main class="center-main">
         <div v-if="loading" class="center-loading">
           <div class="spinner"></div>
         </div>
 
-        <!-- Profile -->
+        <!-- Profile Settings -->
         <section v-else-if="activeTab === 'profile' && userInfo" class="sec-anim">
-          <!-- Overview card -->
-          <div class="ov-card">
+          <!-- Bilibili style profile overview card -->
+          <div class="bili-overview-card">
             <div class="ov-avatar-wrap">
               <AppAvatar
                 :src="userInfo.avatar"
@@ -427,8 +778,8 @@ watch(activeRecordTab, (tab) => {
                 text-class="text-xl font-bold"
               />
               <label class="ov-avatar-mask">
-                <Camera :size="18" />
-                <span>{{ avatarUploading ? '上传中' : '更换' }}</span>
+                <Camera :size="16" />
+                <span>{{ avatarUploading ? '上传中' : '更换头像' }}</span>
                 <input
                   type="file"
                   accept="image/*"
@@ -438,152 +789,245 @@ watch(activeRecordTab, (tab) => {
                 />
               </label>
             </div>
+
             <div class="ov-info">
               <div class="ov-name-row">
-                <h3>{{ userInfo.username }}</h3>
-                <span class="lv" :style="{ background: levelColor(userInfo.level) }">
+                <span class="username">{{ userInfo.username }}</span>
+                <span class="member-tag">正式会员</span>
+              </div>
+
+              <!-- Level orange progress bar -->
+              <div class="ov-level-row">
+                <span class="lv-badge" :style="{ backgroundColor: levelColor(userInfo.level) }">
                   Lv{{ userInfo.level }}
                 </span>
-              </div>
-              <div class="ov-exp">
-                <div class="exp-track">
-                  <div class="exp-fill" :style="{ width: `${expPct}%` }"></div>
+                <div class="level-progress-track">
+                  <div class="level-progress-fill" :style="{ width: `${expPct}%` }"></div>
                 </div>
-                <span class="exp-txt">{{ userInfo.exp }} / {{ expNext }}</span>
+                <span class="level-exp-text">{{
+                  userInfo.level >= 6 ? '已满级' : `${userInfo.exp} / ${expNext}`
+                }}</span>
               </div>
+
               <div class="ov-meta">
-                <span>硬币: {{ userInfo.coinCount }}</span>
-                <span>UID: {{ userInfo.id }}</span>
+                <span class="meta-item">
+                  <Coins :size="14" class="inline-block text-[#ffa726] mr-1" />
+                  硬币:
+                  <strong class="text-[var(--color-foreground)] font-semibold">{{
+                    userInfo.coinCount
+                  }}</strong>
+                </span>
+                <span class="meta-split"></span>
+                <span class="meta-item font-mono">UID: {{ userInfo.id }}</span>
               </div>
             </div>
-            <button class="ov-space-btn" @click="router.push(`/user/${authStore.userId}`)">
-              个人空间 &gt;
-            </button>
+
+            <!-- Header buttons -->
+            <div class="ov-actions">
+              <button class="ov-btn" @click="handleSaveProfile">修改资料</button>
+              <button class="ov-btn" @click="router.push(`/user/${authStore.userId}`)">
+                个人空间 >
+              </button>
+            </div>
           </div>
 
-          <!-- Form -->
-          <div class="form-block">
-            <h3 class="form-title">基本信息</h3>
-            <div class="fg">
-              <label class="fl">用户名</label>
-              <input v-model="formUsername" type="text" class="fi" placeholder="用户名" />
+          <!-- Profile form flat layout -->
+          <div class="bili-form-section">
+            <h4 class="form-section-title">基本信息</h4>
+
+            <div class="form-group">
+              <label class="form-label">用户名</label>
+              <input
+                v-model="formUsername"
+                type="text"
+                class="form-input"
+                placeholder="请输入您的用户名"
+              />
             </div>
-            <div class="fg">
-              <label class="fl">个性签名</label>
+
+            <div class="form-group">
+              <label class="form-label">我的签名</label>
               <textarea
                 v-model="formDescription"
-                class="fi fi-area"
-                placeholder="编辑个性签名..."
+                class="form-input form-textarea"
+                placeholder="编辑签名，介绍下你自己吧..."
                 rows="3"
               ></textarea>
             </div>
-            <div class="fg">
-              <label class="fl">性别</label>
-              <div class="radio-row">
-                <label v-for="g in genderOptions" :key="g.value" class="rl">
-                  <input v-model="formGender" type="radio" :value="g.value" class="ri" />
-                  <span class="rc"></span>
-                  {{ g.label }}
+
+            <div class="form-group">
+              <label class="form-label">性别</label>
+              <div class="gender-radio-group">
+                <label v-for="g in genderOptions" :key="g.value" class="gender-radio-label">
+                  <input
+                    v-model="formGender"
+                    type="radio"
+                    :value="g.value"
+                    class="gender-radio-input"
+                  />
+                  <span class="gender-radio-custom"></span>
+                  <span class="gender-radio-text">{{ g.label }}</span>
                 </label>
               </div>
             </div>
-            <div class="fg">
-              <label class="fl">生日</label>
-              <input v-model="formBirthday" type="date" class="fi" />
+
+            <div class="form-group">
+              <label class="form-label">生日</label>
+              <input v-model="formBirthday" type="date" class="form-input" />
             </div>
-            <button class="btn-pri" :disabled="saving" @click="handleSaveProfile">
-              <Save :size="14" /> {{ saving ? '保存中...' : '保存修改' }}
+
+            <button class="bili-btn-primary" :disabled="saving" @click="handleSaveProfile">
+              <Save :size="14" />
+              <span>{{ saving ? '保存中...' : '保存' }}</span>
             </button>
+          </div>
+
+          <!-- Personalized tags board -->
+          <div v-if="userConfig" class="bili-form-section" style="margin-top: 30px">
+            <h4 class="form-section-title">个人标签设置</h4>
+
+            <div class="bili-tags-board">
+              <template v-if="userConfig.likeTags.length">
+                <span v-for="tag in userConfig.likeTags" :key="tag" class="bili-tag-chip">
+                  <Sparkles :size="12" class="text-[#00aeec] inline mr-1" />
+                  {{ tag }}
+                  <button
+                    type="button"
+                    class="tag-remove-btn"
+                    aria-label="删除标签"
+                    @click="removeProfileLikeTag(tag)"
+                  >
+                    ×
+                  </button>
+                </span>
+              </template>
+              <div v-else class="text-xs text-[#99a2aa] py-1 italic">
+                暂无个性化标签，您可以在右侧输入新增
+              </div>
+
+              <!-- Input row -->
+              <div class="tag-input-row">
+                <div class="relative flex items-center h-[30px]">
+                  <input
+                    v-model="profileLikeTagInput"
+                    type="text"
+                    maxlength="24"
+                    class="tag-input-field"
+                    placeholder="新标签"
+                    @keydown.enter.prevent="addProfileLikeTag"
+                  />
+                  <button
+                    v-if="profileLikeTagInput"
+                    class="tag-clear-btn"
+                    @click="profileLikeTagInput = ''"
+                  >
+                    ×
+                  </button>
+                </div>
+                <button class="tag-add-btn" @click="addProfileLikeTag">新增</button>
+              </div>
+            </div>
           </div>
         </section>
 
-        <!-- Records -->
+        <!-- Records Tab View -->
         <section v-else-if="activeTab === 'records'" class="sec-anim">
-          <h3 class="form-title">记录中心</h3>
-          <p class="form-sub">查看最近登录轨迹、经验变化与硬币流水</p>
+          <h4 class="form-section-title" style="border-bottom: none; margin-bottom: 10px">
+            记录中心
+          </h4>
 
-          <div class="record-tabs">
+          <div class="bili-records-tabs">
             <button
               v-for="item in recordTabs"
               :key="item.key"
-              class="record-tab"
+              class="records-tab-btn"
               :class="{ active: activeRecordTab === item.key }"
               @click="switchRecordTab(item.key)"
             >
-              <component :is="item.icon" :size="14" />
-              {{ item.label }}
+              <component :is="item.icon" :size="13" />
+              <span>{{ item.label }}</span>
             </button>
           </div>
 
-          <div class="record-panel">
-            <div v-if="currentRecordLoading" class="record-loading">
-              <div class="spinner small"></div>
+          <div class="records-container-box">
+            <div v-if="currentRecordLoading" class="records-status-placeholder">
+              <Loader2 :size="20" class="animate-spin text-[#00aeec]" />
             </div>
 
+            <!-- Login records list -->
             <template v-else-if="activeRecordTab === 'login'">
-              <div v-if="loginRecords.length" class="record-list">
-                <div v-for="item in loginRecords" :key="item.id" class="record-item">
-                  <div class="record-main">
-                    <div class="record-title-row">
-                      <strong>{{ item.ip }}</strong>
-                      <span class="record-tag">{{ formatLoginType(item.loginType) }}</span>
+              <div v-if="loginRecords.length" class="records-list-wrapper">
+                <div v-for="item in loginRecords" :key="item.id" class="record-row-item">
+                  <div class="record-row-left">
+                    <div class="record-row-top-info">
+                      <span class="record-ip-address">{{ item.ip }}</span>
+                      <span class="record-badge-tag">{{ formatLoginType(item.loginType) }}</span>
                     </div>
-                    <p class="record-sub">{{ item.addr || '未知归属地' }}</p>
-                    <p class="record-sub record-ua">{{ item.userAgent || '未知设备' }}</p>
+                    <div class="record-row-bottom-info">
+                      <span>{{ item.addr || '未知归属地' }}</span>
+                      <span class="meta-dot">•</span>
+                      <span class="ua-text">{{ item.userAgent || '未知设备' }}</span>
+                    </div>
                   </div>
-                  <div class="record-time">{{ formatDateTime(item.createdAt) }}</div>
+                  <div class="record-row-right">
+                    {{ formatDateTime(item.createdAt) }}
+                  </div>
                 </div>
               </div>
-              <div v-else class="record-empty">{{ currentRecordEmptyText }}</div>
+              <div v-else class="records-status-placeholder">{{ currentRecordEmptyText }}</div>
             </template>
 
+            <!-- Delta records list (Exp & Coin) -->
             <template v-else>
-              <div v-if="currentDeltaRecords.length" class="record-list">
+              <div v-if="currentDeltaRecords.length" class="records-list-wrapper">
                 <div
                   v-for="item in currentDeltaRecords"
                   :key="item.id"
-                  class="record-item record-item-compact"
+                  class="record-row-item flex-row-item"
                 >
-                  <div class="record-main">
-                    <div class="record-title-row">
-                      <strong>{{ item.reason || '系统变更' }}</strong>
-                      <span
-                        class="record-delta"
-                        :class="(item.delta ?? 0) >= 0 ? 'is-positive' : 'is-negative'"
-                      >
-                        {{ (item.delta ?? 0) >= 0 ? '+' : '' }}{{ item.delta }}
-                      </span>
-                    </div>
-                    <p class="record-sub">
-                      {{ activeRecordTab === 'exp' ? '经验值变动' : '硬币余额变动' }}
-                    </p>
+                  <div class="record-row-left">
+                    <span class="record-reason-title">{{ item.reason || '系统奖励' }}</span>
+                    <span class="record-desc-sub">
+                      {{ activeRecordTab === 'exp' ? '经验值变动' : '硬币流水' }}
+                    </span>
                   </div>
-                  <div class="record-time">{{ formatDateTime(item.createdAt) }}</div>
+                  <div class="record-row-middle">
+                    <span
+                      class="delta-badge"
+                      :class="(item.delta ?? 0) >= 0 ? 'is-positive' : 'is-negative'"
+                    >
+                      {{ (item.delta ?? 0) >= 0 ? '+' : '' }}{{ item.delta }}
+                    </span>
+                  </div>
+                  <div class="record-row-right font-medium">
+                    {{ formatDateTime(item.createdAt) }}
+                  </div>
                 </div>
               </div>
-              <div v-else class="record-empty">{{ currentRecordEmptyText }}</div>
+              <div v-else class="records-status-placeholder">{{ currentRecordEmptyText }}</div>
             </template>
 
-            <div class="record-footer">
-              <span class="record-summary">
-                第 {{ currentRecordPage }} / {{ currentRecordTotalPages }} 页，共
-                {{ currentRecordTotal }} 条
+            <!-- Pager footer -->
+            <div class="records-pager-footer">
+              <span class="pager-summary-text">
+                共 {{ currentRecordTotal }} 条记录，第 {{ currentRecordPage }} /
+                {{ currentRecordTotalPages }} 页
               </span>
-              <div class="record-pager">
+              <div class="pager-button-group">
                 <button
-                  class="pager-btn"
+                  class="bili-pager-btn"
                   :disabled="currentRecordPage <= 1 || currentRecordLoading"
                   @click="changeRecordPage(-1)"
                 >
                   <ChevronLeft :size="14" />
-                  上一页
+                  <span>上一页</span>
                 </button>
                 <button
-                  class="pager-btn"
+                  class="bili-pager-btn"
                   :disabled="currentRecordPage >= currentRecordTotalPages || currentRecordLoading"
                   @click="changeRecordPage(1)"
                 >
-                  下一页
+                  <span>下一页</span>
                   <ChevronRight :size="14" />
                 </button>
               </div>
@@ -591,296 +1035,460 @@ watch(activeRecordTab, (tab) => {
           </div>
         </section>
 
-        <!-- Privacy -->
+        <!-- Privacy Settings View -->
         <section v-else-if="activeTab === 'privacy' && userConfig" class="sec-anim">
-          <h3 class="form-title">隐私设置</h3>
-          <p class="form-sub">控制其他用户可以看到的个人信息</p>
-          <div class="priv-list">
-            <div class="priv-row">
-              <div>
-                <strong>公开收藏</strong>
-                <p>其他人可以看到你的收藏夹</p>
+          <h4 class="form-section-title">隐私设置</h4>
+          <p class="section-sub-desc">控制其他用户访问您的个人空间时能看到的内容模块</p>
+
+          <div class="privacy-list-grid">
+            <label
+              v-for="item in [
+                {
+                  key: 'openCollect',
+                  label: '公开收藏夹',
+                  desc: '开启后，其他人可以在您的空间里查看您公开的收藏夹内容',
+                },
+                {
+                  key: 'openFans',
+                  label: '公开粉丝列表',
+                  desc: '开启后，其他人可以在您的空间里查看您的粉丝列表',
+                },
+                {
+                  key: 'openFollow',
+                  label: '公开关注列表',
+                  desc: '开启后，其他人可以在您的空间里查看您关注的Up主列表',
+                },
+                {
+                  key: 'openLikeVideo',
+                  label: '公开点赞视频',
+                  desc: '开启后，其他人可以在您的空间里查看您点赞过的视频',
+                },
+                {
+                  key: 'openCoinVideo',
+                  label: '公开投币视频',
+                  desc: '开启后，其他人可以在您的空间里查看您投币过的视频',
+                },
+              ] as { key: keyof UserConfig; label: string; desc: string }[]"
+              :key="item.key"
+              class="privacy-card-label"
+            >
+              <div class="privacy-card-left">
+                <span class="privacy-card-title">{{ item.label }}</span>
+                <p class="privacy-card-desc">{{ item.desc }}</p>
               </div>
-              <label class="sw"
-                ><input v-model="userConfig.openCollect" type="checkbox" /><span></span
-              ></label>
-            </div>
-            <div class="priv-row">
-              <div>
-                <strong>公开粉丝列表</strong>
-                <p>其他人可以看到你的粉丝</p>
+
+              <!-- Standard flat switch slider -->
+              <div class="bili-switch-track" :class="{ 'is-active': userConfig[item.key] }">
+                <input v-model="userConfig[item.key]" type="checkbox" class="sr-only" />
+                <span class="bili-switch-thumb"></span>
               </div>
-              <label class="sw"
-                ><input v-model="userConfig.openFans" type="checkbox" /><span></span
-              ></label>
-            </div>
-            <div class="priv-row">
-              <div>
-                <strong>公开关注列表</strong>
-                <p>其他人可以看到你的关注</p>
-              </div>
-              <label class="sw"
-                ><input v-model="userConfig.openFollow" type="checkbox" /><span></span
-              ></label>
-            </div>
-            <div class="priv-row">
-              <div>
-                <strong>公开点赞视频</strong>
-                <p>其他人可以看到你点赞的视频</p>
-              </div>
-              <label class="sw"
-                ><input v-model="userConfig.openLikeVideo" type="checkbox" /><span></span
-              ></label>
-            </div>
-            <div class="priv-row">
-              <div>
-                <strong>公开投币视频</strong>
-                <p>其他人可以看到你投币的视频</p>
-              </div>
-              <label class="sw"
-                ><input v-model="userConfig.openCoinVideo" type="checkbox" /><span></span
-              ></label>
-            </div>
+            </label>
           </div>
-          <button class="btn-pri" :disabled="saving" @click="handleSavePrivacy">
-            <Save :size="14" /> {{ saving ? '保存中...' : '保存设置' }}
+
+          <button class="bili-btn-primary" :disabled="saving" @click="handleSavePrivacy">
+            <Save :size="14" />
+            <span>{{ saving ? '保存中...' : '保存隐私设置' }}</span>
           </button>
         </section>
 
-        <!-- Security -->
-        <section v-else-if="activeTab === 'security'" class="sec-anim">
-          <h3 class="form-title">账号安全</h3>
-          <div class="sec-info">
-            <div class="sec-row">
-              <span>邮箱</span><span>{{ userInfo?.email || '未绑定' }}</span>
+        <!-- Security and Account settings tab -->
+        <section v-else-if="activeTab === 'security'" class="sec-anim space-y-8">
+          <div>
+            <h4 class="form-section-title" style="margin-bottom: 12px">账号安全</h4>
+          </div>
+
+          <!-- Simple Security Table list -->
+          <div class="bili-security-table">
+            <div class="sec-row-item">
+              <span class="sec-label-col">当前关联邮箱</span>
+              <span class="sec-value-col font-bold text-[var(--color-foreground)]">{{
+                userInfo?.email || '未绑定密保邮箱'
+              }}</span>
             </div>
-            <div class="sec-row">
-              <span>注册来源</span><span>{{ userInfo?.registerSource || '邮箱注册' }}</span>
+            <div class="sec-row-item">
+              <span class="sec-label-col">账号注册方式</span>
+              <span class="sec-value-col font-bold text-[var(--color-foreground)]">{{
+                formatRegisterSource(userInfo?.registerSource)
+              }}</span>
             </div>
           </div>
 
-          <h3 class="form-title" style="margin-top: 28px">修改密码</h3>
-          <div class="fg">
-            <label class="fl">当前密码</label>
-            <div class="fi-wrap">
-              <input
-                v-model="oldPassword"
-                :type="showOldPwd ? 'text' : 'password'"
-                class="fi"
-                placeholder="请输入当前密码"
-              />
-              <button class="fi-icon" @click="showOldPwd = !showOldPwd">
-                <component :is="showOldPwd ? EyeOff : Eye" :size="15" />
-              </button>
+          <div class="grid grid-cols-1 lg:grid-cols-2 gap-8 pt-4">
+            <!-- Email binding panel -->
+            <div
+              class="bili-form-section"
+              style="border: 1px solid var(--color-border); padding: 20px; border-radius: 4px"
+            >
+              <h5 class="form-panel-title">{{ bindEmailActionLabel }}</h5>
+
+              <div class="space-y-4">
+                <div class="form-group-vertical">
+                  <label class="form-label">目标邮箱</label>
+                  <div class="form-input-icon-wrapper has-left-icon">
+                    <input
+                      v-model="bindEmailAddress"
+                      type="email"
+                      class="form-input"
+                      placeholder="请输入新的邮箱地址"
+                      autocomplete="email"
+                    />
+                    <Mail :size="14" class="absolute left-3 text-[#99a2aa]" />
+                  </div>
+                </div>
+
+                <!-- Graphics captcha validation -->
+                <div v-if="siteStore.isRegisterGraphicsCaptchaEnabled" class="form-group-vertical">
+                  <label class="form-label">图形验证码</label>
+                  <GraphicsCaptcha
+                    ref="graphicsCaptchaRef"
+                    v-model="graphicsCaptchaValue"
+                    class="w-full"
+                  />
+                </div>
+
+                <!-- Email code verify inputs -->
+                <div class="form-group-vertical">
+                  <label class="form-label">邮箱验证码</label>
+                  <div class="flex gap-3 w-full">
+                    <input
+                      v-model="bindEmailCode"
+                      type="text"
+                      class="form-input flex-1"
+                      placeholder="请输入验证码"
+                      autocomplete="one-time-code"
+                    />
+                    <button
+                      type="button"
+                      class="bili-btn-code"
+                      :disabled="!canSendBindEmail || bindEmailCountdown > 0"
+                      @click="handleSendBindEmailCode"
+                    >
+                      <Loader2
+                        v-if="isSendingBindEmail"
+                        :size="12"
+                        class="animate-spin text-[#6d757a]"
+                      />
+                      <Send v-else-if="bindEmailCountdown <= 0" :size="12" />
+                      <span class="font-mono">
+                        {{
+                          isSendingBindEmail
+                            ? '发送中'
+                            : bindEmailCountdown > 0
+                              ? `${bindEmailCountdown}s`
+                              : '获取验证码'
+                        }}
+                      </span>
+                    </button>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  class="bili-btn-primary w-full justify-center"
+                  :disabled="bindingEmail"
+                  @click="handleBindEmail"
+                >
+                  <Mail :size="14" />
+                  <span>{{ bindingEmail ? '正在绑定...' : bindEmailActionLabel }}</span>
+                </button>
+              </div>
+            </div>
+
+            <!-- Password change panel -->
+            <div
+              class="bili-form-section"
+              style="border: 1px solid var(--color-border); padding: 20px; border-radius: 4px"
+            >
+              <h5 class="form-panel-title">修改登录密码</h5>
+
+              <div class="space-y-4">
+                <!-- Old password -->
+                <div v-if="requiresOldPassword" class="form-group-vertical">
+                  <label class="form-label">当前密码</label>
+                  <div class="form-input-icon-wrapper has-right-icon">
+                    <input
+                      v-model="oldPassword"
+                      :type="showOldPwd ? 'text' : 'password'"
+                      class="form-input"
+                      placeholder="请输入当前使用的密码"
+                      autocomplete="current-password"
+                    />
+                    <button
+                      type="button"
+                      class="absolute right-3 text-[#99a2aa] hover:text-[var(--color-foreground)]"
+                      @click="showOldPwd = !showOldPwd"
+                    >
+                      <component :is="showOldPwd ? EyeOff : Eye" :size="14" />
+                    </button>
+                  </div>
+                </div>
+
+                <!-- New password input -->
+                <div class="form-group-vertical">
+                  <label class="form-label">新密码</label>
+                  <div class="form-input-icon-wrapper has-right-icon">
+                    <input
+                      v-model="newPassword"
+                      :type="showNewPwd ? 'text' : 'password'"
+                      class="form-input"
+                      placeholder="新密码（至少6位）"
+                      autocomplete="new-password"
+                    />
+                    <button
+                      type="button"
+                      class="absolute right-3 text-[#99a2aa] hover:text-[var(--color-foreground)]"
+                      @click="showNewPwd = !showNewPwd"
+                    >
+                      <component :is="showNewPwd ? EyeOff : Eye" :size="14" />
+                    </button>
+                  </div>
+                </div>
+
+                <!-- Confirm password input -->
+                <div class="form-group-vertical">
+                  <label class="form-label">确认新密码</label>
+                  <div class="form-input-icon-wrapper has-right-icon">
+                    <input
+                      v-model="confirmPassword"
+                      :type="showConfirmPwd ? 'text' : 'password'"
+                      class="form-input"
+                      placeholder="请再次输入新密码"
+                      autocomplete="new-password"
+                    />
+                    <button
+                      type="button"
+                      class="absolute right-3 text-[#99a2aa] hover:text-[var(--color-foreground)]"
+                      @click="showConfirmPwd = !showConfirmPwd"
+                    >
+                      <component :is="showConfirmPwd ? EyeOff : Eye" :size="14" />
+                    </button>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  class="bili-btn-danger w-full justify-center"
+                  :disabled="changingPwd"
+                  @click="handleChangePwd"
+                >
+                  <Lock :size="14" />
+                  <span>{{ changingPwd ? '正在修改密码...' : '修改密码' }}</span>
+                </button>
+              </div>
             </div>
           </div>
-          <div class="fg">
-            <label class="fl">新密码</label>
-            <div class="fi-wrap">
-              <input
-                v-model="newPassword"
-                :type="showNewPwd ? 'text' : 'password'"
-                class="fi"
-                placeholder="请输入新密码（至少6位）"
-              />
-              <button class="fi-icon" @click="showNewPwd = !showNewPwd">
-                <component :is="showNewPwd ? EyeOff : Eye" :size="15" />
-              </button>
-            </div>
-          </div>
-          <div class="fg">
-            <label class="fl">确认新密码</label>
-            <input
-              v-model="confirmPassword"
-              type="password"
-              class="fi"
-              placeholder="请再次输入新密码"
-            />
-          </div>
-          <button class="btn-pri btn-danger" :disabled="changingPwd" @click="handleChangePwd">
-            <Lock :size="14" /> {{ changingPwd ? '修改中...' : '修改密码' }}
-          </button>
         </section>
       </main>
     </div>
+
+    <!-- Dialog models for slide validation -->
+    <SlideCaptchaDialog
+      ref="slideCaptchaDialogRef"
+      v-model:open="slideCaptchaOpen"
+      @confirm="handleSlideCaptchaConfirm"
+    />
   </div>
 </template>
 
-<style scoped>
+<style scoped lang="scss">
 .center-page {
-  background: #f5f5f5;
+  background-color: var(--color-background);
   min-height: calc(100vh - 56px);
+  padding-bottom: 50px;
 }
 
-/* Banner */
-.center-banner {
-  height: 80px;
-  background: linear-gradient(135deg, #00a1d6, #00d4ff);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.center-logo {
-  height: 40px;
-  filter: brightness(0) invert(1);
-  opacity: 0.8;
-}
-
-/* Body */
-.center-body {
-  max-width: 1000px;
-  margin: -20px auto 0;
-  padding: 0 20px 40px;
-  display: flex;
-  gap: 16px;
+.bili-banner {
   position: relative;
-  z-index: 1;
+  height: 106px;
+  background-color: #00aeec;
+  overflow: hidden;
+
+  &-sky {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+  }
+
+  &-content {
+    position: relative;
+    max-width: 980px;
+    height: 100%;
+    margin: 0 auto;
+    padding: 0 20px;
+    display: flex;
+    align-items: center;
+  }
 }
 
-/* Sidebar */
+.cloud-svg {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  width: 100%;
+  fill: #ffffff;
+
+  &-back {
+    height: 60px;
+    opacity: 0.22;
+  }
+
+  &-front {
+    height: 40px;
+    opacity: 0.45;
+  }
+}
+
+.mascot-svg {
+  position: absolute;
+  right: 12%;
+  bottom: 5px;
+  width: 80px;
+  height: 80px;
+  opacity: 0.8;
+
+  circle {
+    fill: #ffffff;
+  }
+}
+
+.bili-logo {
+  height: 38px;
+  filter: brightness(0) invert(1);
+  opacity: 0.95;
+}
+
+.center-body {
+  width: 980px;
+  margin: 10px auto 0;
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+}
+
 .center-side {
-  width: 200px;
-  flex-shrink: 0;
-  background: #fff;
-  border-radius: 8px;
-  padding: 16px 0;
+  width: 150px;
+  background-color: var(--color-card);
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  padding-bottom: 10px;
 }
 
 .side-header {
-  font-size: 15px;
-  font-weight: 600;
-  color: #18191c;
-  padding: 0 16px 12px;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--color-foreground);
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--color-border);
+  text-align: left;
 }
 
 .side-nav {
   display: flex;
   flex-direction: column;
-  gap: 1px;
+  margin-top: 10px;
 }
 
 .side-item {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 10px 16px;
+  gap: 12px;
+  padding: 12px 20px;
   font-size: 13px;
   font-weight: 500;
-  color: #61666d;
+  color: var(--color-foreground);
   cursor: pointer;
   border: none;
   background: none;
   text-align: left;
-  transition: all 0.12s;
+  transition:
+    background-color 0.15s,
+    color 0.15s;
+
+  &:hover {
+    background-color: var(--color-secondary);
+  }
+
+  &.active {
+    background-color: var(--color-primary);
+    color: var(--color-primary-foreground);
+    font-weight: 600;
+
+    svg {
+      color: var(--color-primary-foreground);
+    }
+  }
 }
 
-.side-item:hover {
-  background: #f6f7f8;
-  color: #18191c;
-}
-
-.side-item.active {
-  background: rgb(0 161 214 / 0.08);
-  color: #00a1d6;
-  font-weight: 600;
-}
-
-/* Main */
 .center-main {
-  flex: 1;
-  min-width: 0;
-  background: #fff;
-  border-radius: 8px;
-  padding: 24px;
+  width: 820px;
+  background-color: var(--color-card);
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  padding: 25px 20px 40px;
 }
 
 .center-loading {
   display: flex;
   justify-content: center;
   align-items: center;
-  min-height: 300px;
+  min-height: 350px;
 }
 
 .spinner {
-  width: 30px;
-  height: 30px;
-  border: 3px solid #e3e5e7;
-  border-top-color: #00a1d6;
+  width: 32px;
+  height: 32px;
+  border: 3px solid var(--color-border);
+  border-top-color: var(--color-primary);
   border-radius: 50%;
-  animation: spin 0.6s linear infinite;
-}
-
-.spinner.small {
-  width: 22px;
-  height: 22px;
-  border-width: 2px;
-}
-
-@keyframes spin {
-  to {
-    transform: rotate(360deg);
-  }
+  animation: spin 0.8s linear infinite;
 }
 
 .sec-anim {
-  animation: fade-up 0.2s ease;
+  animation: fade-in 0.15s ease-out;
 }
 
-@keyframes fade-up {
-  from {
-    opacity: 0;
-    transform: translateY(6px);
-  }
-
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-/* Overview card */
-.ov-card {
+.bili-overview-card {
   display: flex;
   align-items: center;
-  gap: 16px;
-  padding: 20px;
-  border-radius: 10px;
-  background: #f6f7f8;
-  margin-bottom: 28px;
-}
-
-.ov-avatar-wrap {
-  position: relative;
-  flex-shrink: 0;
+  gap: 20px;
+  padding-bottom: 25px;
+  border-bottom: 1px solid var(--color-border);
+  margin-bottom: 25px;
 }
 
 .ov-avatar {
-  width: 60px;
-  height: 60px;
-  border: 2px solid #fff;
-  box-shadow: 0 1px 6px rgb(0 0 0 / 0.1);
-}
+  width: 100%;
+  height: 100%;
 
-.ov-avatar-mask {
-  position: absolute;
-  inset: 0;
-  border-radius: 50%;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 1px;
-  background: rgb(0 0 0 / 0.45);
-  color: #fff;
-  font-size: 10px;
-  cursor: pointer;
-  opacity: 0;
-  transition: opacity 0.15s;
-}
+  &-wrap {
+    position: relative;
+    flex-shrink: 0;
+    width: 64px;
+    height: 64px;
+    border-radius: 50%;
+    overflow: hidden;
+    border: 1px solid var(--color-border);
+  }
 
-.ov-avatar-mask:hover {
-  opacity: 1;
+  &-mask {
+    position: absolute;
+    inset: 0;
+    border-radius: 50%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    background: rgb(0, 0, 0, 0.5);
+    color: #ffffff;
+    font-size: 9px;
+    cursor: pointer;
+    opacity: 0;
+    transition: opacity 0.15s;
+
+    &:hover {
+      opacity: 1;
+    }
+  }
 }
 
 .ov-info {
@@ -891,509 +1499,714 @@ watch(activeRecordTab, (tab) => {
 .ov-name-row {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
+
+  .username {
+    font-size: 16px;
+    font-weight: 700;
+    color: var(--color-foreground);
+  }
+
+  .member-tag {
+    border: 1px solid var(--color-border);
+    border-radius: 4px;
+    padding: 1px 6px;
+    font-size: 10px;
+    color: var(--color-muted-foreground);
+  }
 }
 
-.ov-name-row h3 {
-  font-size: 16px;
-  font-weight: 700;
-  color: #18191c;
-}
-
-.lv {
-  display: inline-block;
-  padding: 1px 6px;
-  border-radius: 3px;
-  font-size: 10px;
-  font-weight: 800;
-  color: #fff;
-}
-
-.ov-exp {
+.ov-level-row {
   display: flex;
   align-items: center;
   gap: 8px;
-  margin: 6px 0 4px;
+  margin: 8px 0;
 }
 
-.exp-track {
-  width: 160px;
-  height: 5px;
+.lv-badge {
+  display: inline-block;
+  padding: 1px 5px;
   border-radius: 3px;
-  background: #e3e5e7;
+  font-size: 10px;
+  font-weight: 800;
+  color: #ffffff;
+  line-height: 1.2;
+}
+
+.level-progress-track {
+  width: 260px;
+  height: 10px;
+  border-radius: 5px;
+  background-color: var(--color-secondary);
   overflow: hidden;
+  border: 1px solid var(--color-border);
 }
 
-.exp-fill {
+.level-progress-fill {
   height: 100%;
-  border-radius: 3px;
-  background: linear-gradient(90deg, #00a1d6, #00d4ff);
-  transition: width 0.4s;
+  background-color: #ff8547;
+  border-radius: 5px;
+  transition: width 0.3s ease;
 }
 
-.exp-txt {
+.level-exp-text {
   font-size: 11px;
-  color: #9499a0;
+  color: var(--color-muted-foreground);
+  font-family: monospace;
 }
 
 .ov-meta {
   display: flex;
-  gap: 14px;
+  align-items: center;
+  gap: 12px;
   font-size: 12px;
-  color: #9499a0;
+  color: var(--color-muted-foreground);
 }
 
-.ov-space-btn {
-  flex-shrink: 0;
-  padding: 6px 14px;
-  border-radius: 6px;
+.meta-split {
+  width: 1px;
+  height: 12px;
+  background-color: var(--color-border);
+}
+
+.ov-actions {
+  display: flex;
+  gap: 10px;
+  align-self: center;
+}
+
+.ov-btn {
+  background-color: var(--color-card);
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  color: var(--color-muted-foreground);
+  padding: 5px 12px;
   font-size: 12px;
   font-weight: 500;
   cursor: pointer;
-  border: 1px solid #e3e5e7;
-  background: #fff;
-  color: #61666d;
-  transition: all 0.12s;
+  transition:
+    border-color 0.15s,
+    color 0.15s,
+    background-color 0.15s;
+
+  &:hover {
+    border-color: var(--color-primary);
+    color: var(--color-primary);
+    background-color: var(--color-secondary);
+  }
 }
 
-.ov-space-btn:hover {
-  border-color: #00a1d6;
-  color: #00a1d6;
+.bili-form-section {
+  padding-top: 10px;
 }
 
-/* Records */
-.record-tabs {
+.form-section-title {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--color-foreground);
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--color-border);
+  margin-bottom: 20px;
+}
+
+.form-panel-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--color-foreground);
+  margin-bottom: 15px;
+}
+
+.form-group {
   display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin-bottom: 16px;
+  margin-bottom: 20px;
+  align-items: flex-start;
+
+  &-vertical {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin-bottom: 16px;
+    width: 100%;
+
+    .form-label {
+      width: auto;
+      padding-top: 0;
+      margin-bottom: 0;
+    }
+
+    .form-input {
+      width: 100%;
+      max-width: 100%;
+    }
+  }
 }
 
-.record-tab {
+.form-label {
+  width: 100px;
+  font-size: 12px;
+  color: var(--color-muted-foreground);
+  padding-top: 8px;
+  flex-shrink: 0;
+}
+
+.form-input {
+  flex: 1;
+  max-width: 400px;
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  padding: 8px 12px;
+  font-size: 12px;
+  background-color: var(--color-card);
+  color: var(--color-foreground);
+  outline: none;
+  transition:
+    border-color 0.15s,
+    box-shadow 0.15s;
+
+  &-icon-wrapper {
+    position: relative;
+    display: flex;
+    align-items: center;
+    width: 100%;
+
+    .form-input {
+      width: 100%;
+      max-width: 100%;
+    }
+
+    &.has-left-icon .form-input {
+      padding-left: 36px;
+    }
+
+    &.has-right-icon .form-input {
+      padding-right: 36px;
+    }
+  }
+
+  &:focus {
+    border-color: var(--color-primary);
+    box-shadow: 0 0 4px var(--color-ring);
+  }
+}
+
+.form-textarea {
+  resize: vertical;
+  min-height: 80px;
+}
+
+.gender-radio-group {
+  display: flex;
+  gap: 20px;
+  padding-top: 6px;
+}
+
+.gender-radio-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  cursor: pointer;
+  color: var(--color-foreground);
+}
+
+.gender-radio-input {
+  display: none;
+
+  &:checked + .gender-radio-custom {
+    border-color: var(--color-primary);
+
+    &::after {
+      content: '';
+      position: absolute;
+      inset: 3px;
+      border-radius: 50%;
+      background-color: var(--color-primary);
+    }
+  }
+}
+
+.gender-radio-custom {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 1px solid var(--color-border);
+  position: relative;
+  transition: border-color 0.15s;
+}
+
+.bili-btn-primary {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  border: 1px solid #e3e5e7;
-  background: #fff;
-  color: #61666d;
-  padding: 8px 12px;
-  border-radius: 999px;
+  background-color: var(--color-primary);
+  color: var(--color-primary-foreground);
+  padding: 8px 24px;
+  border-radius: 4px;
   font-size: 12px;
   font-weight: 600;
   cursor: pointer;
-  transition:
-    border-color 0.12s,
-    color 0.12s,
-    background 0.12s;
+  border: none;
+  transition: background-color 0.15s;
+
+  &:hover:not(:disabled) {
+    background-color: color-mix(in oklch, var(--color-primary) 85%, white 15%);
+  }
+
+  &:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
 }
 
-.record-tab:hover {
-  border-color: #00a1d6;
-  color: #00a1d6;
+.bili-btn-danger {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background-color: var(--color-destructive);
+  color: var(--color-destructive-foreground);
+  padding: 8px 24px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  border: none;
+  transition: opacity 0.15s;
+
+  &:hover:not(:disabled) {
+    opacity: 0.95;
+  }
+
+  &:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
 }
 
-.record-tab.active {
-  background: rgb(0 161 214 / 0.08);
-  border-color: rgb(0 161 214 / 0.18);
-  color: #00a1d6;
+.bili-tags-board {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 15px;
+  border: 1px solid var(--color-border);
+  background-color: var(--color-secondary);
+  border-radius: 4px;
+  align-items: center;
 }
 
-.record-panel {
-  border: 1px solid #f1f2f3;
-  border-radius: 10px;
-  background: linear-gradient(180deg, #fbfbfc 0%, #fff 100%);
+.bili-tag-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--color-border);
+  background-color: var(--color-card);
+  color: var(--color-foreground);
+  padding: 4px 10px;
+  border-radius: 4px;
+  font-size: 11px;
+}
+
+.tag-remove-btn {
+  border: none;
+  background: transparent;
+  color: var(--color-muted-foreground);
+  cursor: pointer;
+  padding: 0;
+  line-height: 1;
+  font-size: 12px;
+
+  &:hover {
+    color: var(--color-foreground);
+  }
+}
+
+.tag-input-row {
+  display: flex;
+  gap: 8px;
+  margin-left: auto;
+}
+
+.tag-input-field {
+  border: 1px solid var(--color-border);
+  border-radius: 4px 0 0 4px;
+  padding: 4px 8px;
+  font-size: 11px;
+  background-color: var(--color-card);
+  color: var(--color-foreground);
+  outline: none;
+  height: 30px;
+  width: 120px;
+
+  &:focus {
+    border-color: var(--color-primary);
+  }
+}
+
+.tag-clear-btn {
+  position: absolute;
+  right: 8px;
+  color: var(--color-muted-foreground);
+  background: none;
+  border: none;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.tag-add-btn {
+  border: 1px solid var(--color-primary);
+  background-color: var(--color-primary);
+  color: var(--color-primary-foreground);
+  padding: 0 12px;
+  border-radius: 0 4px 4px 0;
+  font-size: 11px;
+  cursor: pointer;
+  height: 30px;
+  font-weight: 600;
+
+  &:hover {
+    background-color: color-mix(in oklch, var(--color-primary) 85%, white 15%);
+    border-color: color-mix(in oklch, var(--color-primary) 85%, white 15%);
+  }
+}
+
+.bili-records-tabs {
+  display: flex;
+  gap: 5px;
+  margin-bottom: 15px;
+  border-bottom: 1px solid var(--color-border);
+  padding-bottom: 1px;
+}
+
+.records-tab-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 16px;
+  border: none;
+  background: none;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--color-muted-foreground);
+  cursor: pointer;
+  position: relative;
+  transition: color 0.15s;
+
+  &:hover {
+    color: var(--color-primary);
+  }
+
+  &.active {
+    color: var(--color-primary);
+    font-weight: 600;
+
+    &::after {
+      content: '';
+      position: absolute;
+      bottom: -1px;
+      left: 0;
+      right: 0;
+      height: 2px;
+      background-color: var(--color-primary);
+    }
+  }
+}
+
+.records-container-box {
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  background-color: var(--color-card);
   overflow: hidden;
 }
 
-.record-loading,
-.record-empty {
+.records-status-placeholder {
   min-height: 220px;
   display: flex;
   align-items: center;
   justify-content: center;
-  color: #9499a0;
-  font-size: 13px;
+  color: var(--color-muted-foreground);
+  font-size: 12px;
 }
 
-.record-list {
+.records-list-wrapper {
   display: flex;
   flex-direction: column;
 }
 
-.record-item {
+.record-row-item {
   display: flex;
   justify-content: space-between;
-  gap: 16px;
-  padding: 16px 18px;
-  border-bottom: 1px solid #f1f2f3;
-}
-
-.record-item:last-child {
-  border-bottom: none;
-}
-
-.record-item-compact {
   align-items: center;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--color-border);
+
+  &:last-child {
+    border-bottom: none;
+  }
 }
 
-.record-main {
-  min-width: 0;
-  flex: 1;
+.record-row-left {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
 }
 
-.record-title-row {
+.record-row-top-info {
   display: flex;
   align-items: center;
   gap: 8px;
-  min-width: 0;
 }
 
-.record-title-row strong {
-  min-width: 0;
+.record-ip-address {
   font-size: 13px;
-  color: #18191c;
+  font-weight: 600;
+  color: var(--color-foreground);
+  font-family: monospace;
 }
 
-.record-tag {
-  flex-shrink: 0;
-  border-radius: 999px;
-  background: #f1f2f3;
-  color: #61666d;
-  padding: 2px 8px;
-  font-size: 11px;
+.record-badge-tag {
+  border-radius: 2px;
+  background-color: var(--color-secondary);
+  color: var(--color-muted-foreground);
+  padding: 1px 6px;
+  font-size: 10px;
   font-weight: 600;
 }
 
-.record-sub {
-  margin-top: 4px;
-  font-size: 12px;
-  color: #9499a0;
+.record-row-bottom-info {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--color-muted-foreground);
 }
 
-.record-ua {
+.meta-dot {
+  color: var(--color-border);
+}
+
+.ua-text {
+  max-width: 350px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.record-delta {
-  flex-shrink: 0;
-  font-size: 13px;
-  font-weight: 700;
-}
-
-.record-delta.is-positive {
-  color: #00a1d6;
-}
-
-.record-delta.is-negative {
-  color: #f25d8e;
-}
-
-.record-time {
-  flex-shrink: 0;
+.record-row-right {
   font-size: 12px;
-  color: #9499a0;
+  color: var(--color-muted-foreground);
   white-space: nowrap;
 }
 
-.record-footer {
+.flex-row-item {
+  align-items: center;
+}
+
+.record-reason-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--color-foreground);
+}
+
+.record-desc-sub {
+  font-size: 11px;
+  color: var(--color-muted-foreground);
+}
+
+.record-row-middle {
+  margin-left: auto;
+  margin-right: 40px;
+}
+
+.delta-badge {
+  font-size: 12px;
+  font-weight: 700;
+  font-family: monospace;
+
+  &.is-positive {
+    color: #4caf50;
+  }
+
+  &.is-negative {
+    color: var(--color-destructive);
+  }
+}
+
+.records-pager-footer {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
-  padding: 14px 18px;
-  background: #fafbfc;
-  border-top: 1px solid #f1f2f3;
+  padding: 12px 20px;
+  background-color: var(--color-secondary);
+  border-top: 1px solid var(--color-border);
 }
 
-.record-summary {
-  font-size: 12px;
-  color: #9499a0;
+.pager-summary-text {
+  font-size: 11px;
+  color: var(--color-muted-foreground);
 }
 
-.record-pager {
+.pager-button-group {
   display: flex;
-  gap: 8px;
+  gap: 6px;
 }
 
-.pager-btn {
+.bili-pager-btn {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  padding: 7px 10px;
-  border: 1px solid #e3e5e7;
-  border-radius: 8px;
-  background: #fff;
-  color: #61666d;
-  font-size: 12px;
+  padding: 6px 10px;
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  background-color: var(--color-card);
+  color: var(--color-muted-foreground);
+  font-size: 11px;
   cursor: pointer;
   transition:
-    border-color 0.12s,
-    color 0.12s,
-    background 0.12s;
+    border-color 0.15s,
+    color 0.15s;
+
+  &:hover:not(:disabled) {
+    border-color: var(--color-primary);
+    color: var(--color-primary);
+  }
+
+  &:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+  }
 }
 
-.pager-btn:hover:not(:disabled) {
-  border-color: #00a1d6;
-  color: #00a1d6;
-}
-
-.pager-btn:disabled {
-  opacity: 0.45;
-  cursor: not-allowed;
-}
-
-/* Form */
-.form-block {
-  margin-top: 4px;
-}
-
-.form-title {
-  font-size: 15px;
-  font-weight: 600;
-  color: #18191c;
-  margin-bottom: 16px;
-}
-
-.form-sub {
+.section-sub-desc {
   font-size: 12px;
-  color: #9499a0;
-  margin: -8px 0 16px;
+  color: var(--color-muted-foreground);
+  margin-top: -15px;
+  margin-bottom: 20px;
 }
 
-.fg {
-  margin-bottom: 16px;
+.privacy-list-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 12px;
+  margin-bottom: 25px;
 }
 
-.fl {
-  display: block;
-  font-size: 12px;
-  font-weight: 600;
-  color: #18191c;
-  margin-bottom: 6px;
-}
-
-.fi {
-  width: 100%;
-  padding: 8px 12px;
-  border: 1px solid #e3e5e7;
-  border-radius: 6px;
-  font-size: 13px;
-  background: #fff;
-  color: #18191c;
-  outline: none;
-  transition:
-    border-color 0.12s,
-    box-shadow 0.12s;
-}
-
-.fi:focus {
-  border-color: #00a1d6;
-  box-shadow: 0 0 0 2px rgb(0 161 214 / 0.1);
-}
-
-.fi-area {
-  resize: vertical;
-  font-family: inherit;
-}
-
-.fi-wrap {
-  position: relative;
-}
-
-.fi-wrap .fi {
-  padding-right: 36px;
-}
-
-.fi-icon {
-  position: absolute;
-  right: 8px;
-  top: 50%;
-  transform: translateY(-50%);
-  border: none;
-  background: none;
-  cursor: pointer;
-  color: #9499a0;
-  padding: 2px;
-}
-
-.fi-icon:hover {
-  color: #61666d;
-}
-
-.radio-row {
-  display: flex;
-  gap: 20px;
-}
-
-.rl {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 13px;
-  cursor: pointer;
-  color: #18191c;
-}
-
-.ri {
-  display: none;
-}
-
-.rc {
-  width: 16px;
-  height: 16px;
-  border-radius: 50%;
-  border: 2px solid #e3e5e7;
-  position: relative;
-  transition: border-color 0.12s;
-}
-
-.ri:checked + .rc {
-  border-color: #00a1d6;
-}
-
-.ri:checked + .rc::after {
-  content: '';
-  position: absolute;
-  inset: 3px;
-  border-radius: 50%;
-  background: #00a1d6;
-}
-
-.btn-pri {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 8px 24px;
-  border-radius: 6px;
-  font-size: 13px;
-  font-weight: 600;
-  cursor: pointer;
-  border: none;
-  background: #00a1d6;
-  color: #fff;
-  transition: all 0.12s;
-  margin-top: 8px;
-}
-
-.btn-pri:hover:not(:disabled) {
-  background: #00b5e5;
-}
-
-.btn-pri:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-.btn-danger {
-  background: #f25d8e;
-}
-
-.btn-danger:hover:not(:disabled) {
-  background: #e04676;
-}
-
-/* Privacy */
-.priv-list {
-  display: flex;
-  flex-direction: column;
-}
-
-.priv-row {
+.privacy-card-label {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 14px 0;
-  border-bottom: 1px solid #f1f2f3;
-}
-
-.priv-row:last-child {
-  border-bottom: none;
-}
-
-.priv-row strong {
-  font-size: 13px;
-  font-weight: 600;
-  color: #18191c;
-}
-
-.priv-row p {
-  font-size: 11px;
-  color: #9499a0;
-  margin-top: 2px;
-}
-
-/* Switch */
-.sw {
-  position: relative;
-  display: inline-block;
-  width: 40px;
-  height: 22px;
+  padding: 15px 20px;
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  background-color: var(--color-card);
   cursor: pointer;
+  transition: border-color 0.15s;
+
+  &:hover {
+    border-color: var(--color-primary);
+  }
+}
+
+.privacy-card-left {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.privacy-card-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--color-foreground);
+}
+
+.privacy-card-desc {
+  font-size: 11px;
+  color: var(--color-muted-foreground);
+}
+
+.bili-switch-track {
+  position: relative;
+  width: 38px;
+  height: 20px;
+  border-radius: 10px;
+  background-color: var(--color-border);
+  cursor: pointer;
+  transition: background-color 0.2s;
   flex-shrink: 0;
+
+  &.is-active {
+    background-color: var(--color-primary);
+
+    .bili-switch-thumb {
+      transform: translateX(18px);
+    }
+  }
 }
 
-.sw input {
-  opacity: 0;
-  width: 0;
-  height: 0;
-}
-
-.sw span {
+.bili-switch-thumb {
   position: absolute;
-  inset: 0;
-  background: #e3e5e7;
-  border-radius: 11px;
-  transition: background 0.2s;
-}
-
-.sw span::before {
-  content: '';
-  position: absolute;
+  top: 2px;
+  left: 2px;
   width: 16px;
   height: 16px;
-  left: 3px;
-  bottom: 3px;
-  background: #fff;
   border-radius: 50%;
-  box-shadow: 0 1px 2px rgb(0 0 0 / 0.12);
+  background-color: #ffffff;
   transition: transform 0.2s;
 }
 
-.sw input:checked + span {
-  background: #00a1d6;
+.bili-security-table {
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  background-color: var(--color-card);
+  margin-bottom: 25px;
 }
 
-.sw input:checked + span::before {
-  transform: translateX(18px);
-}
-
-/* Security */
-.sec-info {
-  background: #f6f7f8;
-  border-radius: 8px;
-  padding: 14px 16px;
-  margin-bottom: 8px;
-}
-
-.sec-row {
+.sec-row-item {
   display: flex;
-  justify-content: space-between;
-  padding: 8px 0;
-  font-size: 13px;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--color-border);
+  font-size: 12px;
+
+  &:last-child {
+    border-bottom: none;
+  }
 }
 
-.sec-row:not(:last-child) {
-  border-bottom: 1px solid #eee;
+.sec-label-col {
+  width: 120px;
+  color: var(--color-muted-foreground);
+  flex-shrink: 0;
 }
 
-.sec-row span:first-child {
-  color: #9499a0;
+.sec-value-col {
+  color: var(--color-foreground);
 }
 
-.sec-row span:last-child {
-  color: #18191c;
+.bili-btn-code {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 0 12px;
+  border-radius: 4px;
+  border: 1px solid var(--color-border);
+  background-color: var(--color-card);
+  color: var(--color-foreground);
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  height: 34px;
+  transition:
+    border-color 0.15s,
+    background-color 0.15s;
+
+  &:hover:not(:disabled) {
+    border-color: var(--color-primary);
+    color: var(--color-primary);
+  }
+
+  &:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
 }
 
 .sr-only {
@@ -1408,9 +2221,49 @@ watch(activeRecordTab, (tab) => {
   border-width: 0;
 }
 
+/* Widescreen Banner Container (Height 106px - exactly Bilibili size) */
+
+/* Layout width: 980px */
+
+/* Left Sidebar Menu (width: 150px) */
+
+/* Right Content Main Box (width: 820px) */
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
+/* Overview Card Style */
+
+/* Flat Form Style */
+
+/* Personalized tag board flat */
+
+/* Records List design flat */
+
+/* Privacy Settings grid flat */
+
+/* Bilibili flat Switch track style */
+
+/* Security Table list */
+
+/* Responsive side elements styling */
 @media (width <= 900px) {
   .center-body {
     flex-direction: column;
+    width: 100%;
+    padding: 0 10px;
   }
 
   .center-side {
@@ -1418,36 +2271,24 @@ watch(activeRecordTab, (tab) => {
   }
 
   .center-main {
-    padding: 18px;
-  }
-
-  .ov-card {
-    flex-wrap: wrap;
-  }
-
-  .ov-space-btn {
-    width: 100%;
-    justify-content: center;
-  }
-
-  .record-item,
-  .record-footer {
-    flex-direction: column;
-    align-items: flex-start;
-  }
-
-  .record-time,
-  .record-summary {
-    white-space: normal;
-  }
-
-  .record-pager {
     width: 100%;
   }
 
-  .pager-btn {
-    flex: 1;
-    justify-content: center;
+  .rewards-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .reward-card {
+    border-bottom: 1px solid var(--color-border);
+
+    &:nth-child(even) {
+      border-right: none;
+    }
+  }
+
+  .reward-card:nth-child(3),
+  .reward-card:nth-child(4) {
+    border-bottom: none;
   }
 }
 </style>

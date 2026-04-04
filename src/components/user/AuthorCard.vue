@@ -7,6 +7,7 @@ import type { VideoAuthorBrief } from '@/api/video'
 import { toast } from 'vue-sonner'
 import { UserPlus, UserCheck, Users } from 'lucide-vue-next'
 import AppAvatar from '@/components/common/AppAvatar.vue'
+import { levelColor } from '@/utils/format'
 
 const props = defineProps<{
   author: VideoAuthorBrief
@@ -65,13 +66,6 @@ const handleFollow = async () => {
 
 const goToUserPage = () => {
   void router.push(`/user/${props.author.id}`)
-}
-
-const levelColor = (level: number): string => {
-  if (level >= 6) return '#ff6699'
-  if (level >= 4) return '#ffb636'
-  if (level >= 2) return '#7bcfa6'
-  return '#c0c0c0'
 }
 
 onMounted(fetchRelation)
@@ -138,25 +132,25 @@ watch(() => props.author.id, fetchRelation)
   </div>
 </template>
 
-<style scoped>
+<style scoped lang="scss">
 .author-card {
-  box-shadow: 0 2px 8px rgb(0 0 0 / 0.04);
-  border: 1px solid hsl(var(--border) / 0.4);
+  box-shadow: 0 2px 8px oklch(0% 0 0deg / 0.04);
+  border: 1px solid oklch(var(--border) / 0.4);
   transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
-}
 
-.author-card:hover {
-  box-shadow: 0 8px 24px rgb(0 0 0 / 0.08);
-  border-color: hsl(var(--border) / 0.8);
-  transform: translateY(-2px);
+  &:hover {
+    box-shadow: 0 8px 24px oklch(0% 0 0deg / 0.08);
+    border-color: oklch(var(--border) / 0.8);
+    transform: translateY(-2px);
+  }
 }
 
 :global(.dark) .author-card {
-  box-shadow: 0 2px 8px rgb(0 0 0 / 0.2);
-}
+  box-shadow: 0 2px 8px oklch(0% 0 0deg / 0.25);
 
-:global(.dark) .author-card:hover {
-  box-shadow: 0 8px 24px rgb(0 0 0 / 0.4);
+  &:hover {
+    box-shadow: 0 8px 24px oklch(0% 0 0deg / 0.45);
+  }
 }
 
 .avatar-wrapper::before {
@@ -164,7 +158,7 @@ watch(() => props.author.id, fetchRelation)
   position: absolute;
   inset: 0;
   border-radius: 50%;
-  background: hsl(var(--primary) / 0.2);
+  background: oklch(var(--primary) / 0.2);
   transform: scale(1.1);
   opacity: 0;
   filter: blur(4px);
@@ -188,53 +182,53 @@ watch(() => props.author.id, fetchRelation)
   cursor: pointer;
   transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
   border: 1px solid transparent;
-  background: #00a1d6;
-  color: white;
-  box-shadow: 0 4px 12px rgb(0 161 214 / 0.3);
+  background-color: oklch(var(--primary));
+  color: oklch(var(--primary-foreground));
+  box-shadow: 0 4px 12px oklch(var(--primary) / 0.3);
   letter-spacing: 0.02em;
-}
 
-.follow-btn:hover:not(:disabled) {
-  background: #00b5e5;
-  transform: translateY(-2px);
-  box-shadow: 0 6px 16px rgb(0 161 214 / 0.4);
-}
+  &:hover:not(:disabled) {
+    background-color: oklch(var(--primary) / 0.9);
+    transform: translateY(-2px);
+    box-shadow: 0 6px 16px oklch(var(--primary) / 0.4);
+  }
 
-.follow-btn:active:not(:disabled) {
-  transform: translateY(0) scale(0.96);
-  box-shadow: 0 2px 8px rgb(0 161 214 / 0.3);
-  transition-duration: 0.1s;
-}
+  &:active:not(:disabled) {
+    transform: translateY(0) scale(0.96);
+    box-shadow: 0 2px 8px oklch(var(--primary) / 0.3);
+    transition-duration: 0.1s;
+  }
 
-.follow-btn:disabled {
-  opacity: 0.7;
-  cursor: not-allowed;
-  transform: none;
-}
+  &:disabled {
+    opacity: 0.7;
+    cursor: not-allowed;
+    transform: none;
+  }
 
-.follow-btn.is-followed {
-  background: hsl(var(--muted));
-  color: hsl(var(--muted-foreground));
-  border: 1px solid hsl(var(--border));
-  box-shadow: none;
-}
+  &.is-followed {
+    background: oklch(var(--muted));
+    color: oklch(var(--muted-foreground));
+    border: 1px solid oklch(var(--border));
+    box-shadow: none;
 
-.follow-btn.is-followed:hover:not(:disabled) {
-  background: hsl(var(--destructive) / 0.1);
-  color: hsl(var(--destructive));
-  border-color: hsl(var(--destructive) / 0.3);
-}
+    &:hover:not(:disabled) {
+      background: oklch(var(--destructive) / 0.1);
+      color: oklch(var(--destructive));
+      border-color: oklch(var(--destructive) / 0.3);
+    }
+  }
 
-.follow-btn.is-mutual {
-  background: rgb(251 114 153 / 0.1);
-  color: #fb7299;
-  border: 1px solid rgb(251 114 153 / 0.3);
-  box-shadow: none;
-}
+  &.is-mutual {
+    background: oklch(var(--primary) / 0.1);
+    color: oklch(var(--primary));
+    border: 1px solid oklch(var(--primary) / 0.3);
+    box-shadow: none;
 
-.follow-btn.is-mutual:hover:not(:disabled) {
-  background: rgb(251 114 153 / 0.15);
-  border-color: rgb(251 114 153 / 0.4);
-  box-shadow: 0 4px 12px rgb(251 114 153 / 0.2);
+    &:hover:not(:disabled) {
+      background: oklch(var(--primary) / 0.15);
+      border-color: oklch(var(--primary) / 0.4);
+      box-shadow: 0 4px 12px oklch(var(--primary) / 0.2);
+    }
+  }
 }
 </style>

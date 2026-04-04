@@ -4,10 +4,18 @@ import { toast } from 'vue-sonner'
 import {
   loginByPassword,
   loginByQQ,
+  loginByGoogle,
+  loginByGithub,
+  loginByLinuxDo,
+  loginByX,
   refreshToken as refreshTokenApi,
   getCurrentUserInfo,
   type LoginPwdParams,
   type LoginQQParams,
+  type LoginGoogleParams,
+  type LoginGithubParams,
+  type LoginLinuxDoParams,
+  type LoginXParams,
   type UserInfo,
   type JwtToken,
 } from '@/api/user'
@@ -52,12 +60,15 @@ export const useAuthStore = defineStore(
     }
 
     /**
-     * 用户名密码登录
+     * 通用登录处理：执行登录请求、写入 Token、拉取用户信息并提示
      */
-    const login = async (params: LoginPwdParams): Promise<boolean> => {
+    const handleLogin = async <P>(
+      apiCall: (p: P) => Promise<JwtToken>,
+      params: P
+    ): Promise<boolean> => {
       isLoading.value = true
       try {
-        const tokens = await loginByPassword(params)
+        const tokens = await apiCall(params)
         setAuthTokens(tokens)
         await fetchUserInfo()
         toast.success('登录成功')
@@ -71,28 +82,47 @@ export const useAuthStore = defineStore(
     }
 
     /**
+     * 用户名密码登录
+     */
+    const login = (params: LoginPwdParams): Promise<boolean> => handleLogin(loginByPassword, params)
+
+    /**
      * QQ 登录
      */
-    const loginWithQQ = async (params: LoginQQParams): Promise<boolean> => {
-      isLoading.value = true
-      try {
-        const tokens = await loginByQQ(params)
-        setAuthTokens(tokens)
-        await fetchUserInfo()
-        toast.success('登录成功')
-        return true
-      } catch {
-        return false
-      } finally {
-        isLoading.value = false
-      }
-    }
+    const loginWithQQ = (params: LoginQQParams): Promise<boolean> => handleLogin(loginByQQ, params)
+
+    /**
+     * Google 登录
+     */
+    const loginWithGoogle = (params: LoginGoogleParams): Promise<boolean> =>
+      handleLogin(loginByGoogle, params)
+
+    /**
+     * GitHub 登录
+     */
+    const loginWithGithub = (params: LoginGithubParams): Promise<boolean> =>
+      handleLogin(loginByGithub, params)
+
+    /**
+     * LinuxDo 登录
+     */
+    const loginWithLinuxDo = (params: LoginLinuxDoParams): Promise<boolean> =>
+      handleLogin(loginByLinuxDo, params)
+
+    /**
+     * X 登录
+     */
+    const loginWithX = (params: LoginXParams): Promise<boolean> => handleLogin(loginByX, params)
 
     /**
      * 退出登录
      */
     const logout = () => {
       clearAuth()
+      // 延迟 import 避免与 notification → auth 的循环依赖在模块初始化时炸
+      void import('@/stores/notification').then(({ useNotificationStore }) => {
+        useNotificationStore().clearAllCounts()
+      })
       toast.success('已退出登录')
     }
 
@@ -129,6 +159,10 @@ export const useAuthStore = defineStore(
         user.value = userInfo
         return true
       } catch {
+        // 拦截器在 refresh 失败时会 clearTokens；此处同步清 Pinia，避免头像残留
+        if (!getAccessToken()) {
+          clearAuth()
+        }
         return false
       }
     }
@@ -138,7 +172,11 @@ export const useAuthStore = defineStore(
      */
     const initAuth = async () => {
       if (accessToken.value) {
-        await fetchUserInfo()
+        const ok = await fetchUserInfo()
+        // 启动时 token 已失效且未能恢复：确保 UI 为未登录
+        if (!ok && !getAccessToken()) {
+          clearAuth()
+        }
       }
     }
 
@@ -179,6 +217,10 @@ export const useAuthStore = defineStore(
       // Actions
       login,
       loginWithQQ,
+      loginWithGoogle,
+      loginWithGithub,
+      loginWithLinuxDo,
+      loginWithX,
       logout,
       refreshAccessToken,
       fetchUserInfo,

@@ -10,6 +10,7 @@ import { onClickOutside } from '@vueuse/core'
 import { toast } from 'vue-sonner'
 import CommentInput from './CommentInput.vue'
 import AppAvatar from '@/components/common/AppAvatar.vue'
+import ImageViewer from '@/components/common/ImageViewer.vue'
 
 const router = useRouter()
 
@@ -41,6 +42,14 @@ const moreMenuRef = ref<HTMLElement | null>(null)
 onClickOutside(moreMenuRef, () => {
   showMoreMenu.value = false
 })
+
+const previewImageUrl = ref('')
+const showPreview = ref(false)
+
+const openImagePreview = (url: string) => {
+  previewImageUrl.value = url
+  showPreview.value = true
+}
 
 const replies = ref<CommentItem[]>([])
 const repliesTotal = ref(props.comment.replyCount)
@@ -170,7 +179,7 @@ watch(
   { immediate: true }
 )
 
-const handleReplySubmit = async (content: string, atUserIds: number[]) => {
+const handleReplySubmit = async (content: string, atUserIds: number[], pictures: string[]) => {
   try {
     const { createComment } = await import('@/api/comment')
     const res = await createComment({
@@ -179,6 +188,7 @@ const handleReplySubmit = async (content: string, atUserIds: number[]) => {
       content,
       parentId: props.comment.id,
       atUserIds,
+      pictures,
     })
     toast.success('回复成功')
     showReplyInput.value = false
@@ -220,7 +230,7 @@ const handleReplyDeleted = (id: number) => {
         <span class="text-[13px] font-medium text-muted-foreground">{{ comment.username }}</span>
         <span
           v-if="isPinned && !isReply"
-          class="rounded border border-[#ff6699] px-1 text-[10px] text-[#ff6699]"
+          class="rounded border border-accent px-1 text-[10px] text-accent"
           >置顶</span
         >
       </div>
@@ -228,14 +238,14 @@ const handleReplyDeleted = (id: number) => {
       <p class="mt-1.5 text-[15px] leading-relaxed text-foreground break-words whitespace-pre-wrap">
         <span
           v-if="isReply && comment.replyTo && comment.parentId !== comment.rootId"
-          class="text-[#00aeec] mr-1 cursor-pointer hover:underline"
+          class="text-primary mr-1 cursor-pointer hover:underline"
         >
           回复 @{{ comment.replyTo.username }} :
         </span>
         <template v-for="part in parsedContent" :key="part.id">
           <span
             v-if="part.type === 'mention'"
-            class="text-[#00aeec] cursor-pointer hover:underline"
+            class="text-primary cursor-pointer hover:underline"
             @click.stop="handleMentionClick(part.userId)"
           >
             {{ part.text }}
@@ -246,13 +256,25 @@ const handleReplyDeleted = (id: number) => {
         </template>
       </p>
 
+      <!-- Pictures -->
+      <div v-if="comment.pictures?.length" class="mt-2 flex flex-wrap gap-2">
+        <div
+          v-for="(pic, idx) in comment.pictures"
+          :key="idx"
+          class="h-24 w-24 overflow-hidden rounded-md border border-border cursor-pointer hover:opacity-90 transition-opacity"
+          @click="openImagePreview(pic)"
+        >
+          <img :src="pic" class="h-full w-full object-cover" loading="lazy" />
+        </div>
+      </div>
+
       <!-- Actions -->
       <div class="mt-2 flex items-center gap-4 text-[13px] text-muted-foreground/80">
         <span>{{ timeAgo }}</span>
 
         <button
-          class="flex items-center gap-1 hover:text-[#00aeec] transition-colors"
-          :class="{ 'text-[#00aeec]': isLiked }"
+          class="flex items-center gap-1 hover:text-primary transition-colors"
+          :class="{ 'text-primary': isLiked }"
           @click="handleLike"
         >
           <ThumbsUp :size="14" :class="{ 'fill-current': isLiked }" />
@@ -260,7 +282,7 @@ const handleReplyDeleted = (id: number) => {
         </button>
 
         <button
-          class="flex items-center gap-1 hover:text-[#00aeec] transition-colors"
+          class="flex items-center gap-1 hover:text-primary transition-colors"
           @click="showReplyInput = !showReplyInput"
         >
           回复
@@ -268,7 +290,7 @@ const handleReplyDeleted = (id: number) => {
 
         <div v-if="isSelf || isAuthor" ref="moreMenuRef" class="relative">
           <button
-            class="hover:text-[#00aeec] transition-colors ml-auto"
+            class="hover:text-primary transition-colors ml-auto"
             @click="showMoreMenu = !showMoreMenu"
           >
             <MoreVertical :size="14" />
@@ -287,7 +309,7 @@ const handleReplyDeleted = (id: number) => {
             </button>
             <button
               v-if="isSelf || isAuthor"
-              class="flex w-full items-center gap-2 rounded px-2 py-1.5 text-sm text-red-500 hover:bg-red-50"
+              class="flex w-full items-center gap-2 rounded px-2 py-1.5 text-sm text-[var(--status-danger-ink)] hover:bg-[var(--status-danger-soft)]"
               @click="handleDelete"
             >
               <Trash2 :size="14" />
@@ -333,7 +355,7 @@ const handleReplyDeleted = (id: number) => {
         <div v-if="repliesTotal > replies.length" class="mt-2 text-[13px] text-muted-foreground/80">
           共 {{ repliesTotal }} 条回复,
           <button
-            class="text-[#00aeec] hover:underline"
+            class="text-primary hover:underline"
             @click="
               () => {
                 if (replies.length === 0) {
@@ -350,5 +372,8 @@ const handleReplyDeleted = (id: number) => {
         </div>
       </div>
     </div>
+
+    <!-- Image Preview Modal -->
+    <ImageViewer v-model="showPreview" :src="previewImageUrl" />
   </div>
 </template>

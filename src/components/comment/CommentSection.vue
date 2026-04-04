@@ -123,13 +123,14 @@ const handleSortChange = (sort: 'time' | 'hot') => {
   void loadComments(true)
 }
 
-const handleCreateComment = async (content: string, atUserIds: number[]) => {
+const handleCreateComment = async (content: string, atUserIds: number[], pictures: string[]) => {
   try {
     const res = await createComment({
       videoId: props.videoId || undefined,
       dynamicId: props.dynamicId || undefined,
       content,
       atUserIds,
+      pictures,
     })
     toast.success('发表成功')
     // Insert at the top
@@ -200,7 +201,7 @@ onMounted(() => {
 
       <div class="flex items-center gap-3 text-[13px] ml-2">
         <button
-          class="transition-colors hover:text-[#00aeec]"
+          class="transition-colors hover:text-primary"
           :class="sortBy === 'hot' ? 'text-foreground font-medium' : 'text-muted-foreground/80'"
           @click="handleSortChange('hot')"
         >
@@ -208,7 +209,7 @@ onMounted(() => {
         </button>
         <div class="h-3 w-[1px] bg-accent"></div>
         <button
-          class="transition-colors hover:text-[#00aeec]"
+          class="transition-colors hover:text-primary"
           :class="sortBy === 'time' ? 'text-foreground font-medium' : 'text-muted-foreground/80'"
           @click="handleSortChange('time')"
         >

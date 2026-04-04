@@ -1,4 +1,4 @@
-﻿<script setup lang="ts">
+<script setup lang="ts">
 import { ref, watch, nextTick } from 'vue'
 import {
   getFolderList,
@@ -261,7 +261,7 @@ const handleOpenChange = (val: boolean) => {
   </Dialog>
 </template>
 
-<style scoped>
+<style scoped lang="scss">
 .folder-dialog-content {
   max-width: 420px;
   padding: 0;
@@ -271,14 +271,14 @@ const handleOpenChange = (val: boolean) => {
 
 .folder-dialog-header {
   padding: 18px 24px 14px;
-  border-bottom: 1px solid hsl(var(--border));
+  border-bottom: 1px solid oklch(var(--border));
 }
 
 .folder-dialog-title {
   font-size: 16px;
   font-weight: 600;
   text-align: center;
-  color: hsl(var(--foreground));
+  color: oklch(var(--foreground));
 }
 
 .folder-list {
@@ -298,10 +298,10 @@ const handleOpenChange = (val: boolean) => {
   background: transparent;
   border: none;
   text-align: left;
-}
 
-.folder-row:hover {
-  background: hsl(var(--muted) / 0.5);
+  &:hover {
+    background: oklch(var(--muted) / 0.5);
+  }
 }
 
 .folder-checkbox {
@@ -311,25 +311,25 @@ const handleOpenChange = (val: boolean) => {
   width: 20px;
   height: 20px;
   border-radius: 50%;
-  border: 2px solid hsl(var(--muted-foreground) / 0.3);
+  border: 2px solid oklch(var(--muted-foreground) / 0.3);
   flex-shrink: 0;
   transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
-}
 
-.folder-checkbox.is-checked {
-  background: #00a1d6;
-  border-color: #00a1d6;
+  &.is-checked {
+    background-color: var(--color-primary);
+    border-color: var(--color-primary);
+  }
 }
 
 .check-icon {
-  color: #fff;
+  color: var(--color-primary-foreground);
 }
 
 .folder-name {
   flex: 1;
   min-width: 0;
   font-size: 14px;
-  color: hsl(var(--foreground));
+  color: oklch(var(--foreground));
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -338,13 +338,13 @@ const handleOpenChange = (val: boolean) => {
 .folder-count {
   flex-shrink: 0;
   font-size: 13px;
-  color: hsl(var(--muted-foreground));
+  color: oklch(var(--muted-foreground));
   font-variant-numeric: tabular-nums;
 }
 
 .folder-create-area {
   padding: 4px 24px 8px;
-  border-top: 1px solid hsl(var(--border) / 0.5);
+  border-top: 1px solid oklch(var(--border) / 0.5);
 }
 
 .folder-create-btn {
@@ -353,16 +353,16 @@ const handleOpenChange = (val: boolean) => {
   gap: 8px;
   padding: 10px 0;
   font-size: 14px;
-  color: hsl(var(--muted-foreground));
+  color: oklch(var(--muted-foreground));
   background: none;
   border: none;
   cursor: pointer;
   transition: color 0.15s ease;
   width: 100%;
-}
 
-.folder-create-btn:hover {
-  color: #00a1d6;
+  &:hover {
+    color: var(--color-primary);
+  }
 }
 
 .folder-create-form {
@@ -376,21 +376,21 @@ const handleOpenChange = (val: boolean) => {
   flex: 1;
   height: 36px;
   padding: 0 12px;
-  border: 1px solid hsl(var(--border));
+  border: 1px solid oklch(var(--border));
   border-radius: 6px;
   font-size: 13px;
-  color: hsl(var(--foreground));
-  background: hsl(var(--background));
+  color: oklch(var(--foreground));
+  background: oklch(var(--background));
   outline: none;
   transition: border-color 0.2s ease;
-}
 
-.folder-create-input:focus {
-  border-color: #00a1d6;
-}
+  &:focus {
+    border-color: var(--color-primary);
+  }
 
-.folder-create-input::placeholder {
-  color: hsl(var(--muted-foreground) / 0.6);
+  &::placeholder {
+    color: oklch(var(--muted-foreground) / 0.6);
+  }
 }
 
 .folder-create-confirm {
@@ -400,20 +400,20 @@ const handleOpenChange = (val: boolean) => {
   font-size: 13px;
   font-weight: 500;
   color: #fff;
-  background: #00a1d6;
+  background-color: var(--color-primary);
   border: none;
   cursor: pointer;
   transition: all 0.15s ease;
   white-space: nowrap;
-}
 
-.folder-create-confirm:hover:not(:disabled) {
-  background: #0090c1;
-}
+  &:hover:not(:disabled) {
+    background: oklch(from var(--color-primary) calc(l - 0.05) c h);
+  }
 
-.folder-create-confirm:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
+  &:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
 }
 
 .folder-dialog-footer {
@@ -427,23 +427,22 @@ const handleOpenChange = (val: boolean) => {
   border-radius: 6px;
   font-size: 14px;
   font-weight: 500;
-  color: #00a1d6;
+  color: var(--color-primary);
   background: transparent;
   border: none;
   cursor: pointer;
   transition: all 0.15s ease;
+
+  &:hover:not(:disabled) {
+    background: oklch(var(--muted) / 0.5);
+  }
+
+  &:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+  }
 }
 
-.folder-confirm-btn:hover:not(:disabled) {
-  background: hsl(var(--muted) / 0.5);
-}
-
-.folder-confirm-btn:disabled {
-  opacity: 0.4;
-  cursor: not-allowed;
-}
-
-/* Create input slide transition */
 .create-slide-enter-active,
 .create-slide-leave-active {
   transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
@@ -462,4 +461,6 @@ const handleOpenChange = (val: boolean) => {
   opacity: 1;
   max-height: 60px;
 }
+
+/* Create input slide transition */
 </style>

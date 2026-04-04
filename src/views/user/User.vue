@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, watch } from 'vue'
+import { ref, computed, onMounted, watch, type Component } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import {
@@ -23,12 +23,20 @@ import {
   type RelationInfo,
   type SocialUserInfo,
 } from '@/api/social'
-import { getFolderList, getFolderVideos, type FolderItem, type FolderVideoItem } from '@/api/video'
+import {
+  getFolderList,
+  getFolderVideos,
+  toggleVideoLike,
+  type FolderItem,
+  type FolderVideoItem,
+} from '@/api/video'
 import {
   getDynamicList,
   createDynamic,
   deleteDynamic,
   pinDynamic,
+  toggleDynamicLike,
+  getWorkId,
   type WorkFeedItem,
 } from '@/api/dynamic'
 import { createConversation } from '@/api/chat'
@@ -36,6 +44,9 @@ import { uploadImage } from '@/api/upload'
 import { toast } from 'vue-sonner'
 import Navbar from '@/components/layout/Navbar.vue'
 import AppAvatar from '@/components/common/AppAvatar.vue'
+import CommentSection from '@/components/comment/CommentSection.vue'
+import UserBannerPicker from '@/components/user/UserBannerPicker.vue'
+import { BannerDisplay } from '@/constants/banner'
 import {
   Home,
   Zap,
@@ -47,12 +58,15 @@ import {
   Upload,
   FileVideo,
   ChevronRight,
+  Shirt,
+  VenusAndMars,
   Pin,
   Trash2,
   MoreVertical,
   ImagePlus,
   Search,
   UserCheck,
+  ThumbsUp,
 } from 'lucide-vue-next'
 import {
   DropdownMenu,
@@ -73,6 +87,10 @@ const relation = ref<RelationInfo | null>(null)
 const loading = ref(true)
 const followLoading = ref(false)
 const chatOpening = ref(false)
+const bannerPreviewUrl = ref('')
+const bannerPickerOpen = ref(false)
+/** 与 BannerDisplay.profileHeight 同源，骨架屏同步该高度 */
+const profileBannerHeight = BannerDisplay.profileHeight
 
 type TabKey = 'home' | 'dynamic' | 'videos' | 'favorites' | 'following' | 'fans' | 'settings'
 const activeTab = ref<TabKey>('home')
@@ -96,6 +114,7 @@ const dynamicFilter = ref<'all' | 'video' | 'image'>('all')
 const newDynamicContent = ref('')
 const newDynamicImageUrl = ref('')
 const dynamicPublishing = ref(false)
+const expandedComments = ref<Set<string>>(new Set())
 
 // Videos Tab Data
 const videos = ref<UserVideoItem[]>([])
@@ -136,6 +155,7 @@ const localFollowState = ref(new Map<number, boolean>())
 
 const isFollowed = computed(() => relation.value?.isFocus ?? false)
 const isMutual = computed(() => relation.value?.isMutualFollow ?? false)
+const displayBannerUrl = computed(() => bannerPreviewUrl.value || user.value?.bannerUrl || '')
 
 const followBtnText = computed(() => {
   if (isMutual.value) return '互相关注'
@@ -196,12 +216,96 @@ const genderText = computed(() => {
   return '保密'
 })
 
+const normalizeLikeTags = (tags?: string[] | null) => {
+  if (!Array.isArray(tags)) return []
+  return tags
+    .map((tag) => tag.trim())
+    .filter((tag, index, arr) => tag.length > 0 && arr.indexOf(tag) === index)
+}
+
+const visibleLikeTags = computed(() => normalizeLikeTags(user.value?.likeTags))
+
+type ProfileMetaItem =
+  | { key: string; label: string; icon: string | Component; value: string; tags?: never }
+  | { key: string; label: string; icon: string | Component; value?: never; tags: string[] }
+
+const profileMetaItems = computed<ProfileMetaItem[]>(() => {
+  if (!user.value) return []
+
+  const items: ProfileMetaItem[] = [
+    { key: 'uid', label: 'UID', icon: 'vui_icon sic-fsp-uid_line', value: String(user.value.id) },
+    {
+      key: 'birthday',
+      label: '生日',
+      icon: 'vui_icon sic-fsp-cake_line',
+      value: user.value.birthday ? fmtDate(user.value.birthday) : '-',
+    },
+    { key: 'gender', label: '性别', icon: VenusAndMars, value: genderText.value || '-' },
+  ]
+
+  if (visibleLikeTags.value.length) {
+    items.push({
+      key: 'likeTags',
+      label: '兴趣',
+      icon: 'vui_icon sic-fsp-tag_line',
+      tags: visibleLikeTags.value,
+    })
+  }
+
+  return items
+})
+
+const likeTagInput = ref('')
+
+const addLikeTagDraft = async () => {
+  if (!userConf.value) return
+  const nextTag = likeTagInput.value.trim()
+  if (!nextTag) return
+  if (userConf.value.likeTags.includes(nextTag)) {
+    likeTagInput.value = ''
+    return
+  }
+  userConf.value.likeTags = [...userConf.value.likeTags, nextTag]
+  likeTagInput.value = ''
+  await saveLikeTags(true)
+}
+
+const removeLikeTagDraft = async (tag: string) => {
+  if (!userConf.value) return
+  userConf.value.likeTags = userConf.value.likeTags.filter((item) => item !== tag)
+  await saveLikeTags(true)
+}
+
+const saveLikeTags = async (silent = false) => {
+  if (!userConf.value || confSaving.value) return
+
+  confSaving.value = true
+  const nextTags = normalizeLikeTags(userConf.value.likeTags)
+  try {
+    await updateUserConfig({ likeTags: nextTags })
+    userConf.value.likeTags = nextTags
+    if (user.value) {
+      user.value.likeTags = nextTags
+    }
+    authStore.updateUser({ likeTags: nextTags })
+    if (silent !== true) toast.success('兴趣标签已保存')
+  } catch {
+    toast.error('保存兴趣标签失败')
+  } finally {
+    confSaving.value = false
+  }
+}
+
 // ---- Fetchers ----
 
 const fetchUserProfile = async () => {
   loading.value = true
   try {
-    user.value = await getUserDetail(userId.value)
+    const detail = await getUserDetail(userId.value)
+    user.value = {
+      ...detail,
+      likeTags: normalizeLikeTags(detail.likeTags),
+    }
     if (authStore.isLoggedIn && !isSelf.value) {
       relation.value = await getRelation(userId.value)
     }
@@ -347,7 +451,11 @@ const fetchDynamics = async (page = 1) => {
 const fetchUserConf = async () => {
   confLoading.value = true
   try {
-    userConf.value = await getUserConfig()
+    const config = await getUserConfig()
+    userConf.value = {
+      ...config,
+      likeTags: normalizeLikeTags(config.likeTags),
+    }
   } catch {
     toast.error('获取隐私设置失败')
   } finally {
@@ -554,6 +662,49 @@ const handlePinDynamic = async (item: WorkFeedItem) => {
   }
 }
 
+const getDynamicFeedKey = (item: WorkFeedItem) => `${item.workType}-${getWorkId(item)}`
+
+const toggleComments = (item: WorkFeedItem) => {
+  const key = getDynamicFeedKey(item)
+  if (expandedComments.value.has(key)) {
+    expandedComments.value.delete(key)
+    return
+  }
+  expandedComments.value.add(key)
+}
+
+const isCommentExpanded = (item: WorkFeedItem) =>
+  expandedComments.value.has(getDynamicFeedKey(item))
+
+const getVideoId = (item: WorkFeedItem) => {
+  return item.workType === 1 && item.video ? item.video.id : undefined
+}
+
+const getDynamicId = (item: WorkFeedItem) => {
+  return item.workType === 2 && item.dynamic ? item.dynamic.id : undefined
+}
+
+const handleLike = async (item: WorkFeedItem) => {
+  if (!authStore.isLoggedIn) {
+    toast.error('请先登录')
+    return
+  }
+
+  try {
+    if (item.workType === 1 && item.video) {
+      const res = await toggleVideoLike(item.video.id)
+      item.video.isLiked = res.isLiked
+      item.video.likeCount = res.likes
+    } else if (item.workType === 2 && item.dynamic) {
+      const res = await toggleDynamicLike(item.dynamic.id)
+      item.dynamic.isLiked = res.isLiked
+      item.dynamic.likeCount = res.likeCount
+    }
+  } catch {
+    toast.error('操作失败')
+  }
+}
+
 const handleDynamicImageUpload = async (e: Event) => {
   const target = e.target as HTMLInputElement
   const file = target.files?.[0]
@@ -582,8 +733,53 @@ const toggleConf = async (key: keyof UpdateUserConfigParams) => {
   }
 }
 
-const switchTab = (tab: TabKey) => {
+const handleBannerPreview = (url: string | null) => {
+  bannerPreviewUrl.value = url ?? ''
+}
+
+const handleBannerSaved = (payload: { bannerId: number; bannerUrl: string }) => {
+  bannerPreviewUrl.value = ''
+
+  if (user.value) {
+    user.value.bannerUrl = payload.bannerUrl
+  }
+
+  if (userConf.value) {
+    userConf.value.bannerId = payload.bannerId
+    userConf.value.bannerUrl = payload.bannerId === 0 ? payload.bannerUrl : ''
+  }
+
+  authStore.updateUser({ bannerUrl: payload.bannerUrl })
+}
+
+const toggleBannerPicker = () => {
+  bannerPickerOpen.value = !bannerPickerOpen.value
+}
+
+const closeBannerPicker = () => {
+  bannerPickerOpen.value = false
+}
+
+const getTabQueryValue = (tab: TabKey): string | undefined => {
+  return tab === 'home' ? undefined : tab
+}
+
+const syncTabQuery = (tab: TabKey) => {
+  const currentTab = Array.isArray(route.query.tab) ? route.query.tab[0] : route.query.tab
+  const nextTab = getTabQueryValue(tab)
+
+  if ((currentTab ?? undefined) === nextTab) return
+
+  const nextQuery = { ...route.query }
+  if (nextTab) nextQuery.tab = nextTab
+  else delete nextQuery.tab
+
+  void router.replace({ path: route.path, query: nextQuery })
+}
+
+const switchTab = (tab: TabKey, syncQuery = true) => {
   activeTab.value = tab
+  if (syncQuery) syncTabQuery(tab)
   if (tab === 'home') {
     if (!homeVideos.value.length) void fetchHomeVideos()
     if (!likedVideos.value.length) void fetchLiked()
@@ -653,29 +849,26 @@ const switchDynamicFilter = (filter: 'all' | 'video' | 'image') => {
   dynamicFilter.value = filter
   dynamics.value = []
   dynamicPage.value = 1
+  expandedComments.value.clear()
   void fetchDynamics(1)
 }
 
 const applyTabFromQuery = () => {
   const tab = route.query.tab as string | undefined
   if (tab === 'favorites' && tabs.value.some((t) => t.key === 'favorites')) {
-    activeTab.value = 'favorites'
-    switchTab('favorites')
+    switchTab('favorites', false)
   } else if (tab === 'dynamic') {
-    activeTab.value = 'dynamic'
-    switchTab('dynamic')
+    switchTab('dynamic', false)
   } else if (tab === 'videos') {
-    activeTab.value = 'videos'
-    switchTab('videos')
+    switchTab('videos', false)
   } else if (tab === 'following') {
-    activeTab.value = 'following'
-    switchTab('following')
+    switchTab('following', false)
   } else if (tab === 'fans') {
-    activeTab.value = 'fans'
-    switchTab('fans')
+    switchTab('fans', false)
   } else if (tab === 'settings' && isSelf.value) {
-    activeTab.value = 'settings'
-    switchTab('settings')
+    switchTab('settings', false)
+  } else if (activeTab.value !== 'home') {
+    switchTab('home', false)
   }
 }
 
@@ -709,7 +902,12 @@ watch(userId, () => {
   folderVideos.value = []
   dynamics.value = []
   dynamicTotal.value = 0
+  dynamicPage.value = 1
+  dynamicFilter.value = 'all'
+  expandedComments.value.clear()
   userConf.value = null
+  bannerPreviewUrl.value = ''
+  bannerPickerOpen.value = false
   followingList.value = []
   followingTotal.value = 0
   followingPage.value = 1
@@ -724,6 +922,7 @@ watch(userId, () => {
   void fetchLiked()
   void fetchCoined()
   void fetchFolders()
+  applyTabFromQuery()
 })
 
 const tabs = computed(() => {
@@ -759,9 +958,6 @@ const privacySettings = [
   { key: 'openFans' as const, label: '公开我的粉丝列表' },
   { key: 'openLikeVideo' as const, label: '公开最近点赞的视频' },
   { key: 'openCoinVideo' as const, label: '公开最近投币的视频' },
-  { key: 'openLikeArticle' as const, label: '公开我的点赞文章' },
-  { key: 'openCoinArticle' as const, label: '公开我的投币文章' },
-  { key: 'openFollowAnime' as const, label: '公开我的追番追剧' },
 ]
 </script>
 
@@ -781,18 +977,50 @@ const privacySettings = [
 
     <template v-else-if="user">
       <!-- Header & Banner -->
-      <div class="h-header relative h-[220px]">
-        <div class="absolute inset-0 z-0">
-          <img v-if="user.bannerUrl" :src="user.bannerUrl" class="w-full h-full object-cover" />
-          <div v-else class="w-full h-full bg-gradient-to-r from-[#00a1d6] to-[#fb7299]"></div>
-        </div>
-        <div class="absolute top-0 left-0 right-0 z-50">
-          <Navbar class="text-white" />
+      <div
+        class="h-header relative"
+        :style="{ height: `${profileBannerHeight}px` }"
+      >
+        <div class="absolute inset-0 z-0 overflow-hidden">
+          <img
+            v-if="displayBannerUrl"
+            :src="displayBannerUrl"
+            class="h-full w-full object-cover object-center"
+            alt=""
+          />
+          <div v-else class="w-full h-full bg-gradient-to-r from-primary to-accent"></div>
         </div>
         <div
-          class="absolute bottom-0 left-0 right-0 z-10 flex items-end px-8 pb-4 pt-24 bg-gradient-to-t from-black/60 to-transparent"
+          class="absolute top-0 left-0 right-0 z-50 bg-gradient-to-b from-black/50 to-transparent pb-10 pointer-events-none"
         >
-          <div class="w-full flex items-end">
+          <div class="pointer-events-auto">
+            <Navbar class="text-white">
+              <template #after-actions="{ actionTextClass }">
+                <button
+                  v-if="isSelf"
+                  type="button"
+                  class="ml-1 flex h-8 w-8 flex-shrink-0 items-center translate-x-[-130px] translate-y-[150px] justify-center rounded-full border border-white/12 bg-black/20 shadow-[0_18px_34px_-24px_rgba(0,0,0,0.72)] backdrop-blur-md sm:ml-2"
+                  :class="[
+                    actionTextClass,
+                    bannerPickerOpen
+                      ? 'border-white/40 bg-black/36 text-white'
+                      : 'hover:border-white/35 hover:bg-black/30',
+                  ]"
+                  :aria-expanded="bannerPickerOpen"
+                  :title="bannerPickerOpen ? '收起横幅面板' : '打开横幅面板'"
+                  aria-label="切换横幅面板"
+                  @click="toggleBannerPicker"
+                >
+                  <Shirt class="h-4 w-4" />
+                </button>
+              </template>
+            </Navbar>
+          </div>
+        </div>
+        <div
+          class="absolute bottom-0 left-0 right-0 z-10 flex items-end pb-4 pt-24 bg-gradient-to-t from-black/60 to-transparent"
+        >
+          <div class="w-full px-4 md:px-8 xl:px-[140px] flex items-end">
             <AppAvatar
               :src="user.avatar"
               :name="user.username"
@@ -816,7 +1044,7 @@ const privacySettings = [
             <div class="ml-auto mb-2 flex items-center gap-3">
               <button
                 v-if="isSelf"
-                class="px-6 py-1.5 rounded bg-white/20 hover:bg-white/30 text-white border border-white/50 text-[14px] transition-colors"
+                class="px-6 py-1.5 rounded bg-card/20 hover:bg-card/30 text-white border border-white/50 text-[14px] transition-colors"
                 @click="router.push('/settings')"
               >
                 编辑资料
@@ -826,15 +1054,15 @@ const privacySettings = [
                   class="px-8 py-1.5 rounded text-white text-[14px] font-medium transition-colors"
                   :class="
                     isFollowed
-                      ? 'bg-white/20 hover:bg-white/30 border border-white/50'
-                      : 'bg-[#00a1d6] hover:bg-[#00b5e5] border border-transparent'
+                      ? 'bg-card/20 hover:bg-card/30 border border-white/50'
+                      : 'bg-primary hover:bg-primary/80 border border-transparent'
                   "
                   @click="handleFollow"
                 >
                   {{ followBtnText }}
                 </button>
                 <button
-                  class="inline-flex items-center gap-1 rounded border border-white/50 bg-white/15 px-5 py-1.5 text-[14px] text-white transition-colors hover:bg-white/25 disabled:cursor-not-allowed disabled:opacity-60"
+                  class="inline-flex items-center gap-1 rounded border border-white/50 bg-card/15 px-5 py-1.5 text-[14px] text-white transition-colors hover:bg-card/25 disabled:cursor-not-allowed disabled:opacity-60"
                   :disabled="chatOpening"
                   @click="handleOpenChat"
                 >
@@ -847,37 +1075,36 @@ const privacySettings = [
         </div>
       </div>
 
-      <!-- Tab Bar -->
-      <div class="bg-white border-b border-[#e3e5e7] sticky top-0 z-40 shadow-sm">
-        <div class="flex items-center px-6 h-[50px]">
+      <div class="bg-card border-b border-border sticky top-0 z-40 shadow-sm">
+        <div class="w-full px-4 md:px-8 xl:px-[140px] flex items-center h-[50px]">
           <div class="flex gap-6 h-full">
             <button
               v-for="t in tabs"
               :key="t.key"
-              class="relative h-full flex items-center text-[14px] cursor-pointer transition-colors hover:text-[#00a1d6]"
-              :class="activeTab === t.key ? 'text-[#00a1d6] font-medium' : 'text-[#18191c]'"
+              class="relative h-full flex items-center text-[14px] cursor-pointer transition-colors hover:text-primary"
+              :class="activeTab === t.key ? 'text-primary font-medium' : 'text-foreground'"
               @click="switchTab(t.key)"
             >
               <component :is="t.icon" class="mr-1" :size="16" />
               {{ t.label }}
               <div
                 v-if="activeTab === t.key"
-                class="absolute bottom-0 left-1/2 -translate-x-1/2 w-5 h-[3px] bg-[#00a1d6] rounded-t-sm"
+                class="absolute bottom-0 left-1/2 -translate-x-1/2 w-5 h-[3px] bg-primary rounded-t-sm"
               ></div>
             </button>
           </div>
 
-          <div class="ml-auto flex items-center gap-5 text-[13px] text-[#61666d]">
+          <div class="ml-auto flex items-center gap-5 text-[13px] text-muted-foreground">
             <div
               class="flex flex-col items-center leading-tight cursor-pointer transition-colors"
               @click="switchTab('following')"
             >
               <span
                 class="font-medium text-[14px] transition-colors"
-                :class="activeTab === 'following' ? 'text-[#00a1d6]' : 'text-[#18191c]'"
+                :class="activeTab === 'following' ? 'text-primary' : 'text-foreground'"
                 >{{ fmtCount(user.followCount) }}</span
               >
-              <span class="text-[11px]" :class="activeTab === 'following' ? 'text-[#00a1d6]' : ''"
+              <span class="text-[11px]" :class="activeTab === 'following' ? 'text-primary' : ''"
                 >关注数</span
               >
             </div>
@@ -887,21 +1114,21 @@ const privacySettings = [
             >
               <span
                 class="font-medium text-[14px] transition-colors"
-                :class="activeTab === 'fans' ? 'text-[#00a1d6]' : 'text-[#18191c]'"
+                :class="activeTab === 'fans' ? 'text-primary' : 'text-foreground'"
                 >{{ fmtCount(user.fansCount) }}</span
               >
-              <span class="text-[11px]" :class="activeTab === 'fans' ? 'text-[#00a1d6]' : ''"
+              <span class="text-[11px]" :class="activeTab === 'fans' ? 'text-primary' : ''"
                 >粉丝数</span
               >
             </div>
             <div class="flex flex-col items-center leading-tight">
-              <span class="text-[#18191c] font-medium text-[14px]">{{
+              <span class="text-foreground font-medium text-[14px]">{{
                 fmtCount(user.totalLikes)
               }}</span>
               <span class="text-[11px]">获赞数</span>
             </div>
             <div class="flex flex-col items-center leading-tight">
-              <span class="text-[#18191c] font-medium text-[14px]">{{
+              <span class="text-foreground font-medium text-[14px]">{{
                 fmtCount(user.totalViews)
               }}</span>
               <span class="text-[11px]">播放数</span>
@@ -911,78 +1138,162 @@ const privacySettings = [
       </div>
 
       <!-- Main Content -->
-      <div class="px-6 pt-5 pb-12">
+      <div class="w-full px-4 md:px-8 xl:px-[140px] pt-5 pb-12">
         <!-- ==================== HOME TAB ==================== -->
-        <div v-if="activeTab === 'home'" class="flex gap-5 items-start">
-          <div class="flex-1 min-w-0 space-y-8">
-            <!-- User Videos Section -->
-            <div>
-              <div class="flex items-center justify-between mb-4">
-                <div class="flex items-center gap-3">
-                  <h3 class="text-[16px] font-bold text-[#18191c]">视频 · {{ homeVideoTotal }}</h3>
-                  <div class="flex gap-1">
+        <div v-if="activeTab === 'home'" class="space-y-8">
+          <div class="flex flex-col gap-5 xl:flex-row xl:items-start">
+            <div class="min-w-0 flex-1">
+              <!-- User Videos Section -->
+              <div>
+                <div class="mb-4 flex items-center justify-between">
+                  <div class="flex items-center gap-3">
+                    <h3 class="text-[16px] font-bold text-foreground">
+                      视频 · {{ homeVideoTotal }}
+                    </h3>
+                    <div class="flex gap-1">
+                      <button
+                        v-for="o in sortOpts"
+                        :key="o.value"
+                        class="px-3 py-0.5 rounded-full text-[12px] transition-colors"
+                        :class="
+                          homeVideoSort === o.value
+                            ? 'bg-primary text-white'
+                            : 'bg-secondary text-muted-foreground hover:text-foreground'
+                        "
+                        @click="changeHomeVideoSort(o.value)"
+                      >
+                        {{ o.label }}
+                      </button>
+                    </div>
+                  </div>
+                  <div class="flex items-center gap-3">
                     <button
-                      v-for="o in sortOpts"
-                      :key="o.value"
-                      class="px-3 py-0.5 rounded-full text-[12px] transition-colors"
-                      :class="
-                        homeVideoSort === o.value
-                          ? 'bg-[#00a1d6] text-white'
-                          : 'bg-[#f4f5f7] text-[#61666d] hover:text-[#18191c]'
-                      "
-                      @click="changeHomeVideoSort(o.value)"
+                      class="flex items-center gap-1 text-[12px] text-muted-foreground transition-colors hover:text-primary"
                     >
-                      {{ o.label }}
+                      <Play :size="12" fill="currentColor" /> 播放全部
+                    </button>
+                    <button
+                      class="flex items-center text-[12px] text-muted-foreground transition-colors hover:text-primary"
+                      @click="switchTab('videos')"
+                    >
+                      查看更多
+                      <ChevronRight :size="14" />
                     </button>
                   </div>
                 </div>
-                <div class="flex items-center gap-3">
-                  <button
-                    class="flex items-center gap-1 text-[12px] text-[#61666d] hover:text-[#00a1d6] transition-colors"
+                <div v-if="homeVideos.length > 0" class="grid grid-cols-4 gap-4">
+                  <div
+                    v-for="v in homeVideos"
+                    :key="v.id"
+                    class="u-video-card"
+                    @click="goVideo(v.id)"
                   >
-                    <Play :size="12" fill="currentColor" /> 播放全部
-                  </button>
-                  <button
-                    class="flex items-center text-[12px] text-[#61666d] hover:text-[#00a1d6] transition-colors"
-                    @click="switchTab('videos')"
-                  >
-                    查看更多 <ChevronRight :size="14" />
-                  </button>
-                </div>
-              </div>
-              <div v-if="homeVideos.length > 0" class="grid grid-cols-5 gap-x-3 gap-y-4">
-                <div
-                  v-for="v in homeVideos"
-                  :key="v.id"
-                  class="u-video-card"
-                  @click="goVideo(v.id)"
-                >
-                  <div class="uvc-cover">
-                    <img :src="v.cover" />
-                    <div class="uvc-stats">
-                      <span><Play :size="11" /> {{ fmtCount(v.views) }}</span>
-                      <span><MessageSquare :size="11" /> {{ fmtCount(v.danmuCount) }}</span>
+                    <div class="uvc-cover">
+                      <img :src="v.cover" />
+                      <div class="uvc-stats">
+                        <span> <Play :size="11" /> {{ fmtCount(v.views) }} </span>
+                        <span> <MessageSquare :size="11" /> {{ fmtCount(v.danmuCount) }} </span>
+                      </div>
+                      <div class="uvc-dur">{{ fmtDuration(v.duration) }}</div>
                     </div>
-                    <div class="uvc-dur">{{ fmtDuration(v.duration) }}</div>
+                    <h4 class="uvc-title">{{ v.title }}</h4>
+                    <div class="uvc-time">{{ fmtTime(v.createdAt) }}</div>
                   </div>
-                  <h4 class="uvc-title">{{ v.title }}</h4>
-                  <div class="uvc-time">{{ fmtTime(v.createdAt) }}</div>
                 </div>
-              </div>
-              <div
-                v-else-if="!homeVideosLoading"
-                class="py-10 text-center text-[#9499a0] text-[13px]"
-              >
-                暂无投稿视频
+                <div
+                  v-else-if="!homeVideosLoading"
+                  class="py-10 text-center text-[13px] text-muted-foreground/80"
+                >
+                  暂无投稿视频
+                </div>
               </div>
             </div>
 
+            <!-- Right Sidebar -->
+            <div class="w-full flex-shrink-0 space-y-4 xl:w-[260px]">
+              <div v-if="isSelf" class="rounded-lg bg-secondary p-4">
+                <div class="mb-3 flex items-center justify-between">
+                  <span class="text-[14px] font-medium text-foreground">创作中心</span>
+                  <button class="text-[12px] text-primary" @click="router.push('/creator')">
+                    进入 >
+                  </button>
+                </div>
+                <div class="flex gap-2">
+                  <button
+                    class="flex flex-1 items-center justify-center gap-1 rounded bg-secondary py-1.5 text-[12px] text-muted-foreground transition-colors hover:text-primary"
+                    @click="router.push('/creator/upload')"
+                  >
+                    <Upload :size="13" /> 视频投稿
+                  </button>
+                  <button
+                    class="flex flex-1 items-center justify-center gap-1 rounded bg-secondary py-1.5 text-[12px] text-muted-foreground transition-colors hover:text-primary"
+                    @click="router.push('/creator/content')"
+                  >
+                    <FileVideo :size="13" /> 投稿管理
+                  </button>
+                </div>
+              </div>
+
+              <div class="rounded-lg bg-secondary p-4">
+                <div
+                  class="mb-2 border-b border-border pb-2 text-[14px] font-medium text-foreground"
+                >
+                  个人资料
+                </div>
+                <div class="flex flex-col gap-2.5 text-[13px]">
+                  <template v-for="item in profileMetaItems" :key="item.key">
+                    <div
+                      v-if="'value' in item"
+                      class="flex items-center gap-2 text-muted-foreground"
+                    >
+                      <component
+                        :is="item.icon"
+                        v-if="typeof item.icon !== 'string'"
+                        class="h-[18px] w-[18px] flex-shrink-0 text-muted-foreground/75"
+                      />
+                      <i
+                        v-else
+                        :class="item.icon"
+                        class="text-[18px] w-[18px] h-[18px] not-italic inline-flex items-center justify-center flex-shrink-0 text-muted-foreground/75"
+                      ></i>
+                      <div class="min-w-0 flex-1 flex items-center min-h-[22px]">
+                        <span class="leading-none pt-[1.5px]">{{ item.value }}</span>
+                      </div>
+                    </div>
+                    <div v-else class="grid grid-cols-2 gap-x-2 gap-y-2.5 mt-2">
+                      <div
+                        v-for="tag in item.tags"
+                        :key="`${item.key}-${tag}`"
+                        class="flex items-center gap-1.5 text-foreground/90 overflow-hidden"
+                      >
+                        <i
+                          class="vui_icon sic-fsp-tag_line text-[14px] not-italic inline-flex items-center justify-center text-muted-foreground/80 shrink-0"
+                        ></i>
+                        <span class="text-[13px] leading-none pt-[1px] truncate">{{ tag }}</span>
+                      </div>
+                    </div>
+                  </template>
+                </div>
+              </div>
+
+              <div class="rounded-lg bg-secondary p-4">
+                <div
+                  class="mb-2 border-b border-border pb-2 text-[14px] font-medium text-foreground"
+                >
+                  公告
+                </div>
+                <div class="text-[12px] text-muted-foreground/80">这个人很懒，什么都没写</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="space-y-8 xl:pr-[280px]">
             <!-- Liked Videos -->
             <div v-if="likedVideos.length > 0">
-              <h3 class="text-[16px] font-bold text-[#18191c] mb-4">最近点赞的视频</h3>
-              <div class="grid grid-cols-5 gap-x-3 gap-y-4">
+              <h3 class="mb-4 text-[16px] font-bold text-foreground">最近点赞的视频</h3>
+              <div class="grid grid-cols-4 gap-4">
                 <div
-                  v-for="v in likedVideos.slice(0, 10)"
+                  v-for="v in likedVideos.slice(0, 8)"
                   :key="v.id"
                   class="u-video-card"
                   @click="goVideo(v.id)"
@@ -990,8 +1301,8 @@ const privacySettings = [
                   <div class="uvc-cover">
                     <img :src="v.cover" />
                     <div class="uvc-stats">
-                      <span><Play :size="11" /> {{ fmtCount(v.views) }}</span>
-                      <span><MessageSquare :size="11" /> {{ fmtCount(v.danmuCount) }}</span>
+                      <span> <Play :size="11" /> {{ fmtCount(v.views) }} </span>
+                      <span> <MessageSquare :size="11" /> {{ fmtCount(v.danmuCount) }} </span>
                     </div>
                     <div class="uvc-dur">{{ fmtDuration(v.duration) }}</div>
                   </div>
@@ -1003,10 +1314,10 @@ const privacySettings = [
 
             <!-- Coined Videos -->
             <div v-if="coinedVideos.length > 0">
-              <h3 class="text-[16px] font-bold text-[#18191c] mb-4">最近投币的视频</h3>
-              <div class="grid grid-cols-5 gap-x-3 gap-y-4">
+              <h3 class="mb-4 text-[16px] font-bold text-foreground">最近投币的视频</h3>
+              <div class="grid grid-cols-4 gap-4">
                 <div
-                  v-for="v in coinedVideos.slice(0, 10)"
+                  v-for="v in coinedVideos.slice(0, 8)"
                   :key="v.id"
                   class="u-video-card"
                   @click="goVideo(v.id)"
@@ -1014,8 +1325,8 @@ const privacySettings = [
                   <div class="uvc-cover">
                     <img :src="v.cover" />
                     <div class="uvc-stats">
-                      <span><Play :size="11" /> {{ fmtCount(v.views) }}</span>
-                      <span><MessageSquare :size="11" /> {{ fmtCount(v.danmuCount) }}</span>
+                      <span> <Play :size="11" /> {{ fmtCount(v.views) }} </span>
+                      <span> <MessageSquare :size="11" /> {{ fmtCount(v.danmuCount) }} </span>
                     </div>
                     <div class="uvc-dur">{{ fmtDuration(v.duration) }}</div>
                   </div>
@@ -1027,21 +1338,22 @@ const privacySettings = [
 
             <!-- Folders on Home -->
             <div v-if="folders.length > 0">
-              <div class="flex justify-between items-center mb-4">
+              <div class="mb-4 flex items-center justify-between">
                 <div class="flex items-center gap-2">
-                  <h3 class="text-[16px] font-bold text-[#18191c]">收藏夹</h3>
-                  <span class="text-[12px] text-[#9499a0]">· {{ folders.length }}</span>
+                  <h3 class="text-[16px] font-bold text-foreground">收藏夹</h3>
+                  <span class="text-[12px] text-muted-foreground/80">· {{ folders.length }}</span>
                 </div>
                 <button
-                  class="flex items-center text-[12px] text-[#61666d] hover:text-[#00a1d6] transition-colors"
+                  class="flex items-center text-[12px] text-muted-foreground transition-colors hover:text-primary"
                   @click="router.push('/favorites')"
                 >
-                  查看更多 <ChevronRight :size="14" />
+                  查看更多
+                  <ChevronRight :size="14" />
                 </button>
               </div>
-              <div class="grid grid-cols-5 gap-x-3 gap-y-4">
+              <div class="grid grid-cols-4 gap-4">
                 <div
-                  v-for="f in folders.slice(0, 5)"
+                  v-for="f in folders.slice(0, 4)"
                   :key="f.id"
                   class="u-folder-card"
                   @click="router.push({ path: '/favorites', query: { folderId: String(f.id) } })"
@@ -1063,77 +1375,18 @@ const privacySettings = [
               </div>
             </div>
           </div>
-
-          <!-- Right Sidebar -->
-          <div class="w-[260px] flex-shrink-0 space-y-4">
-            <div v-if="isSelf" class="bg-[#f6f7f8] rounded-lg p-4">
-              <div class="flex justify-between items-center mb-3">
-                <span class="text-[14px] font-medium text-[#18191c]">创作中心</span>
-                <button class="text-[12px] text-[#00a1d6]" @click="router.push('/creator')">
-                  进入 >
-                </button>
-              </div>
-              <div class="flex gap-2">
-                <button
-                  class="flex-1 py-1.5 bg-[#f4f5f7] rounded text-[12px] text-[#61666d] hover:text-[#00a1d6] flex justify-center items-center gap-1 transition-colors"
-                  @click="router.push('/creator/upload')"
-                >
-                  <Upload :size="13" /> 视频投稿
-                </button>
-                <button
-                  class="flex-1 py-1.5 bg-[#f4f5f7] rounded text-[12px] text-[#61666d] hover:text-[#00a1d6] flex justify-center items-center gap-1 transition-colors"
-                  @click="router.push('/creator/content')"
-                >
-                  <FileVideo :size="13" /> 投稿管理
-                </button>
-              </div>
-            </div>
-
-            <div class="bg-[#f6f7f8] rounded-lg p-4">
-              <div
-                class="text-[14px] font-medium text-[#18191c] mb-2 pb-2 border-b border-[#e3e5e7]"
-              >
-                个人资料
-              </div>
-              <div class="flex flex-col gap-1.5 text-[12px]">
-                <div class="flex">
-                  <span class="text-[#9499a0] w-10">UID</span>
-                  <span class="text-[#61666d]">{{ user.id }}</span>
-                </div>
-                <div class="flex">
-                  <span class="text-[#9499a0] w-10">生日</span>
-                  <span class="text-[#61666d]">{{
-                    user.birthday ? fmtDate(user.birthday) : '-'
-                  }}</span>
-                </div>
-                <div class="flex">
-                  <span class="text-[#9499a0] w-10">性别</span>
-                  <span class="text-[#61666d]">{{ genderText }}</span>
-                </div>
-              </div>
-            </div>
-
-            <div class="bg-[#f6f7f8] rounded-lg p-4">
-              <div
-                class="text-[14px] font-medium text-[#18191c] mb-2 pb-2 border-b border-[#e3e5e7]"
-              >
-                公告
-              </div>
-              <div class="text-[12px] text-[#9499a0]">这个人很懒，什么都没写</div>
-            </div>
-          </div>
         </div>
 
         <!-- ==================== DYNAMIC TAB ==================== -->
         <div v-else-if="activeTab === 'dynamic'" class="flex gap-5 items-start">
           <!-- Left Sidebar -->
-          <div class="w-[180px] flex-shrink-0 bg-[#f6f7f8] rounded-lg py-3">
+          <div class="w-[180px] flex-shrink-0 bg-secondary rounded-lg py-3">
             <button
               class="w-full text-left px-5 py-2 text-[13px] transition-colors"
               :class="
                 dynamicFilter === 'all'
-                  ? 'bg-[#00a1d6] text-white'
-                  : 'text-[#61666d] hover:bg-[#f4f5f7]'
+                  ? 'bg-primary text-white'
+                  : 'text-muted-foreground hover:bg-secondary'
               "
               @click="switchDynamicFilter('all')"
             >
@@ -1143,8 +1396,8 @@ const privacySettings = [
               class="w-full text-left px-5 py-2 text-[13px] transition-colors"
               :class="
                 dynamicFilter === 'video'
-                  ? 'bg-[#00a1d6] text-white'
-                  : 'text-[#61666d] hover:bg-[#f4f5f7]'
+                  ? 'bg-primary text-white'
+                  : 'text-muted-foreground hover:bg-secondary'
               "
               @click="switchDynamicFilter('video')"
             >
@@ -1154,8 +1407,8 @@ const privacySettings = [
               class="w-full text-left px-5 py-2 text-[13px] transition-colors"
               :class="
                 dynamicFilter === 'image'
-                  ? 'bg-[#00a1d6] text-white'
-                  : 'text-[#61666d] hover:bg-[#f4f5f7]'
+                  ? 'bg-primary text-white'
+                  : 'text-muted-foreground hover:bg-secondary'
               "
               @click="switchDynamicFilter('image')"
             >
@@ -1166,7 +1419,7 @@ const privacySettings = [
           <!-- Center Content -->
           <div class="flex-1 min-w-0 space-y-4">
             <!-- Post Editor (self only) -->
-            <div v-if="isSelf" class="border border-[#e3e5e7] rounded-lg p-5">
+            <div v-if="isSelf" class="border border-border rounded-lg p-5">
               <div class="flex gap-3">
                 <AppAvatar
                   :src="user.avatar"
@@ -1177,7 +1430,7 @@ const privacySettings = [
                 <div class="flex-1">
                   <textarea
                     v-model="newDynamicContent"
-                    class="w-full border border-[#e3e5e7] rounded-lg p-3 text-[13px] resize-none focus:outline-none focus:border-[#00a1d6] transition-colors"
+                    class="w-full border border-border rounded-lg p-3 text-[13px] resize-none focus:outline-none focus:border-primary transition-colors"
                     rows="3"
                     placeholder="有什么想和大家分享的？"
                   ></textarea>
@@ -1192,7 +1445,7 @@ const privacySettings = [
                   </div>
                   <div class="flex items-center justify-between mt-2">
                     <label
-                      class="cursor-pointer text-[#9499a0] hover:text-[#00a1d6] transition-colors"
+                      class="cursor-pointer text-muted-foreground/80 hover:text-primary transition-colors"
                     >
                       <ImagePlus :size="18" />
                       <input
@@ -1203,7 +1456,7 @@ const privacySettings = [
                       />
                     </label>
                     <button
-                      class="px-5 py-1.5 rounded bg-[#00a1d6] hover:bg-[#00b5e5] text-white text-[13px] transition-colors disabled:opacity-50"
+                      class="px-5 py-1.5 rounded bg-primary hover:bg-primary/80 text-primary-foreground text-[13px] transition-colors disabled:opacity-50"
                       :disabled="dynamicPublishing || !newDynamicContent.trim()"
                       @click="publishDynamic"
                     >
@@ -1217,8 +1470,8 @@ const privacySettings = [
             <!-- Dynamic Feed -->
             <div
               v-for="item in filteredDynamics"
-              :key="`${item.workType}-${item.workId}`"
-              class="border border-[#e3e5e7] rounded-lg p-5"
+              :key="`${item.workType}-${getWorkId(item)}`"
+              class="border border-border rounded-lg p-5"
             >
               <div class="flex gap-3">
                 <div
@@ -1236,20 +1489,24 @@ const privacySettings = [
                   <div class="flex items-center justify-between">
                     <div>
                       <span
-                        class="text-[14px] font-medium text-[#00a1d6] cursor-pointer hover:text-[#00b5e5]"
+                        class="text-[14px] font-medium text-primary cursor-pointer hover:text-primary/80"
                         @click="router.push(`/user/${item.author.id}`)"
                         >{{ item.author.username }}</span
                       >
-                      <span class="text-[12px] text-[#9499a0] ml-2">{{
+                      <span class="text-[12px] text-muted-foreground/80 ml-2">{{
                         fmtFullTime(item.createdAt)
                       }}</span>
-                      <span v-if="item.workType === 1" class="text-[11px] text-[#9499a0] ml-2"
+                      <span
+                        v-if="item.workType === 1"
+                        class="text-[11px] text-muted-foreground/80 ml-2"
                         >· 投稿了视频</span
                       >
                     </div>
                     <DropdownMenu v-if="isSelf">
                       <DropdownMenuTrigger as-child>
-                        <button class="p-1 text-[#9499a0] hover:text-[#61666d] transition-colors">
+                        <button
+                          class="p-1 text-muted-foreground/80 hover:text-muted-foreground transition-colors"
+                        >
                           <MoreVertical :size="16" />
                         </button>
                       </DropdownMenuTrigger>
@@ -1276,14 +1533,14 @@ const privacySettings = [
                   <!-- Pinned badge -->
                   <div
                     v-if="item.dynamic?.isPinned || item.video?.isPinned"
-                    class="inline-flex items-center gap-1 mt-1 px-1.5 py-0.5 bg-[#fff0f0] text-[#fb7299] text-[11px] rounded"
+                    class="mt-1 inline-flex items-center gap-1 rounded-full border border-[var(--status-warning-border)] bg-[var(--status-warning-soft)] px-2 py-0.5 text-[11px] font-medium text-[var(--status-warning-ink)]"
                   >
                     <Pin :size="10" /> 已置顶
                   </div>
 
                   <!-- Dynamic content -->
                   <div v-if="item.workType === 2 && item.dynamic" class="mt-2">
-                    <p class="text-[13px] text-[#18191c] leading-relaxed whitespace-pre-wrap">
+                    <p class="text-[13px] text-foreground leading-relaxed whitespace-pre-wrap">
                       {{ item.dynamic.content }}
                     </p>
                     <img
@@ -1296,11 +1553,11 @@ const privacySettings = [
                   <!-- Video card in dynamic -->
                   <div
                     v-if="item.workType === 1 && item.video"
-                    class="mt-3 flex gap-3 p-3 bg-[#f6f7f8] rounded-lg cursor-pointer hover:bg-[#eef0f2] transition-colors"
+                    class="mt-3 flex gap-3 p-3 bg-secondary rounded-lg cursor-pointer hover:bg-muted transition-colors"
                     @click="goVideo(item.video!.id)"
                   >
                     <div
-                      class="relative w-[160px] aspect-video rounded overflow-hidden flex-shrink-0 bg-[#e3e5e7]"
+                      class="relative w-[160px] aspect-video rounded overflow-hidden flex-shrink-0 bg-accent"
                     >
                       <img :src="item.video.cover" class="w-full h-full object-cover" />
                       <div
@@ -1310,10 +1567,69 @@ const privacySettings = [
                       </div>
                     </div>
                     <div class="flex-1 min-w-0 py-0.5">
-                      <h4 class="text-[13px] font-medium text-[#18191c] line-clamp-2">
+                      <h4 class="text-[13px] font-medium text-foreground line-clamp-2">
                         {{ item.video.title }}
                       </h4>
                     </div>
+                  </div>
+
+                  <div
+                    class="mt-4 flex flex-wrap items-center gap-2 border-t border-border/60 pt-3"
+                  >
+                    <button
+                      class="inline-flex min-w-[78px] items-center gap-1.5 rounded-full px-3 py-1.5 text-[13px] transition-colors"
+                      :class="
+                        isCommentExpanded(item)
+                          ? 'bg-primary/8 text-primary'
+                          : 'text-muted-foreground/80 hover:bg-secondary hover:text-foreground'
+                      "
+                      @click="toggleComments(item)"
+                    >
+                      <MessageSquare :size="14" />
+                      <span v-if="item.workType === 1 && item.video?.commentCount">{{
+                        item.video.commentCount
+                      }}</span>
+                      <span v-else-if="item.workType === 2 && item.dynamic?.commentCount">{{
+                        item.dynamic.commentCount
+                      }}</span>
+                      <span v-else>评论</span>
+                    </button>
+                    <button
+                      class="inline-flex min-w-[78px] items-center gap-1.5 rounded-full px-3 py-1.5 text-[13px] transition-colors hover:bg-secondary"
+                      :class="
+                        item.workType === 1
+                          ? item.video?.isLiked
+                            ? 'text-primary'
+                            : 'text-muted-foreground/80 hover:text-foreground'
+                          : item.dynamic?.isLiked
+                            ? 'text-primary'
+                            : 'text-muted-foreground/80 hover:text-foreground'
+                      "
+                      @click="handleLike(item)"
+                    >
+                      <ThumbsUp
+                        :size="14"
+                        :class="{
+                          'fill-current':
+                            item.workType === 1 ? item.video?.isLiked : item.dynamic?.isLiked,
+                        }"
+                      />
+                      <span v-if="item.workType === 1 && item.video?.likeCount">{{
+                        item.video.likeCount
+                      }}</span>
+                      <span v-else-if="item.workType === 2 && item.dynamic?.likeCount">{{
+                        item.dynamic.likeCount
+                      }}</span>
+                      <span v-else>点赞</span>
+                    </button>
+                  </div>
+
+                  <div v-if="isCommentExpanded(item)" class="mt-4 border-t border-border/50 pt-4">
+                    <CommentSection
+                      :video-id="getVideoId(item)"
+                      :dynamic-id="getDynamicId(item)"
+                      :author-id="item.author.id"
+                    />
                   </div>
                 </div>
               </div>
@@ -1321,14 +1637,14 @@ const privacySettings = [
 
             <div
               v-if="filteredDynamics.length === 0 && !dynamicsLoading"
-              class="py-16 text-center text-[#9499a0] text-[13px]"
+              class="py-16 text-center text-muted-foreground/80 text-[13px]"
             >
               还没有发布过动态
             </div>
 
             <div v-if="dynamics.length < dynamicTotal" class="text-center pt-2">
               <button
-                class="px-6 py-1.5 rounded border border-[#e3e5e7] text-[#61666d] text-[12px] hover:text-[#00a1d6] hover:border-[#00a1d6] transition-colors"
+                class="px-6 py-1.5 rounded border border-border text-muted-foreground text-[12px] hover:text-primary hover:border-primary transition-colors"
                 :disabled="dynamicsLoading"
                 @click="loadMoreDynamics"
               >
@@ -1339,37 +1655,48 @@ const privacySettings = [
 
           <!-- Right Sidebar (same as home) -->
           <div class="w-[260px] flex-shrink-0 space-y-4">
-            <div class="bg-[#f6f7f8] rounded-lg p-4">
-              <div
-                class="text-[14px] font-medium text-[#18191c] mb-2 pb-2 border-b border-[#e3e5e7]"
-              >
+            <div class="bg-secondary rounded-lg p-4">
+              <div class="text-[14px] font-medium text-foreground mb-2 pb-2 border-b border-border">
                 个人资料
               </div>
-              <div class="flex flex-col gap-1.5 text-[12px]">
-                <div class="flex">
-                  <span class="text-[#9499a0] w-10">UID</span>
-                  <span class="text-[#61666d]">{{ user.id }}</span>
-                </div>
-                <div class="flex">
-                  <span class="text-[#9499a0] w-10">生日</span>
-                  <span class="text-[#61666d]">{{
-                    user.birthday ? fmtDate(user.birthday) : '-'
-                  }}</span>
-                </div>
-                <div class="flex">
-                  <span class="text-[#9499a0] w-10">性别</span>
-                  <span class="text-[#61666d]">{{ genderText }}</span>
-                </div>
+              <div class="flex flex-col gap-2 text-[12px]">
+                <template v-for="item in profileMetaItems" :key="item.key">
+                  <div v-if="'value' in item" class="flex items-center gap-2 text-muted-foreground">
+                    <component
+                      :is="item.icon"
+                      v-if="typeof item.icon !== 'string'"
+                      class="h-[18px] w-[18px] flex-shrink-0 text-muted-foreground/75"
+                    />
+                    <i
+                      v-else
+                      :class="item.icon"
+                      class="text-[18px] w-[18px] h-[18px] not-italic inline-flex items-center justify-center flex-shrink-0 text-muted-foreground/75"
+                    ></i>
+                    <div class="min-w-0 flex-1 flex items-center min-h-[22px]">
+                      <span class="leading-none pt-[1.5px] text-[13px]">{{ item.value }}</span>
+                    </div>
+                  </div>
+                  <div v-else class="grid grid-cols-2 gap-x-2 gap-y-2.5 mt-2">
+                    <div
+                      v-for="tag in item.tags"
+                      :key="`${item.key}-${tag}`"
+                      class="flex items-center gap-1.5 text-foreground/90 overflow-hidden"
+                    >
+                      <i
+                        class="vui_icon sic-fsp-tag_line text-[14px] not-italic inline-flex items-center justify-center text-muted-foreground/80 shrink-0"
+                      ></i>
+                      <span class="text-[13px] leading-none pt-[1px] truncate">{{ tag }}</span>
+                    </div>
+                  </div>
+                </template>
               </div>
             </div>
 
-            <div class="bg-[#f6f7f8] rounded-lg p-4">
-              <div
-                class="text-[14px] font-medium text-[#18191c] mb-2 pb-2 border-b border-[#e3e5e7]"
-              >
+            <div class="bg-secondary rounded-lg p-4">
+              <div class="text-[14px] font-medium text-foreground mb-2 pb-2 border-b border-border">
                 公告
               </div>
-              <div class="text-[12px] text-[#9499a0]">这个人很懒，什么都没写</div>
+              <div class="text-[12px] text-muted-foreground/80">这个人很懒，什么都没写</div>
             </div>
           </div>
         </div>
@@ -1377,29 +1704,29 @@ const privacySettings = [
         <!-- ==================== VIDEOS TAB ==================== -->
         <div
           v-else-if="activeTab === 'videos'"
-          class="flex gap-4 items-start bg-white rounded-lg min-h-[500px]"
+          class="flex gap-4 items-start bg-card rounded-lg min-h-[500px]"
         >
-          <div class="w-[160px] flex-shrink-0 border-r border-[#e3e5e7] py-3">
-            <div class="px-4 text-[14px] font-medium text-[#18191c] mb-1">TA的视频</div>
+          <div class="w-[160px] flex-shrink-0 border-r border-border py-3">
+            <div class="px-4 text-[14px] font-medium text-foreground mb-1">TA的视频</div>
             <div
-              class="flex items-center justify-between px-4 py-2 bg-[#00a1d6] text-white cursor-pointer"
+              class="flex items-center justify-between px-4 py-2 bg-primary text-white cursor-pointer"
             >
               <span class="text-[13px]">视频</span>
-              <span class="text-[11px] bg-white/20 px-1.5 rounded">{{ videoTotal }}</span>
+              <span class="text-[11px] bg-card/20 px-1.5 rounded">{{ videoTotal }}</span>
             </div>
           </div>
           <div class="flex-1 p-5">
             <div class="flex items-center justify-between mb-5">
-              <h3 class="text-[16px] font-medium text-[#18191c]">TA的视频</h3>
-              <div class="flex bg-[#f4f5f7] rounded-full p-0.5">
+              <h3 class="text-[16px] font-medium text-foreground">TA的视频</h3>
+              <div class="flex bg-secondary rounded-full p-0.5">
                 <button
                   v-for="o in sortOpts"
                   :key="o.value"
                   class="px-3 py-1 rounded-full text-[12px] transition-colors"
                   :class="
                     videoSort === o.value
-                      ? 'bg-white text-[#00a1d6] shadow-sm'
-                      : 'text-[#61666d] hover:text-[#18191c]'
+                      ? 'bg-card text-primary shadow-sm'
+                      : 'text-muted-foreground hover:text-foreground'
                   "
                   @click="changeSort(o.value)"
                 >
@@ -1408,13 +1735,18 @@ const privacySettings = [
               </div>
             </div>
 
-            <div v-if="videos.length > 0" class="grid grid-cols-4 gap-x-3 gap-y-5">
-              <div v-for="v in videos" :key="v.id" class="u-video-card" @click="goVideo(v.id)">
+            <div v-if="videos.length > 0" class="grid grid-cols-6 gap-5">
+              <div
+                v-for="v in videos"
+                :key="v.id"
+                class="u-video-card cursor-pointer hover-lift"
+                @click="goVideo(v.id)"
+              >
                 <div class="uvc-cover">
                   <img :src="v.cover" />
                   <div class="uvc-stats">
-                    <span><Play :size="11" /> {{ fmtCount(v.views) }}</span>
-                    <span><MessageSquare :size="11" /> {{ fmtCount(v.danmuCount) }}</span>
+                    <span> <Play :size="11" /> {{ fmtCount(v.views) }} </span>
+                    <span> <MessageSquare :size="11" /> {{ fmtCount(v.danmuCount) }} </span>
                   </div>
                   <div class="uvc-dur">{{ fmtDuration(v.duration) }}</div>
                 </div>
@@ -1422,13 +1754,16 @@ const privacySettings = [
                 <div class="uvc-time">{{ fmtTime(v.createdAt) }}</div>
               </div>
             </div>
-            <div v-else-if="!videosLoading" class="py-16 text-center text-[#9499a0] text-[13px]">
+            <div
+              v-else-if="!videosLoading"
+              class="py-16 text-center text-muted-foreground/80 text-[13px]"
+            >
               暂无视频
             </div>
 
             <div v-if="videos.length < videoTotal" class="text-center mt-6">
               <button
-                class="px-6 py-1.5 rounded border border-[#e3e5e7] text-[#61666d] text-[12px] hover:text-[#00a1d6] hover:border-[#00a1d6] transition-colors"
+                class="px-6 py-1.5 rounded border border-border text-muted-foreground text-[12px] hover:text-primary hover:border-primary transition-colors"
                 :disabled="videosLoading"
                 @click="loadMoreVideos"
               >
@@ -1441,49 +1776,53 @@ const privacySettings = [
         <!-- ==================== FAVORITES TAB ==================== -->
         <div
           v-else-if="activeTab === 'favorites'"
-          class="flex gap-4 items-start bg-white rounded-lg min-h-[500px]"
+          class="flex gap-4 items-start bg-card rounded-lg min-h-[500px]"
         >
-          <div class="w-[180px] flex-shrink-0 border-r border-[#e3e5e7] py-3">
-            <div class="px-4 text-[14px] font-medium text-[#18191c] mb-1">我创建的收藏夹</div>
+          <div class="w-[180px] flex-shrink-0 border-r border-border py-3">
+            <div class="px-4 text-[14px] font-medium text-foreground mb-1">我创建的收藏夹</div>
             <div
               v-for="f in folders"
               :key="f.id"
               class="flex items-center justify-between px-4 py-2.5 cursor-pointer transition-colors"
               :class="
                 selectedFolderId === f.id
-                  ? 'bg-[#00a1d6] text-white'
-                  : 'text-[#61666d] hover:bg-[#f4f5f7]'
+                  ? 'bg-primary text-white'
+                  : 'text-muted-foreground hover:bg-secondary'
               "
               @click="selectFolder(f.id)"
             >
               <span class="text-[13px] truncate flex-1">{{ f.name }}</span>
               <span
                 class="text-[11px] ml-2"
-                :class="selectedFolderId === f.id ? 'bg-white/20 px-1.5 rounded' : 'text-[#9499a0]'"
+                :class="
+                  selectedFolderId === f.id
+                    ? 'bg-card/20 px-1.5 rounded'
+                    : 'text-muted-foreground/80'
+                "
                 >{{ f.videoCount }}</span
               >
             </div>
           </div>
           <div v-if="selectedFolder" class="flex-1 p-5">
-            <div class="flex items-center justify-between mb-5 pb-5 border-b border-[#e3e5e7]">
+            <div class="flex items-center justify-between mb-5 pb-5 border-b border-border">
               <div>
-                <h3 class="text-[16px] font-medium text-[#18191c] mb-1">
+                <h3 class="text-[16px] font-medium text-foreground mb-1">
                   {{ selectedFolder.name }}
                 </h3>
-                <div class="text-[11px] text-[#9499a0]">
+                <div class="text-[11px] text-muted-foreground/80">
                   创建者：{{ user.username }} · {{ selectedFolder.videoCount }}个内容
                 </div>
               </div>
               <div class="flex items-center gap-3">
-                <div class="flex bg-[#f4f5f7] rounded-full p-0.5">
+                <div class="flex bg-secondary rounded-full p-0.5">
                   <button
                     v-for="o in folderSortOpts"
                     :key="o.value"
                     class="px-3 py-1 rounded-full text-[12px] transition-colors"
                     :class="
                       folderVideoSort === o.value
-                        ? 'bg-white text-[#00a1d6] shadow-sm'
-                        : 'text-[#61666d] hover:text-[#18191c]'
+                        ? 'bg-card text-primary shadow-sm'
+                        : 'text-muted-foreground hover:text-foreground'
                     "
                     @click="changeFolderSort(o.value)"
                   >
@@ -1491,14 +1830,14 @@ const privacySettings = [
                   </button>
                 </div>
                 <button
-                  class="flex items-center gap-1 px-4 py-1.5 rounded bg-[#00a1d6] hover:bg-[#00b5e5] text-white text-[12px] transition-colors"
+                  class="flex items-center gap-1 px-4 py-1.5 rounded bg-primary hover:bg-primary/80 text-primary-foreground text-[12px] transition-colors"
                 >
                   <Play :size="12" fill="currentColor" /> 播放全部
                 </button>
               </div>
             </div>
 
-            <div v-if="folderVideos.length > 0" class="grid grid-cols-4 gap-x-3 gap-y-5">
+            <div v-if="folderVideos.length > 0" class="grid grid-cols-6 gap-5">
               <div
                 v-for="v in folderVideos"
                 :key="v.id"
@@ -1508,8 +1847,8 @@ const privacySettings = [
                 <div class="uvc-cover">
                   <img :src="v.cover" />
                   <div class="uvc-stats">
-                    <span><Play :size="11" /> {{ fmtCount(v.views) }}</span>
-                    <span><MessageSquare :size="11" /> {{ fmtCount(v.danmuCount) }}</span>
+                    <span> <Play :size="11" /> {{ fmtCount(v.views) }} </span>
+                    <span> <MessageSquare :size="11" /> {{ fmtCount(v.danmuCount) }} </span>
                   </div>
                   <div class="uvc-dur">{{ fmtDuration(v.duration) }}</div>
                 </div>
@@ -1522,14 +1861,14 @@ const privacySettings = [
             </div>
             <div
               v-else-if="!folderVideosLoading"
-              class="py-16 text-center text-[#9499a0] text-[13px]"
+              class="py-16 text-center text-muted-foreground/80 text-[13px]"
             >
               收藏夹为空
             </div>
 
             <div v-if="folderVideos.length < folderVideoTotal" class="text-center mt-6">
               <button
-                class="px-6 py-1.5 rounded border border-[#e3e5e7] text-[#61666d] text-[12px] hover:text-[#00a1d6] hover:border-[#00a1d6] transition-colors"
+                class="px-6 py-1.5 rounded border border-border text-muted-foreground text-[12px] hover:text-primary hover:border-primary transition-colors"
                 :disabled="folderVideosLoading"
                 @click="loadMoreFolderVideos"
               >
@@ -1540,35 +1879,99 @@ const privacySettings = [
         </div>
 
         <!-- ==================== SETTINGS TAB ==================== -->
-        <div v-else-if="activeTab === 'settings' && isSelf" class="bg-white rounded-lg p-6">
-          <h2 class="text-[18px] font-bold text-[#18191c] mb-6">隐私设置</h2>
+        <div v-else-if="activeTab === 'settings' && isSelf" class="bg-card rounded-lg p-6">
+          <h2 class="text-[18px] font-bold text-foreground mb-6">主页设置</h2>
 
-          <div v-if="confLoading" class="py-16 text-center text-[#9499a0] text-[13px]">
+          <div v-if="confLoading" class="py-16 text-center text-muted-foreground/80 text-[13px]">
             加载中...
           </div>
 
-          <div v-else-if="userConf" class="grid grid-cols-3 gap-x-8 gap-y-5">
-            <div
-              v-for="s in privacySettings"
-              :key="s.key"
-              class="flex items-center justify-between"
-            >
-              <span class="text-[13px] text-[#18191c]">{{ s.label }}</span>
-              <button
-                class="relative w-[40px] h-[22px] rounded-full transition-colors"
-                :class="(userConf as Record<string, unknown>)[s.key] ? 'bg-[#00a1d6]' : 'bg-[#ccc]'"
-                :disabled="confSaving"
-                @click="toggleConf(s.key)"
-              >
-                <span
-                  class="absolute top-[2px] w-[18px] h-[18px] rounded-full bg-white shadow transition-transform"
-                  :class="
-                    (userConf as Record<string, unknown>)[s.key]
-                      ? 'translate-x-[20px]'
-                      : 'translate-x-[2px]'
-                  "
-                ></span>
-              </button>
+          <div v-else-if="userConf" class="space-y-8">
+            <div>
+              <h3 class="mb-4 text-[15px] font-semibold text-foreground">隐私设置</h3>
+              <div class="grid grid-cols-3 gap-x-8 gap-y-5">
+                <div
+                  v-for="s in privacySettings"
+                  :key="s.key"
+                  class="flex items-center justify-between"
+                >
+                  <span class="text-[13px] text-foreground">{{ s.label }}</span>
+                  <button
+                    class="relative h-[22px] w-[40px] cursor-pointer rounded-full transition-colors"
+                    :class="
+                      (userConf as Record<string, unknown>)[s.key]
+                        ? 'bg-primary'
+                        : 'surface-tint-strong'
+                    "
+                    :disabled="confSaving"
+                    @click="toggleConf(s.key)"
+                  >
+                    <span
+                      class="absolute left-0 top-[2px] h-[18px] w-[18px] rounded-full bg-white shadow transition-transform"
+                      :class="
+                        (userConf as Record<string, unknown>)[s.key]
+                          ? 'translate-x-[20px]'
+                          : 'translate-x-[2px]'
+                      "
+                    ></span>
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <div class="mt-8">
+              <h3 class="text-[20px] font-bold text-foreground mb-6 tracking-tight">
+                个人标签设置
+              </h3>
+
+              <div class="flex flex-wrap items-center gap-3">
+                <template v-if="userConf.likeTags.length">
+                  <span
+                    v-for="tag in userConf.likeTags"
+                    :key="tag"
+                    class="inline-flex items-center gap-1.5 px-3 h-[34px] rounded shrink-0 border border-border/70 text-[13px] text-foreground bg-transparent shadow-sm"
+                  >
+                    <i
+                      class="vui_icon sic-fsp-tag_line mt-[1px] text-[14px] text-muted-foreground not-italic"
+                    ></i>
+                    {{ tag }}
+                    <button
+                      type="button"
+                      class="ml-1 w-[14px] h-[14px] bg-muted-foreground/60 hover:bg-muted-foreground/80 rounded-full flex items-center justify-center transition-colors"
+                      aria-label="删除标签"
+                      @click="removeLikeTagDraft(tag)"
+                    >
+                      <span class="text-card text-[11px] leading-none pb-[1px]">×</span>
+                    </button>
+                  </span>
+                </template>
+
+                <div class="flex items-center h-[34px] shadow-sm rounded">
+                  <div class="relative w-[200px] h-full">
+                    <input
+                      v-model="likeTagInput"
+                      type="text"
+                      maxlength="24"
+                      class="w-full h-full bg-card border border-border/70 border-r-0 px-3 pr-8 text-[13px] rounded-l outline-none focus:border-primary transition-colors text-foreground"
+                      @keydown.enter.prevent="addLikeTagDraft"
+                    />
+                    <!-- Clear button visible only when user typing -->
+                    <button
+                      v-if="likeTagInput"
+                      class="absolute right-2 top-1/2 -translate-y-1/2 w-[14px] h-[14px] bg-muted-foreground/60 hover:bg-muted-foreground/80 rounded-full flex items-center justify-center transition-colors"
+                      @click="likeTagInput = ''"
+                    >
+                      <span class="text-card text-[11px] leading-none pb-[1px]">×</span>
+                    </button>
+                  </div>
+                  <button
+                    class="h-full border border-border/70 px-5 rounded-r text-[13px] text-primary hover:bg-primary/5 transition-colors focus:border-primary bg-card whitespace-nowrap font-medium"
+                    @click="addLikeTagDraft"
+                  >
+                    新增
+                  </button>
+                </div>
+              </div>
             </div>
           </div>
         </div>
@@ -1576,46 +1979,52 @@ const privacySettings = [
         <!-- ==================== FOLLOWING / FANS TAB ==================== -->
         <div
           v-else-if="activeTab === 'following' || activeTab === 'fans'"
-          class="flex gap-4 items-start bg-white rounded-lg min-h-[500px]"
+          class="flex gap-4 items-start bg-card rounded-lg min-h-[500px]"
         >
           <!-- Left Sidebar -->
-          <div class="w-[180px] flex-shrink-0 border-r border-[#e3e5e7] py-3">
-            <div class="px-4 text-[14px] font-medium text-[#18191c] mb-1">
+          <div class="w-[180px] flex-shrink-0 border-r border-border py-3">
+            <div class="px-4 text-[14px] font-medium text-foreground mb-1">
               {{ isSelf ? '我的关注' : 'TA的关注' }}
             </div>
             <div
               class="flex items-center justify-between px-4 py-2.5 cursor-pointer transition-colors"
               :class="
                 activeTab === 'following'
-                  ? 'bg-[#00a1d6] text-white'
-                  : 'text-[#61666d] hover:bg-[#f4f5f7]'
+                  ? 'bg-primary text-white'
+                  : 'text-muted-foreground hover:bg-secondary'
               "
               @click="switchTab('following')"
             >
               <span class="text-[13px]">全部关注</span>
               <span
                 class="text-[11px] ml-2"
-                :class="activeTab === 'following' ? 'bg-white/20 px-1.5 rounded' : 'text-[#9499a0]'"
+                :class="
+                  activeTab === 'following'
+                    ? 'bg-card/20 px-1.5 rounded'
+                    : 'text-muted-foreground/80'
+                "
                 >{{ followingTotal || user.followCount }}</span
               >
             </div>
 
-            <div class="px-4 text-[14px] font-medium text-[#18191c] mb-1 mt-4">
+            <div class="px-4 text-[14px] font-medium text-foreground mb-1 mt-4">
               {{ isSelf ? '我的粉丝' : 'TA的粉丝' }}
             </div>
             <div
               class="flex items-center justify-between px-4 py-2.5 cursor-pointer transition-colors"
               :class="
                 activeTab === 'fans'
-                  ? 'bg-[#00a1d6] text-white'
-                  : 'text-[#61666d] hover:bg-[#f4f5f7]'
+                  ? 'bg-primary text-white'
+                  : 'text-muted-foreground hover:bg-secondary'
               "
               @click="switchTab('fans')"
             >
               <span class="text-[13px]">{{ isSelf ? '我的粉丝' : 'TA的粉丝' }}</span>
               <span
                 class="text-[11px] ml-2"
-                :class="activeTab === 'fans' ? 'bg-white/20 px-1.5 rounded' : 'text-[#9499a0]'"
+                :class="
+                  activeTab === 'fans' ? 'bg-card/20 px-1.5 rounded' : 'text-muted-foreground/80'
+                "
                 >{{ fansTotal || user.fansCount }}</span
               >
             </div>
@@ -1624,18 +2033,18 @@ const privacySettings = [
           <!-- Main Content -->
           <div class="flex-1 p-5">
             <div class="flex items-center justify-between mb-5">
-              <h3 class="text-[16px] font-medium text-[#18191c]">
+              <h3 class="text-[16px] font-medium text-foreground">
                 {{ activeTab === 'following' ? '全部关注' : isSelf ? '我的粉丝' : 'TA的粉丝' }}
               </h3>
               <div v-if="activeTab === 'following'" class="relative">
                 <input
                   v-model="followingKeyword"
-                  class="w-[200px] h-[32px] pl-3 pr-8 rounded border border-[#e3e5e7] text-[13px] focus:outline-none focus:border-[#00a1d6] transition-colors"
+                  class="w-[200px] h-[32px] pl-3 pr-8 rounded border border-border text-[13px] focus:outline-none focus:border-primary transition-colors"
                   placeholder="搜索关注"
                   @keyup.enter="searchFollowing"
                 />
                 <Search
-                  class="absolute right-2 top-1/2 -translate-y-1/2 text-[#9499a0] cursor-pointer hover:text-[#00a1d6] transition-colors"
+                  class="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground/80 cursor-pointer hover:text-primary transition-colors"
                   :size="16"
                   @click="searchFollowing"
                 />
@@ -1643,12 +2052,12 @@ const privacySettings = [
               <div v-else class="relative">
                 <input
                   v-model="fansKeyword"
-                  class="w-[200px] h-[32px] pl-3 pr-8 rounded border border-[#e3e5e7] text-[13px] focus:outline-none focus:border-[#00a1d6] transition-colors"
+                  class="w-[200px] h-[32px] pl-3 pr-8 rounded border border-border text-[13px] focus:outline-none focus:border-primary transition-colors"
                   placeholder="搜索粉丝"
                   @keyup.enter="searchFans"
                 />
                 <Search
-                  class="absolute right-2 top-1/2 -translate-y-1/2 text-[#9499a0] cursor-pointer hover:text-[#00a1d6] transition-colors"
+                  class="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground/80 cursor-pointer hover:text-primary transition-colors"
                   :size="16"
                   @click="searchFans"
                 />
@@ -1687,13 +2096,13 @@ const privacySettings = [
               </div>
               <div
                 v-if="followingList.length === 0 && !followingLoading"
-                class="py-16 text-center text-[#9499a0] text-[13px]"
+                class="py-16 text-center text-muted-foreground/80 text-[13px]"
               >
                 {{ followingKeyword ? '未找到匹配的关注用户' : '暂无关注' }}
               </div>
               <div
                 v-if="followingLoading && followingList.length === 0"
-                class="py-16 text-center text-[#9499a0] text-[13px]"
+                class="py-16 text-center text-muted-foreground/80 text-[13px]"
               >
                 加载中...
               </div>
@@ -1702,7 +2111,7 @@ const privacySettings = [
                 class="text-center mt-6"
               >
                 <button
-                  class="px-6 py-1.5 rounded border border-[#e3e5e7] text-[#61666d] text-[12px] hover:text-[#00a1d6] hover:border-[#00a1d6] transition-colors"
+                  class="px-6 py-1.5 rounded border border-border text-muted-foreground text-[12px] hover:text-primary hover:border-primary transition-colors"
                   :disabled="followingLoading"
                   @click="loadMoreFollowing"
                 >
@@ -1743,13 +2152,13 @@ const privacySettings = [
               </div>
               <div
                 v-if="fansList.length === 0 && !fansLoading"
-                class="py-16 text-center text-[#9499a0] text-[13px]"
+                class="py-16 text-center text-muted-foreground/80 text-[13px]"
               >
                 {{ fansKeyword ? '未找到匹配的粉丝' : '暂无粉丝' }}
               </div>
               <div
                 v-if="fansLoading && fansList.length === 0"
-                class="py-16 text-center text-[#9499a0] text-[13px]"
+                class="py-16 text-center text-muted-foreground/80 text-[13px]"
               >
                 加载中...
               </div>
@@ -1758,7 +2167,7 @@ const privacySettings = [
                 class="text-center mt-6"
               >
                 <button
-                  class="px-6 py-1.5 rounded border border-[#e3e5e7] text-[#61666d] text-[12px] hover:text-[#00a1d6] hover:border-[#00a1d6] transition-colors"
+                  class="px-6 py-1.5 rounded border border-border text-muted-foreground text-[12px] hover:text-primary hover:border-primary transition-colors"
                   :disabled="fansLoading"
                   @click="loadMoreFans"
                 >
@@ -1768,20 +2177,48 @@ const privacySettings = [
             </template>
           </div>
         </div>
+
+        <Teleport to="body">
+          <transition name="banner-sheet">
+            <div
+              v-if="isSelf && bannerPickerOpen"
+              class="fixed inset-x-0 bottom-0 z-[70] pointer-events-none"
+            >
+              <div
+                class="banner-sheet-panel pointer-events-auto w-screen border-t border-border/70 bg-card/[0.98] shadow-[0_-28px_80px_-40px_rgba(0,0,0,0.48)] backdrop-blur-xl"
+              >
+                <UserBannerPicker
+                  :open="bannerPickerOpen"
+                  class="!rounded-none !border-x-0 !border-b-0 !shadow-none"
+                  @close="closeBannerPicker"
+                  @preview="handleBannerPreview"
+                  @saved="handleBannerSaved"
+                />
+              </div>
+            </div>
+          </transition>
+        </Teleport>
       </div>
     </template>
   </div>
 </template>
 
-<style scoped>
+<style scoped lang="scss">
 .uspace {
   min-height: 100vh;
-  background: #fff;
+  background: var(--color-background);
 }
 
-/* Video Card */
 .u-video-card {
   cursor: pointer;
+
+  &:hover .uvc-cover img {
+    transform: scale(1.05);
+  }
+
+  &:hover .uvc-title {
+    color: var(--color-primary);
+  }
 }
 
 .uvc-cover {
@@ -1789,18 +2226,14 @@ const privacySettings = [
   aspect-ratio: 16/10;
   border-radius: 6px;
   overflow: hidden;
-  background: #f1f2f3;
-}
+  background-color: var(--color-secondary);
 
-.uvc-cover img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  transition: transform 0.3s;
-}
-
-.u-video-card:hover .uvc-cover img {
-  transform: scale(1.05);
+  img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    transition: transform 0.3s;
+  }
 }
 
 .uvc-stats {
@@ -1812,12 +2245,12 @@ const privacySettings = [
   color: #fff;
   font-size: 11px;
   text-shadow: 0 1px 2px rgb(0 0 0 / 0.5);
-}
 
-.uvc-stats span {
-  display: flex;
-  align-items: center;
-  gap: 2px;
+  span {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+  }
 }
 
 .uvc-dur {
@@ -1834,28 +2267,32 @@ const privacySettings = [
 .uvc-title {
   margin-top: 6px;
   font-size: 13px;
-  color: #18191c;
+  color: var(--color-foreground);
   display: -webkit-box;
   -webkit-line-clamp: 2;
+  line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
   line-height: 1.4;
   transition: color 0.2s;
 }
 
-.u-video-card:hover .uvc-title {
-  color: #00a1d6;
-}
-
 .uvc-time {
   margin-top: 3px;
   font-size: 11px;
-  color: #9499a0;
+  color: var(--color-muted-foreground);
 }
 
-/* Folder Card */
 .u-folder-card {
   cursor: pointer;
+
+  &:hover .ufc-cover-img {
+    transform: scale(1.05);
+  }
+
+  &:hover .ufc-title {
+    color: var(--color-primary);
+  }
 }
 
 .ufc-cover {
@@ -1863,24 +2300,20 @@ const privacySettings = [
   aspect-ratio: 16/10;
   border-radius: 6px;
   overflow: hidden;
-  background: #222;
-}
+  background: var(--color-secondary);
 
-.ufc-cover-img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  transition: transform 0.3s;
-}
+  &-img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    transition: transform 0.3s;
+  }
 
-.u-folder-card:hover .ufc-cover-img {
-  transform: scale(1.05);
-}
-
-.ufc-cover-placeholder {
-  width: 100%;
-  height: 100%;
-  background: linear-gradient(135deg, #3a3a3a, #2a2a2a);
+  &-placeholder {
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(135deg, var(--color-secondary), var(--color-card));
+  }
 }
 
 .ufc-overlay {
@@ -1902,32 +2335,28 @@ const privacySettings = [
 .ufc-title {
   margin-top: 6px;
   font-size: 13px;
-  color: #18191c;
+  color: var(--color-foreground);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
   transition: color 0.2s;
 }
 
-.u-folder-card:hover .ufc-title {
-  color: #00a1d6;
-}
-
 .ufc-meta {
   margin-top: 2px;
   font-size: 11px;
-  color: #9499a0;
+  color: var(--color-muted-foreground);
 }
 
-/* Skeleton */
 .sk-wrap {
-  background: #fff;
+  background: var(--color-background);
   min-height: 100vh;
 }
 
 .sk-banner {
-  height: 220px;
-  background: #e3e5e7;
+  /* 与 BannerDisplay.profileHeight 保持一致（常量默认 220） */
+  height: v-bind('profileBannerHeight + "px"');
+  background: var(--color-secondary);
 }
 
 .sk-body {
@@ -1940,7 +2369,7 @@ const privacySettings = [
   width: 84px;
   height: 84px;
   border-radius: 50%;
-  background: #d3d5d7;
+  background: var(--color-muted);
   margin-top: -42px;
 }
 
@@ -1950,23 +2379,22 @@ const privacySettings = [
   flex-direction: column;
   gap: 8px;
   padding-top: 4px;
+
+  div:first-child {
+    width: 140px;
+    height: 20px;
+    border-radius: 4px;
+    background: var(--color-muted);
+  }
+
+  div:last-child {
+    width: 240px;
+    height: 14px;
+    border-radius: 4px;
+    background: var(--color-secondary);
+  }
 }
 
-.sk-lines div:first-child {
-  width: 140px;
-  height: 20px;
-  border-radius: 4px;
-  background: #d3d5d7;
-}
-
-.sk-lines div:last-child {
-  width: 240px;
-  height: 14px;
-  border-radius: 4px;
-  background: #e3e5e7;
-}
-
-/* Social Cards */
 .sc-card {
   display: flex;
   align-items: center;
@@ -1974,10 +2402,10 @@ const privacySettings = [
   padding: 14px 12px;
   border-radius: 8px;
   transition: background-color 0.2s;
-}
 
-.sc-card:hover {
-  background: #f6f7f8;
+  &:hover {
+    background: var(--color-secondary);
+  }
 }
 
 .sc-avatar {
@@ -1988,10 +2416,10 @@ const privacySettings = [
   flex-shrink: 0;
   cursor: pointer;
   transition: opacity 0.2s;
-}
 
-.sc-avatar:hover {
-  opacity: 0.85;
+  &:hover {
+    opacity: 0.85;
+  }
 }
 
 .sc-info {
@@ -2002,21 +2430,21 @@ const privacySettings = [
 .sc-name {
   font-size: 14px;
   font-weight: 500;
-  color: #00a1d6;
+  color: var(--color-primary);
   cursor: pointer;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  transition: color 0.2s;
-}
+  transition: opacity 0.2s;
 
-.sc-name:hover {
-  color: #00b5e5;
+  &:hover {
+    opacity: 0.8;
+  }
 }
 
 .sc-desc {
   font-size: 12px;
-  color: #9499a0;
+  color: var(--color-muted-foreground);
   margin-top: 2px;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -2033,27 +2461,57 @@ const privacySettings = [
   transition: all 0.2s;
   flex-shrink: 0;
   cursor: pointer;
+
+  &-followed {
+    background: var(--color-secondary);
+    color: var(--color-muted-foreground);
+    border: 1px solid var(--color-border);
+
+    &:hover {
+      color: var(--color-accent);
+      border-color: var(--color-accent);
+      background: color-mix(in oklch, var(--color-accent) 10%, transparent);
+    }
+  }
+
+  &-follow {
+    background: var(--color-primary);
+    color: var(--color-primary-foreground);
+    border: 1px solid transparent;
+
+    &:hover {
+      opacity: 0.9;
+    }
+  }
 }
 
-.sc-btn-followed {
-  background: #f4f5f7;
-  color: #9499a0;
-  border: 1px solid #e3e5e7;
+.banner-sheet-enter-active,
+.banner-sheet-leave-active {
+  transition: opacity 180ms ease;
 }
 
-.sc-btn-followed:hover {
-  color: #fb7299;
-  border-color: #fb7299;
-  background: #fff0f5;
+.banner-sheet-enter-active .banner-sheet-panel,
+.banner-sheet-leave-active .banner-sheet-panel {
+  transition:
+    transform 260ms cubic-bezier(0.22, 1, 0.36, 1),
+    opacity 180ms ease;
 }
 
-.sc-btn-follow {
-  background: #00a1d6;
-  color: #fff;
-  border: 1px solid transparent;
+.banner-sheet-enter-from,
+.banner-sheet-leave-to {
+  opacity: 0;
 }
 
-.sc-btn-follow:hover {
-  background: #00b5e5;
+.banner-sheet-enter-from .banner-sheet-panel,
+.banner-sheet-leave-to .banner-sheet-panel {
+  transform: translateY(100%);
 }
+
+/* Video Card */
+
+/* Folder Card */
+
+/* Skeleton */
+
+/* Social Cards */
 </style>

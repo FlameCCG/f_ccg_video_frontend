@@ -1,4 +1,8 @@
+import type { BannerItem } from './banner'
+import type { PaginatedResult, PaginationParams, SearchHighlight, Tag } from './types'
 import request from './request'
+
+export type { PaginatedResult, PaginationParams, SearchHighlight, Tag } from './types'
 
 // ============================================================================
 // Type Definitions
@@ -20,6 +24,28 @@ export interface LoginPwdParams {
 
 export interface LoginQQParams {
   code: string
+}
+
+export interface LoginGoogleParams {
+  code: string
+  state: string
+}
+
+export interface LoginGithubParams {
+  code: string
+  state: string
+  codeVerifier?: string
+}
+
+export interface LoginLinuxDoParams {
+  code: string
+  state: string
+}
+
+export interface LoginXParams {
+  code: string
+  state: string
+  codeVerifier: string
 }
 
 export interface RefreshTokenParams {
@@ -71,6 +97,11 @@ export interface UserInfo {
   fansCount: number
   dynamicCount: number
   registerSource: string
+  likeTags: string[]
+  /** 是否已设置登录密码；第三方首次登录可能为 false，用于是否要求旧密码 */
+  hasPassword?: boolean
+  /** 是否绑定第三方登录（OpenID 非空） */
+  isThirdParty?: boolean
 }
 
 export interface UserDetail {
@@ -87,6 +118,7 @@ export interface UserDetail {
   fansCount: number
   totalLikes: number
   totalViews: number
+  likeTags: string[]
 }
 
 export interface UpdateUserInfoParams {
@@ -98,10 +130,6 @@ export interface UpdateUserInfoParams {
 }
 
 // User Search Types
-export interface SearchHighlight {
-  [key: string]: string[]
-}
-
 export interface SearchUserHit {
   id: number
   username: string
@@ -161,10 +189,7 @@ export interface UserConfig {
   openFollow: boolean
   openLike?: boolean // 文档响应示例保留该字段，作为 openLikeVideo 的兼容读字段
   openLikeVideo: boolean
-  openLikeArticle: boolean
   openCoinVideo: boolean
-  openCoinArticle: boolean
-  openFollowAnime: boolean
   homeStyleID: number
   bannerId: number
   bannerUrl: string
@@ -176,10 +201,7 @@ export interface UpdateUserConfigParams {
   openFans?: boolean
   openFollow?: boolean
   openLikeVideo?: boolean
-  openLikeArticle?: boolean
   openCoinVideo?: boolean
-  openCoinArticle?: boolean
-  openFollowAnime?: boolean
   homeStyleID?: number
   bannerId?: number
   bannerUrl?: string
@@ -194,6 +216,13 @@ export interface BindEmailParams {
 
 export interface BannerUploadResult {
   bannerUrl: string
+}
+
+export interface UserHomeBannerDefaultsResult {
+  bannerIds: number[]
+  currentBannerId: number
+  currentBannerImageUrl: string
+  list: BannerItem[]
 }
 
 // User Record Types
@@ -218,16 +247,6 @@ export interface UserCoinRecordItem {
   delta: number
   reason: string
   createdAt: string
-}
-
-export interface PaginationParams {
-  page?: number
-  pageSize?: number
-}
-
-export interface PaginatedResult<T> {
-  list: T[]
-  total: number
 }
 
 // Creator Analytics Types
@@ -291,11 +310,6 @@ export interface CreateTagParams {
   name: string
 }
 
-export interface Tag {
-  id: number
-  name: string
-}
-
 // ============================================================================
 // 3.1 用户认证 API
 // ============================================================================
@@ -321,6 +335,50 @@ export const loginByPassword = (params: LoginPwdParams): Promise<JwtToken> => {
  */
 export const loginByQQ = (params: LoginQQParams): Promise<JwtToken> => {
   return request.post('/common/user/login/qq', params)
+}
+
+/**
+ * Google登录
+ * POST /common/user/login/google
+ * 认证: 可选登录（客户端可携带 Token）
+ * 依赖接口: 无
+ * 接口说明: 使用 Google 授权码登录，未注册用户会自动注册
+ */
+export const loginByGoogle = (params: LoginGoogleParams): Promise<JwtToken> => {
+  return request.post('/common/user/login/google', params)
+}
+
+/**
+ * GitHub登录
+ * POST /common/user/login/github
+ * 认证: 可选登录（客户端可携带 Token）
+ * 依赖接口: 无
+ * 接口说明: 使用 GitHub 授权码登录，未注册用户会自动注册
+ */
+export const loginByGithub = (params: LoginGithubParams): Promise<JwtToken> => {
+  return request.post('/common/user/login/github', params)
+}
+
+/**
+ * LinuxDo登录
+ * POST /common/user/login/linuxdo
+ * 认证: 可选登录（客户端可携带 Token）
+ * 依赖接口: 无
+ * 接口说明: 使用 LinuxDo 授权码登录，未注册用户会自动注册
+ */
+export const loginByLinuxDo = (params: LoginLinuxDoParams): Promise<JwtToken> => {
+  return request.post('/common/user/login/linuxdo', params)
+}
+
+/**
+ * X登录
+ * POST /common/user/login/x
+ * 认证: 可选登录（客户端可携带 Token）
+ * 依赖接口: 无
+ * 接口说明: 使用 X 授权码登录，未注册用户会自动注册
+ */
+export const loginByX = (params: LoginXParams): Promise<JwtToken> => {
+  return request.post('/common/user/login/x', params)
 }
 
 /**
@@ -367,8 +425,13 @@ export const resetPassword = (params: ResetPasswordParams): Promise<void> => {
  * 依赖接口: 无
  * 接口说明: 修改当前用户密码（需登录）
  */
-export const changePassword = (params: ChangePasswordParams): Promise<void> => {
-  return request.put('/common/user/password/change', params)
+export const changePassword = (
+  params: ChangePasswordParams,
+  options?: { silent?: boolean }
+): Promise<void> => {
+  return request.put('/common/user/password/change', params, {
+    silent: options?.silent,
+  })
 }
 
 // ============================================================================
@@ -399,13 +462,13 @@ export const updateUserInfo = (params: UpdateUserInfoParams): Promise<void> => {
 
 /**
  * 获取用户详情
- * GET /common/user/{id}
+ * GET /common/user/detail?id=
  * 认证: 可选登录（客户端可携带 Token）
  * 依赖接口: 无
  * 接口说明: 根据用户 ID 获取用户公开信息
  */
 export const getUserDetail = (id: number): Promise<UserDetail> => {
-  return request.get(`/common/user/${id}`)
+  return request.get('/common/user/detail', { params: { id } })
 }
 
 /**
@@ -458,6 +521,17 @@ export const updateUserConfig = (params: UpdateUserConfigParams): Promise<void> 
 }
 
 /**
+ * 获取系统默认用户主页横幅列表
+ * GET /common/user/banner/defaults
+ * 认证: 可选登录（客户端可携带 Token）
+ * 依赖接口: 无
+ * 接口说明: 获取系统配置的默认用户主页横幅列表
+ */
+export const getUserBannerDefaults = (): Promise<UserHomeBannerDefaultsResult> => {
+  return request.get('/common/user/banner/defaults')
+}
+
+/**
  * 绑定邮箱
  * POST /common/user/email/bind
  * 认证: 需要登录（客户端全局自动携带 Token）
@@ -465,8 +539,13 @@ export const updateUserConfig = (params: UpdateUserConfigParams): Promise<void> 
  * 接口说明: 绑定邮箱（需登录，邮箱验证码类型 3）
  * 重要说明: 当前实现始终校验邮箱验证码，不受 GET /common/site/config 返回的 data.site.register.emailCaptcha 影响
  */
-export const bindEmail = (params: BindEmailParams): Promise<void> => {
-  return request.post('/common/user/email/bind', params)
+export const bindEmail = (
+  params: BindEmailParams,
+  options?: { silent?: boolean }
+): Promise<void> => {
+  return request.post('/common/user/email/bind', params, {
+    silent: options?.silent,
+  })
 }
 
 /**

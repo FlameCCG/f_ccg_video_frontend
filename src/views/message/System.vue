@@ -1,14 +1,17 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
+import { useRouter } from 'vue-router'
 import {
   getNotificationList,
   type NotificationItem,
   markNotificationsRead,
 } from '@/api/notification'
 import { useNotificationStore } from '@/stores/notification'
-import { formatTimeAgo } from '@/utils/time'
+import { formatDateTimeAgo } from '@/utils/time'
+import { navigateToNotificationTarget } from '@/utils/notification-target'
 import { Bell } from 'lucide-vue-next'
 
+const router = useRouter()
 const list = ref<NotificationItem[]>([])
 const loading = ref(true)
 const total = ref(0)
@@ -47,7 +50,10 @@ const fetchData = async () => {
 onMounted(() => {
   void fetchData()
 })
-const openLink = (url: string) => window.open(url, '_blank')
+
+const openLink = (item: NotificationItem) => {
+  void navigateToNotificationTarget(router, item)
+}
 </script>
 
 <template>
@@ -85,7 +91,7 @@ const openLink = (url: string) => window.open(url, '_blank')
           <!-- Left Avatar (System Icon) -->
           <div class="shrink-0 pt-1">
             <div
-              class="flex h-[46px] w-[46px] items-center justify-center rounded-full bg-blue-500/10 text-blue-500"
+              class="flex h-[46px] w-[46px] items-center justify-center rounded-full bg-[var(--status-info-soft)] text-[var(--status-info-ink)]"
             >
               <svg
                 xmlns="http://www.w3.org/2000/svg"
@@ -118,13 +124,13 @@ const openLink = (url: string) => window.open(url, '_blank')
             <div
               v-if="item.link"
               class="mb-2 text-sm text-primary underline cursor-pointer hover:text-primary/80"
-              @click="openLink(item.link)"
+              @click="openLink(item)"
             >
               查看详情
             </div>
 
             <div class="flex items-center gap-4 text-xs text-muted-foreground mt-1">
-              <span>{{ formatTimeAgo(Date.now() - 1000 * 60 * 60 * 24) }}</span>
+              <span>{{ formatDateTimeAgo(item.createdAt) }}</span>
             </div>
           </div>
         </div>

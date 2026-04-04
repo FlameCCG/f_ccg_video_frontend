@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { onClickOutside } from '@vueuse/core'
 import { toast } from 'vue-sonner'
-import { ImagePlus, Loader2, MoreVertical, SmilePlus, X } from 'lucide-vue-next'
+import { ImagePlus, MoreVertical, SmilePlus } from 'lucide-vue-next'
 import { useRoute, useRouter } from 'vue-router'
 import {
   getConversationList,
@@ -17,29 +17,22 @@ import {
   type ChatSendTextEvent,
   type ChatSendEmojiEvent,
   type ChatWSEvent,
-  type MessageType,
 } from '@/api/chat'
 import { uploadImage } from '@/api/upload'
 import { getUserDetail, type UserDetail } from '@/api/user'
 import EmojiPicker from '@/components/common/EmojiPicker.vue'
+import ImageViewer from '@/components/common/ImageViewer.vue'
 import AppAvatar from '@/components/common/AppAvatar.vue'
 import { useWebSocket } from '@/composables/useWebSocket'
 import { useAuthStore } from '@/stores/auth'
 import { useNotificationStore } from '@/stores/notification'
 import { formatTimeAgo } from '@/utils/time'
 
-type MediaMessageType = Extract<MessageType, 'image' | 'sticker'>
 type PeerProfile = Pick<UserDetail, 'id' | 'username' | 'avatar'>
 
 interface ChatTimelineMessage extends ChatMessage {
   clientMsgId?: string
   pending?: boolean
-}
-
-interface PendingMediaState {
-  file: File
-  previewUrl: string
-  msgType: MediaMessageType
 }
 
 const route = useRoute()
@@ -55,8 +48,15 @@ const loadingConversations = ref(true)
 const loadingMessages = ref(false)
 const draftText = ref('')
 const showEmojiPicker = ref(false)
-const uploadingMedia = ref(false)
-const pendingMedia = ref<PendingMediaState | null>(null)
+const previewImageUrl = ref('')
+const showPreview = ref(false)
+
+const openImagePreview = (url?: string) => {
+  if (!url) return
+  previewImageUrl.value = url
+  showPreview.value = true
+}
+
 const emojiPickerRef = ref<HTMLElement | null>(null)
 const fileInputRef = ref<HTMLInputElement | null>(null)
 const messageScrollerRef = ref<HTMLElement | null>(null)
@@ -155,13 +155,6 @@ const scrollMessagesToBottom = async (behavior: ScrollBehavior = 'smooth') => {
     top: messageScrollerRef.value.scrollHeight,
     behavior,
   })
-}
-
-const clearPendingMedia = () => {
-  if (pendingMedia.value) {
-    URL.revokeObjectURL(pendingMedia.value.previewUrl)
-  }
-  pendingMedia.value = null
 }
 
 const appendOrReplaceMessage = (message: ChatMessage, clientMsgId?: string) => {
@@ -352,6 +345,32 @@ const sendEmojiMessage = (emoji: string) => {
   pushPendingMessage(payload)
 }
 
+const sendStickerMessage = (stickerUrl: string) => {
+  if (!currentPeerId.value) {
+    toast.error('先选择一个会话')
+    return
+  }
+
+  const payload: ChatSendMediaEvent = {
+    type: 'send',
+    to: currentPeerId.value,
+    msgType: 'sticker',
+    media: {
+      url: stickerUrl,
+      mime: stickerUrl.endsWith('.webp') ? 'image/webp' : 'image/png',
+      width: 200,
+      height: 200,
+      size: 0,
+    },
+    clientMsgId: createClientMsgId(),
+  }
+
+  if (!sendEvent(payload)) return
+
+  showEmojiPicker.value = false
+  pushPendingMessage(payload)
+}
+
 const computeFileHash = async (file: File): Promise<string> => {
   const buffer = await file.arrayBuffer()
   const hashBuffer = await crypto.subtle.digest('SHA-256', buffer)
@@ -378,47 +397,100 @@ const readImageMeta = (file: File): Promise<Pick<ChatMessageMedia, 'width' | 'he
     image.src = previewUrl
   })
 
-const sendPendingMedia = async () => {
-  if (!currentPeerId.value || !pendingMedia.value) return
+const uploadAndSendFile = async (file: File, previewUrl: string) => {
+  if (!currentPeerId.value) return
 
   if (!connected.value) {
     toast.error('消息连接中，请稍后再试')
+    URL.revokeObjectURL(previewUrl)
     return
   }
 
-  const mediaToSend = pendingMedia.value
-  uploadingMedia.value = true
+  const clientMsgId = createClientMsgId()
+  const msgType = 'image'
+
+  let width = 200,
+    height = 200
+  try {
+    const dim = await readImageMeta(file)
+    width = dim.width
+    height = dim.height
+  } catch {
+    // Ignore error, use default width/height
+  }
+
+  const pendingMessage: ChatTimelineMessage = {
+    id: clientMsgId,
+    clientMsgId,
+    pending: true,
+    conversationId: buildConversationId(currentPeerId.value),
+    senderId: currentUserId.value,
+    receiverId: currentPeerId.value,
+    type: msgType,
+    media: {
+      url: previewUrl,
+      mime: file.type || 'image/png',
+      width,
+      height,
+      size: file.size,
+    },
+    createdAt: new Date().toISOString(),
+  }
+
+  messages.value.push(pendingMessage)
+  updateConversationByMessage(pendingMessage, false)
+  void scrollMessagesToBottom()
 
   try {
-    const [fileHash, dimensions] = await Promise.all([
-      computeFileHash(mediaToSend.file),
-      readImageMeta(mediaToSend.file),
-    ])
-    const result = await uploadImage(fileHash, mediaToSend.file)
+    const fileHash = await computeFileHash(file)
+    const result = await uploadImage(fileHash, file)
+
     const payload: ChatSendMediaEvent = {
       type: 'send',
       to: currentPeerId.value,
-      msgType: mediaToSend.msgType,
+      msgType: 'image',
       media: {
         url: result.imageUrl,
-        mime: mediaToSend.file.type || 'image/png',
-        width: dimensions.width,
-        height: dimensions.height,
-        size: mediaToSend.file.size,
+        mime: file.type || 'image/png',
+        width,
+        height,
+        size: file.size,
       },
-      clientMsgId: createClientMsgId(),
+      clientMsgId,
     }
 
-    if (!sendEvent(payload)) return
+    if (!sendEvent(payload)) {
+      throw new Error('WebSocket not connected')
+    }
 
-    pushPendingMessage(payload)
-    clearPendingMedia()
+    // Update local preview to actual URL just in case
+    const targetMsg = messages.value.find((m) => m.clientMsgId === clientMsgId)
+    if (targetMsg && targetMsg.media) {
+      targetMsg.media.url = result.imageUrl
+    }
   } catch (error) {
-    console.error('Failed to send media message', error)
-    toast.error('图片/表情包发送失败')
+    console.error('Failed to send image', error)
+    toast.error('图片发送失败')
+    const index = messages.value.findIndex((m) => m.clientMsgId === clientMsgId)
+    if (index >= 0) messages.value.splice(index, 1)
   } finally {
-    uploadingMedia.value = false
+    URL.revokeObjectURL(previewUrl)
   }
+}
+
+const handleFileChange = (event: Event) => {
+  const target = event.target as HTMLInputElement
+  const file = target.files?.[0]
+  target.value = ''
+
+  if (!file) return
+  if (!file.type.startsWith('image/')) {
+    toast.error('仅支持发送图片文件')
+    return
+  }
+
+  const previewUrl = URL.createObjectURL(file)
+  void uploadAndSendFile(file, previewUrl)
 }
 
 const selectConversation = (peerId: number) => {
@@ -435,31 +507,6 @@ const openMediaPicker = () => {
     return
   }
   fileInputRef.value?.click()
-}
-
-const handleFileChange = (event: Event) => {
-  const target = event.target as HTMLInputElement
-  const file = target.files?.[0]
-  target.value = ''
-
-  if (!file) return
-  if (!file.type.startsWith('image/')) {
-    toast.error('仅支持发送图片或表情包文件')
-    return
-  }
-
-  clearPendingMedia()
-  pendingMedia.value = {
-    file,
-    previewUrl: URL.createObjectURL(file),
-    msgType: 'image',
-  }
-}
-
-const updatePendingMediaType = (msgType: MediaMessageType) => {
-  if (pendingMedia.value) {
-    pendingMedia.value.msgType = msgType
-  }
 }
 
 const handleWsMessage = (event: MessageEvent) => {
@@ -530,7 +577,6 @@ const sendEvent = (payload: ChatClientEvent) => {
 }
 
 const composerDisabled = computed(() => !currentPeerId.value)
-const connectionLabel = computed(() => (connected.value ? '消息实时连接中' : '消息重连中'))
 
 const MAX_TEXT_LENGTH = 500
 const charCount = computed(() => draftText.value.length)
@@ -577,12 +623,10 @@ watch(
     if (!nextPeerId) {
       currentPeerId.value = null
       messages.value = []
-      clearPendingMedia()
       return
     }
 
     currentPeerId.value = Number(nextPeerId)
-    clearPendingMedia()
     void ensurePeerProfile(currentPeerId.value)
     void loadMessages(currentPeerId.value)
   },
@@ -596,10 +640,6 @@ onClickOutside(emojiPickerRef, () => {
 onMounted(() => {
   void loadConversations()
 })
-
-onBeforeUnmount(() => {
-  clearPendingMedia()
-})
 </script>
 
 <template>
@@ -612,14 +652,6 @@ onBeforeUnmount(() => {
         class="flex h-[52px] shrink-0 items-center justify-between border-b border-border/40 px-4"
       >
         <h2 class="text-[14px] font-medium text-foreground">我的消息</h2>
-        <span
-          class="rounded-full px-2 py-1 text-[11px]"
-          :class="
-            connected ? 'bg-emerald-500/10 text-emerald-600' : 'bg-amber-500/10 text-amber-600'
-          "
-        >
-          {{ connectionLabel }}
-        </span>
       </div>
 
       <div class="flex h-[38px] shrink-0 items-center border-b border-border/30 px-4">
@@ -666,7 +698,7 @@ onBeforeUnmount(() => {
               />
               <span
                 v-if="conversation.unread > 0"
-                class="absolute -right-0.5 -top-0.5 flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-[#fb7299] px-1 text-[10px] font-medium text-white"
+                class="absolute -right-0.5 -top-0.5 flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-accent px-1 text-[10px] font-medium text-primary-foreground"
               >
                 {{ conversation.unread > 99 ? '99+' : conversation.unread }}
               </span>
@@ -745,52 +777,77 @@ onBeforeUnmount(() => {
 
                 <!-- Message Bubble -->
                 <div
-                  class="flex items-end gap-2"
-                  :class="message.senderId === currentUserId ? 'flex-row-reverse' : ''"
+                  class="chat-message-row"
+                  :class="message.senderId === currentUserId ? 'chat-message-row-self' : ''"
                 >
                   <button
                     type="button"
-                    class="shrink-0 self-start"
+                    class="shrink-0 self-start rounded-full"
                     @click="openUserHome(message.senderId)"
                   >
                     <AppAvatar
                       :src="resolveMessageAvatar(message)"
                       :name="resolveMessageName(message)"
-                      container-class="h-[34px] w-[34px] shrink-0 text-xs"
+                      :container-class="
+                        message.senderId === currentUserId
+                          ? 'h-[38px] w-[38px] shrink-0 bg-transparent ring-1 ring-border/60 shadow-none'
+                          : 'h-[38px] w-[38px] shrink-0 ring-1 ring-border/50 shadow-[0_10px_22px_-18px_rgba(15,15,15,0.55)]'
+                      "
                     />
                   </button>
 
-                  <div
-                    class="chat-bubble max-w-[65%] text-[14px] transition-opacity"
-                    :class="
-                      message.senderId === currentUserId ? 'chat-bubble-self' : 'chat-bubble-peer'
-                    "
-                    :style="{ opacity: message.pending ? '0.65' : '1' }"
-                  >
-                    <div v-if="message.type === 'emoji'" class="text-[30px] leading-none">
-                      {{ message.emoji || message.text }}
+                  <div class="min-w-0 max-w-[72%]">
+                    <div
+                      class="mb-1 px-1 text-[11px] tracking-[0.08em] text-muted-foreground/70"
+                      :class="message.senderId === currentUserId ? 'text-right' : ''"
+                    >
+                      {{ resolveMessageName(message) }}
                     </div>
 
-                    <div v-else-if="message.type === 'image' || message.type === 'sticker'">
-                      <img
-                        :src="message.media?.url"
-                        :alt="message.type === 'sticker' ? '表情包消息' : '图片消息'"
-                        class="rounded-xl object-cover"
-                        :class="
-                          message.type === 'sticker'
-                            ? 'max-h-[200px] max-w-[200px]'
-                            : 'max-h-[280px] max-w-full'
-                        "
-                      />
-                    </div>
+                    <div
+                      class="text-[14px] transition-opacity"
+                      :class="[
+                        message.type === 'emoji'
+                          ? 'chat-emoji-bubble'
+                          : message.type === 'image' || message.type === 'sticker'
+                            ? 'chat-media-bubble'
+                            : 'chat-bubble ' +
+                              (message.senderId === currentUserId
+                                ? 'chat-bubble-self'
+                                : 'chat-bubble-peer'),
+                      ]"
+                      :style="{ opacity: message.pending ? '0.65' : '1' }"
+                    >
+                      <div v-if="message.type === 'emoji'" class="text-[32px] leading-none">
+                        {{ message.emoji || message.text }}
+                      </div>
 
-                    <div v-else class="whitespace-pre-wrap break-words leading-relaxed">
-                      {{ message.text }}
-                    </div>
+                      <div v-else-if="message.type === 'image' || message.type === 'sticker'">
+                        <img
+                          :src="message.media?.url"
+                          :alt="message.type === 'sticker' ? '表情包消息' : '图片消息'"
+                          class="rounded-[20px] object-cover cursor-pointer border border-border/50 bg-card transition duration-200 hover:-translate-y-0.5 hover:opacity-95"
+                          :class="
+                            message.type === 'sticker'
+                              ? 'max-h-[200px] max-w-[200px]'
+                              : 'max-h-[280px] max-w-full'
+                          "
+                          @click="openImagePreview(message.media?.url)"
+                        />
+                      </div>
 
-                    <span v-if="message.pending" class="mt-1 block text-[11px] opacity-60">
-                      发送中...
-                    </span>
+                      <div v-else class="whitespace-pre-wrap break-words leading-relaxed">
+                        {{ message.text }}
+                      </div>
+
+                      <span
+                        v-if="message.pending"
+                        class="mt-1 block px-1 text-[11px] tracking-[0.08em] text-muted-foreground/65"
+                        :class="message.senderId === currentUserId ? 'text-right' : ''"
+                      >
+                        发送中...
+                      </span>
+                    </div>
                   </div>
                 </div>
               </template>
@@ -799,72 +856,6 @@ onBeforeUnmount(() => {
 
           <!-- Composer -->
           <div class="shrink-0 border-t border-border/40 bg-card px-4 py-3">
-            <!-- Pending Media Preview -->
-            <div
-              v-if="pendingMedia"
-              class="mb-3 rounded-xl border border-border/50 bg-muted/30 p-3"
-            >
-              <div class="mb-2 flex items-start justify-between gap-3">
-                <div class="flex items-center gap-3">
-                  <img
-                    :src="pendingMedia.previewUrl"
-                    alt="待发送图片预览"
-                    class="h-14 w-14 rounded-lg object-cover"
-                  />
-                  <div>
-                    <div class="text-[13px] font-medium text-foreground">
-                      {{ pendingMedia.file.name }}
-                    </div>
-                    <div class="mt-0.5 text-[11px] text-muted-foreground">
-                      {{ Math.max(1, Math.round(pendingMedia.file.size / 1024)) }} KB
-                    </div>
-                  </div>
-                </div>
-                <button
-                  class="rounded-full p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-                  @click="clearPendingMedia"
-                >
-                  <X class="h-4 w-4" />
-                </button>
-              </div>
-
-              <div class="flex items-center justify-between gap-3">
-                <div class="flex items-center gap-1.5">
-                  <button
-                    class="rounded-full px-2.5 py-1 text-[11px] transition-colors"
-                    :class="
-                      pendingMedia.msgType === 'image'
-                        ? 'bg-[#00aeec] text-white'
-                        : 'bg-muted text-muted-foreground hover:text-foreground'
-                    "
-                    @click="updatePendingMediaType('image')"
-                  >
-                    图片
-                  </button>
-                  <button
-                    class="rounded-full px-2.5 py-1 text-[11px] transition-colors"
-                    :class="
-                      pendingMedia.msgType === 'sticker'
-                        ? 'bg-[#00aeec] text-white'
-                        : 'bg-muted text-muted-foreground hover:text-foreground'
-                    "
-                    @click="updatePendingMediaType('sticker')"
-                  >
-                    表情包
-                  </button>
-                </div>
-
-                <button
-                  class="inline-flex items-center gap-1.5 rounded-lg bg-[#00aeec] px-3 py-1.5 text-[12px] text-white transition-colors hover:bg-[#00aeec]/90 disabled:cursor-not-allowed disabled:opacity-50"
-                  :disabled="uploadingMedia || !connected"
-                  @click="sendPendingMedia"
-                >
-                  <Loader2 v-if="uploadingMedia" class="h-3.5 w-3.5 animate-spin" />
-                  <span>{{ uploadingMedia ? '上传中...' : '发送' }}</span>
-                </button>
-              </div>
-            </div>
-
             <!-- Tool bar -->
             <div class="mb-2 flex items-center gap-1">
               <div ref="emojiPickerRef" class="relative">
@@ -878,7 +869,7 @@ onBeforeUnmount(() => {
                 </button>
 
                 <div v-if="showEmojiPicker" class="absolute bottom-[calc(100%+8px)] left-0 z-20">
-                  <EmojiPicker @select="sendEmojiMessage" />
+                  <EmojiPicker @select="sendEmojiMessage" @select-sticker="sendStickerMessage" />
                 </div>
               </div>
 
@@ -919,7 +910,7 @@ onBeforeUnmount(() => {
                   {{ charCount }}/{{ MAX_TEXT_LENGTH }}
                 </span>
                 <button
-                  class="rounded-lg bg-[#00aeec] px-4 py-1.5 text-[12px] font-medium text-white transition-colors hover:bg-[#00aeec]/90 disabled:cursor-not-allowed disabled:bg-muted disabled:text-muted-foreground"
+                  class="rounded-lg bg-primary px-4 py-1.5 text-[12px] font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:bg-muted disabled:text-muted-foreground"
                   :disabled="composerDisabled || !draftText.trim() || !connected"
                   @click="sendTextMessage"
                 >
@@ -943,24 +934,60 @@ onBeforeUnmount(() => {
         </div>
       </template>
     </div>
+
+    <!-- Image Preview Modal -->
+    <ImageViewer v-model="showPreview" :src="previewImageUrl" />
   </div>
 </template>
 
-<style scoped>
+<style scoped lang="scss">
+.chat-message-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 0.75rem;
+
+  &-self {
+    flex-direction: row-reverse;
+  }
+}
+
 .chat-bubble {
-  border-radius: 18px;
-  padding: 10px 16px;
+  position: relative;
+  border-radius: 22px;
+  padding: 12px 16px;
+  border: 1px solid transparent;
+  box-shadow: 0 18px 40px -32px rgb(15, 15, 15, 0.4);
+  backdrop-filter: blur(12px);
+
+  &-self {
+    background: var(--color-foreground);
+    color: var(--color-background);
+    border-color: color-mix(in oklab, var(--color-foreground) 88%, transparent);
+    border-bottom-right-radius: 8px;
+  }
+
+  &-peer {
+    background: color-mix(in oklab, var(--color-card) 90%, var(--color-background));
+    color: var(--color-foreground);
+    border-color: color-mix(in oklab, var(--color-border) 88%, transparent);
+    border-bottom-left-radius: 8px;
+  }
 }
 
-.chat-bubble-self {
-  background-color: #00aeec;
-  color: #fff;
-  border-top-right-radius: 4px;
+.chat-media-bubble,
+.chat-emoji-bubble {
+  display: inline-flex;
+  max-width: 100%;
 }
 
-.chat-bubble-peer {
-  background-color: var(--color-muted);
-  color: var(--color-foreground);
-  border-top-left-radius: 4px;
+@media (width <= 768px) {
+  .chat-message-row {
+    gap: 0.6rem;
+  }
+
+  .chat-bubble {
+    padding: 11px 14px;
+    border-radius: 20px;
+  }
 }
 </style>

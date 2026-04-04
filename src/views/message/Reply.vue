@@ -4,10 +4,12 @@ import {
   getNotificationList,
   type NotificationItem,
   markNotificationsRead,
+  deleteNotifications,
 } from '@/api/notification'
 import AppAvatar from '@/components/common/AppAvatar.vue'
 import { useNotificationStore } from '@/stores/notification'
-import { formatTimeAgo } from '@/utils/time'
+import { formatDateTimeAgo } from '@/utils/time'
+import { Trash2 } from 'lucide-vue-next'
 import { useRouter } from 'vue-router'
 import {
   navigateToNotificationTarget,
@@ -20,6 +22,7 @@ const list = ref<NotificationItem[]>([])
 const loading = ref(true)
 const total = ref(0)
 const page = ref(1)
+const deletingIds = ref<Set<number>>(new Set())
 const notificationStore = useNotificationStore()
 
 const fetchData = async () => {
@@ -60,6 +63,31 @@ const canOpenTarget = (item: NotificationItem) => !!resolveNotificationTarget(it
 const goReply = (item: NotificationItem) => {
   void navigateToNotificationTarget(router, item)
 }
+
+const goUserHome = (userId: number) => {
+  if (!userId) return
+  void router.push({ name: 'user-home', params: { id: userId } })
+}
+
+const handleDelete = async (item: NotificationItem) => {
+  if (deletingIds.value.has(item.id)) return
+  deletingIds.value = new Set(deletingIds.value).add(item.id)
+  try {
+    await deleteNotifications({ ids: [item.id] })
+    const wasUnread = !item.isRead
+    list.value = list.value.filter((n) => n.id !== item.id)
+    total.value = Math.max(0, total.value - 1)
+    if (wasUnread) {
+      notificationStore.markReplyRead(1)
+    }
+  } catch (error) {
+    console.error('Failed to delete reply notification', error)
+  } finally {
+    const next = new Set(deletingIds.value)
+    next.delete(item.id)
+    deletingIds.value = next
+  }
+}
 </script>
 
 <template>
@@ -91,16 +119,23 @@ const goReply = (item: NotificationItem) => {
         <div
           v-for="item in list"
           :key="item.id"
-          class="flex gap-4 rounded-lg p-4 transition-colors hover:bg-muted/50"
+          class="group flex gap-4 rounded-lg p-4 transition-colors hover:bg-muted/50"
         >
           <!-- Left Avatar -->
           <div class="shrink-0 pt-1">
-            <AppAvatar
-              :src="item.actionUserAvatar"
-              :name="item.actionUserName"
-              container-class="w-[46px] h-[46px] text-lg"
-              class="cursor-pointer transition-transform hover:scale-105"
-            />
+            <button
+              type="button"
+              class="cursor-pointer rounded-full"
+              :aria-label="`查看 ${item.actionUserName || '用户'} 的主页`"
+              @click="goUserHome(item.actionUserID)"
+            >
+              <AppAvatar
+                :src="item.actionUserAvatar"
+                :name="item.actionUserName"
+                container-class="w-[46px] h-[46px] text-lg"
+                class="transition-transform hover:scale-105"
+              />
+            </button>
           </div>
 
           <!-- Middle Content -->
@@ -118,7 +153,7 @@ const goReply = (item: NotificationItem) => {
               <button
                 v-if="canOpenTarget(item)"
                 type="button"
-                class="-ml-2 inline-flex max-w-full cursor-pointer rounded-md px-2 py-1 text-left text-sm text-foreground transition-colors hover:bg-[#00aeec]/8 hover:text-[#00aeec]"
+                class="-ml-2 inline-flex max-w-full cursor-pointer rounded-md px-2 py-1 text-left text-sm text-foreground transition-colors hover:bg-primary/8 hover:text-primary"
                 @click="goReply(item)"
               >
                 <span class="break-words whitespace-pre-wrap">{{ item.content }}</span>
@@ -129,25 +164,31 @@ const goReply = (item: NotificationItem) => {
             </div>
 
             <div class="flex items-center gap-4 text-xs text-muted-foreground">
-              <span>{{
-                formatTimeAgo(
-                  Date.now() - 1000 * 60
-                ) /* Temporary fallback if no timestamp in item */
-              }}</span>
-              <!-- Optionally we should use item created time if available -->
+              <span>{{ formatDateTimeAgo(item.createdAt) }}</span>
             </div>
           </div>
 
-          <!-- Right Reference (Article/Video Thumbnail) -->
-          <div
-            v-if="item.videoTitle"
-            class="shrink-0 max-w-[120px] cursor-pointer"
-            @click="goReply(item)"
-          >
-            <div
-              class="h-[60px] overflow-hidden rounded bg-muted p-2 text-xs text-muted-foreground line-clamp-2 transition-colors hover:text-[#00aeec]"
+          <!-- Right: delete + optional reference -->
+          <div class="flex shrink-0 items-start gap-2">
+            <button
+              type="button"
+              class="mt-1 rounded-md p-1.5 text-muted-foreground opacity-0 transition-all hover:bg-destructive/10 hover:text-destructive group-hover:opacity-100 focus-visible:opacity-100 disabled:pointer-events-none disabled:opacity-40"
+              :disabled="deletingIds.has(item.id)"
+              :aria-label="`删除来自 ${item.actionUserName || '用户'} 的回复通知`"
+              @click.stop="handleDelete(item)"
             >
-              {{ item.videoTitle }}
+              <Trash2 class="h-4 w-4" />
+            </button>
+            <div
+              v-if="item.videoTitle"
+              class="max-w-[120px] cursor-pointer"
+              @click="goReply(item)"
+            >
+              <div
+                class="h-[60px] overflow-hidden rounded bg-muted p-2 text-xs text-muted-foreground line-clamp-2 transition-colors hover:text-primary"
+              >
+                {{ item.videoTitle }}
+              </div>
             </div>
           </div>
         </div>

@@ -4,11 +4,12 @@ import {
   getNotificationList,
   type NotificationItem,
   markNotificationsRead,
+  deleteNotifications,
 } from '@/api/notification'
 import AppAvatar from '@/components/common/AppAvatar.vue'
 import { useNotificationStore } from '@/stores/notification'
-import { formatTimeAgo } from '@/utils/time'
-import { Heart } from 'lucide-vue-next'
+import { formatDateTimeAgo } from '@/utils/time'
+import { Heart, Trash2 } from 'lucide-vue-next'
 import { useRouter } from 'vue-router'
 import {
   navigateToNotificationTarget,
@@ -21,6 +22,7 @@ const list = ref<NotificationItem[]>([])
 const loading = ref(true)
 const total = ref(0)
 const page = ref(1)
+const deletingIds = ref<Set<number>>(new Set())
 const notificationStore = useNotificationStore()
 
 const fetchData = async () => {
@@ -60,6 +62,31 @@ const canOpenTarget = (item: NotificationItem) => !!resolveNotificationTarget(it
 
 const goLink = (item: NotificationItem) => {
   void navigateToNotificationTarget(router, item)
+}
+
+const goUserHome = (userId: number) => {
+  if (!userId) return
+  void router.push({ name: 'user-home', params: { id: userId } })
+}
+
+const handleDelete = async (item: NotificationItem) => {
+  if (deletingIds.value.has(item.id)) return
+  deletingIds.value = new Set(deletingIds.value).add(item.id)
+  try {
+    await deleteNotifications({ ids: [item.id] })
+    const wasUnread = !item.isRead
+    list.value = list.value.filter((n) => n.id !== item.id)
+    total.value = Math.max(0, total.value - 1)
+    if (wasUnread) {
+      notificationStore.markLikeRead(1)
+    }
+  } catch (error) {
+    console.error('Failed to delete like notification', error)
+  } finally {
+    const next = new Set(deletingIds.value)
+    next.delete(item.id)
+    deletingIds.value = next
+  }
 }
 
 const getLikeTargetLabel = (item: NotificationItem) => {
@@ -128,16 +155,23 @@ const getLikeTitleParts = (item: NotificationItem) => {
         <div
           v-for="item in list"
           :key="item.id"
-          class="flex gap-4 rounded-lg p-4 transition-colors hover:bg-muted/50"
+          class="group flex gap-4 rounded-lg p-4 transition-colors hover:bg-muted/50"
         >
           <!-- Left Avatar -->
           <div class="shrink-0 pt-1">
-            <AppAvatar
-              :src="item.actionUserAvatar"
-              :name="item.actionUserName"
-              container-class="w-[46px] h-[46px] text-lg"
-              class="cursor-pointer transition-transform hover:scale-105"
-            />
+            <button
+              type="button"
+              class="cursor-pointer rounded-full"
+              :aria-label="`查看 ${item.actionUserName || '用户'} 的主页`"
+              @click="goUserHome(item.actionUserID)"
+            >
+              <AppAvatar
+                :src="item.actionUserAvatar"
+                :name="item.actionUserName"
+                container-class="w-[46px] h-[46px] text-lg"
+                class="transition-transform hover:scale-105"
+              />
+            </button>
           </div>
 
           <!-- Middle Content -->
@@ -152,7 +186,7 @@ const getLikeTitleParts = (item: NotificationItem) => {
               <button
                 v-if="getLikeTitleParts(item).target && canOpenTarget(item)"
                 type="button"
-                class="cursor-pointer font-medium text-[#00aeec] transition-opacity hover:opacity-80"
+                class="cursor-pointer font-medium text-primary transition-opacity hover:opacity-80"
                 @click="goLink(item)"
               >
                 {{ getLikeTitleParts(item).target }}
@@ -163,20 +197,31 @@ const getLikeTitleParts = (item: NotificationItem) => {
             </div>
 
             <div class="flex items-center gap-4 text-xs text-muted-foreground mt-2">
-              <span>{{ formatTimeAgo(Date.now() - 1000 * 60 * 60) }}</span>
+              <span>{{ formatDateTimeAgo(item.createdAt) }}</span>
             </div>
           </div>
 
-          <!-- Right Reference (Article/Video Thumbnail) -->
-          <div
-            v-if="item.videoTitle"
-            class="shrink-0 max-w-[120px] cursor-pointer"
-            @click="goLink(item)"
-          >
-            <div
-              class="h-[60px] flex items-center justify-center overflow-hidden rounded bg-muted text-xs text-muted-foreground p-2 line-clamp-2 hover:text-primary transition-colors"
+          <!-- Right: delete + optional reference -->
+          <div class="flex shrink-0 items-start gap-2">
+            <button
+              type="button"
+              class="mt-1 rounded-md p-1.5 text-muted-foreground opacity-0 transition-all hover:bg-destructive/10 hover:text-destructive group-hover:opacity-100 focus-visible:opacity-100 disabled:pointer-events-none disabled:opacity-40"
+              :disabled="deletingIds.has(item.id)"
+              :aria-label="`删除来自 ${item.actionUserName || '用户'} 的点赞通知`"
+              @click.stop="handleDelete(item)"
             >
-              {{ item.videoTitle }}
+              <Trash2 class="h-4 w-4" />
+            </button>
+            <div
+              v-if="item.videoTitle"
+              class="max-w-[120px] cursor-pointer"
+              @click="goLink(item)"
+            >
+              <div
+                class="h-[60px] flex items-center justify-center overflow-hidden rounded bg-muted text-xs text-muted-foreground p-2 line-clamp-2 hover:text-primary transition-colors"
+              >
+                {{ item.videoTitle }}
+              </div>
             </div>
           </div>
         </div>

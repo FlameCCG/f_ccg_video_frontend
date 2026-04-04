@@ -120,6 +120,6 @@ const getBadgeCount = (path: string) => {
   </div>
 </template>
 
-<style scoped>
+<style scoped lang="scss">
 /* Any specific MessageLayout scoped styles */
 </style>

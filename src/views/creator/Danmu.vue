@@ -7,6 +7,7 @@ import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import AppAvatar from '@/components/common/AppAvatar.vue'
 import { toast } from 'vue-sonner'
+import { formatClock } from '@/utils/format'
 
 const router = useRouter()
 const danmus = ref<CreatorDanmuItem[]>([])
@@ -65,12 +66,6 @@ const handleDelete = async (danmu: CreatorDanmuItem) => {
 const formatDate = (dateStr: string) => {
   const date = new Date(dateStr)
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')} ${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}:${String(date.getSeconds()).padStart(2, '0')}`
-}
-
-const formatDanmuTime = (seconds: number) => {
-  const m = Math.floor(seconds / 60)
-  const s = Math.floor(seconds % 60)
-  return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
 }
 
 const goToTarget = (danmu: CreatorDanmuItem) => {
@@ -184,7 +179,7 @@ const goToTarget = (danmu: CreatorDanmuItem) => {
                   {{ danmu.username }}
                 </span>
                 <span class="text-xs text-muted-foreground ml-2"
-                  >在视频 {{ formatDanmuTime(danmu.timeOffset) }} 处发送了弹幕：</span
+                  >在视频 {{ formatClock(danmu.timeOffset) }} 处发送了弹幕：</span
                 >
               </div>
 

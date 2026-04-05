@@ -1,18 +1,36 @@
-<script setup lang="ts">
-import { ref, onMounted, onBeforeUnmount, computed } from 'vue'
+﻿<script setup lang="ts">
+import { ref, onMounted, onBeforeUnmount, computed, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import { UploadCloud, Image as ImageIcon, X, Loader2, Plus, Check } from 'lucide-vue-next'
+import {
+  UploadCloud,
+  AlertTriangle,
+  Image as ImageIcon,
+  Bot,
+  X,
+  Loader2,
+  Plus,
+  Play,
+  Pause,
+  RotateCcw,
+  CheckCircle2,
+  RefreshCw,
+} from 'lucide-vue-next'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { useToast } from '@/components/ui/toast/use-toast'
+import ScheduledPublishPicker from '@/components/creator/ScheduledPublishPicker.vue'
+import TagInput from '@/components/creator/TagInput.vue'
+import BatchOperationDialog from '@/components/creator/BatchOperationDialog.vue'
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogHeader,
   DialogTitle,
   DialogFooter,
 } from '@/components/ui/dialog'
+import AiChatDialog from '@/components/ai/AiChatDialog.vue'
 import {
   uploadChunk,
   getUploadStatus,
@@ -20,15 +38,27 @@ import {
   uploadImage,
   type UploadStatusResult,
 } from '@/api/upload'
-import { publishVideo, getPartitions, type Partition } from '@/api/video'
-import { getSiteConfig, type StorageConfig } from '@/api/site'
+import { publishVideo, getPartitions, type Partition, type PublishVideoParams } from '@/api/video'
+import {
+  DEFAULT_STORAGE_CONFIG,
+  getSiteConfig,
+  hasStorageConfig,
+  normalizeStorageConfig,
+  type StorageConfig,
+} from '@/api/site'
+import { resolveCreatorTagIds } from '@/utils/creator-video'
+import { useCreatorBridgeStore } from '@/stores/creatorBridge'
 
 const router = useRouter()
 const { toast } = useToast()
+const creatorBridgeStore = useCreatorBridgeStore()
 
 interface VideoPart {
   id: string
   file: File
+  /** 源文件名（含扩展名），与分P标题分离，发布时作为 fileName 提交 */
+  sourceFileName: string
+  /** 分P标题；仅多P时可编辑，单P时不展示/不提交 */
   title: string
   progress: number
   status:
@@ -40,6 +70,7 @@ interface VideoPart {
     | 'success'
     | 'error'
     | 'canceled'
+    | 'paused'
   hash: string
   filePath: string
   instant: boolean
@@ -47,58 +78,187 @@ interface VideoPart {
   abortController?: AbortController
 }
 
-// State
-const isDragging = ref(false)
-const parts = ref<VideoPart[]>([])
+/** 与后端 video_resources / video_part_resources.source_file_name 列长一致 */
+const MAX_SOURCE_FILE_NAME_LENGTH = 255
 
-const partitions = ref<Partition[]>([])
-const coverFile = ref<File | null>(null)
-const coverPreview = ref('')
-const isPublishing = ref(false)
+/** 从源文件名推导默认分P标题（去扩展名），不修改源文件名本身 */
+const getDefaultPartTitle = (fileName: string) => fileName.replace(/\.[^/.]+$/, '')
 
-const storageConfig = ref<StorageConfig>({
-  maxChunkSize: 10,
-  chunkSize: 10,
-  maxFileSize: 100,
-  maxUploadNum: 10,
+const getSourceFileNameLength = (fileName: string) => Array.from(fileName.trim()).length
+
+const isSourceFileNameTooLong = (fileName: string) =>
+  getSourceFileNameLength(fileName) > MAX_SOURCE_FILE_NAME_LENGTH
+
+const formatSourceFileNameForDisplay = (fileName: string) => {
+  const chars = Array.from(fileName.trim())
+  if (chars.length <= 40) return fileName.trim()
+  return `${chars.slice(0, 16).join('')}...${chars.slice(-16).join('')}`
+}
+
+const getSourceFileNameTooLongMessage = (fileName: string) => {
+  const length = getSourceFileNameLength(fileName)
+  return `源文件名过长（最多 ${MAX_SOURCE_FILE_NAME_LENGTH} 个字符，当前 ${length} 个）：${formatSourceFileNameForDisplay(fileName)}。请缩短文件名后重新选择`
+}
+
+const createVideoPart = (
+  file: File,
+  overrides: Partial<Omit<VideoPart, 'file' | 'sourceFileName'>> = {}
+): VideoPart => ({
+  id: Math.random().toString(36).substring(2, 9),
+  file,
+  sourceFileName: file.name,
+  title: getDefaultPartTitle(file.name),
+  progress: 0,
+  status: 'pending',
+  hash: '',
+  filePath: '',
+  instant: false,
+  ...overrides,
 })
 
-const chunkSizeBytes = computed(() => storageConfig.value.chunkSize * 1024 * 1024)
-const maxFileSizeBytes = computed(() => storageConfig.value.maxFileSize * 1024 * 1024)
+interface VideoWorkForm {
+  title: string
+  description: string
+  partitionId: number | undefined
+  tags: string[]
+  tagInput: string
+  isOriginal: boolean
+  isPrivate: boolean
+  publishType: 'immediate' | 'scheduled'
+  publishTime: string
+}
 
-const isUploadingAny = computed(() =>
-  parts.value.some((p) =>
-    ['pending', 'hashing', 'checking', 'uploading', 'merging'].includes(p.status)
-  )
-)
+interface VideoWork {
+  id: string
+  parts: VideoPart[]
+  form: VideoWorkForm
+  coverFile: File | null
+  coverPreview: string
+  currentCoverUrl: string
+  coverSource: 'none' | 'auto' | 'manual'
+}
 
-// Form State
-const form = ref({
+interface UploadFeedback {
+  description: string
+  title: string
+}
+
+const createWorkForm = (): VideoWorkForm => ({
   title: '',
   description: '',
-  partitionId: undefined as number | undefined,
-  tags: [] as string[],
+  partitionId: undefined,
+  tags: [],
   tagInput: '',
   isOriginal: true,
+  isPrivate: false,
   publishType: 'immediate',
   publishTime: '',
 })
 
+const createWork = (initialParts: VideoPart[] = []): VideoWork => ({
+  id: Math.random().toString(36).substring(2, 9),
+  parts: initialParts,
+  form: createWorkForm(),
+  coverFile: null,
+  coverPreview: '',
+  currentCoverUrl: '',
+  coverSource: 'none',
+})
+
+// State
+const isDragging = ref(false)
+const works = ref<VideoWork[]>([])
+const activeWorkIndex = ref(0)
+const uploadRootRef = ref<HTMLElement | null>(null)
+const initialFileInputRef = ref<HTMLInputElement | null>(null)
+const appendFileInputRef = ref<HTMLInputElement | null>(null)
+const addWorkFileInputRef = ref<HTMLInputElement | null>(null)
+
+const partitions = ref<Partition[]>([])
+const isPublishing = ref(false)
+const showBatchDialog = ref(false)
+const hasExplicitStorageConfig = ref(false)
+const uploadFeedback = ref<UploadFeedback | null>(null)
+
+const storageConfig = ref<StorageConfig>({ ...DEFAULT_STORAGE_CONFIG })
+
+const chunkSizeBytes = computed(() => storageConfig.value.chunkSize * 1024 * 1024)
+const maxFileSizeBytes = computed(() => storageConfig.value.maxFileSize * 1024 * 1024)
+const effectiveMaxFileSizeBytes = computed(() =>
+  hasExplicitStorageConfig.value ? maxFileSizeBytes.value : Number.POSITIVE_INFINITY
+)
+const VIDEO_FILE_EXTENSIONS = [
+  'mp4',
+  'm4v',
+  'mov',
+  'webm',
+  'mkv',
+  'avi',
+  'wmv',
+  'flv',
+  'mpeg',
+  'mpg',
+  'ts',
+  'm2ts',
+] as const
+const VIDEO_INPUT_ACCEPT = `video/*,${VIDEO_FILE_EXTENSIONS.map((ext) => `.${ext}`).join(',')}`
+const COMMON_VIDEO_FORMAT_TEXT = `${VIDEO_FILE_EXTENSIONS.slice(0, 6).join(' / ')} 等常见格式`
+const DEFAULT_PART_LIMIT_TEXT = `最多 ${DEFAULT_STORAGE_CONFIG.maxUploadNum} 个分P`
+const FILE_HASH_CACHE_KEY = 'creator-upload-file-hash-cache'
+const FILE_HASH_CACHE_LIMIT = 24
+const SCHEDULE_MIN_DELAY_MS = 5 * 60 * 1000
+const SCHEDULE_MAX_DELAY_MS = 14 * 24 * 60 * 60 * 1000
+const uploadConstraintsText = computed(() => {
+  if (hasExplicitStorageConfig.value) {
+    return `支持 ${COMMON_VIDEO_FORMAT_TEXT}，单文件不超过 ${storageConfig.value.maxFileSize}MB，最多 ${storageConfig.value.maxUploadNum} 个分P，按 ${storageConfig.value.chunkSize}MB 分片上传。若文件未进入列表，会直接提示具体原因。`
+  }
+
+  return `支持 ${COMMON_VIDEO_FORMAT_TEXT}，当前站点未公开单文件大小限制，前端不会提前拦截；若服务端拒绝，会在列表中显示具体失败原因。${DEFAULT_PART_LIMIT_TEXT}。`
+})
+
+// Active work computed
+const activeWork = computed(() => works.value[activeWorkIndex.value])
+const activeParts = computed(() => activeWork.value?.parts ?? [])
+const allParts = computed(() => works.value.flatMap((w) => w.parts))
+const isActiveScheduleDisabled = computed(() => Boolean(activeWork.value?.form.isPrivate))
+
+const isUploadingAny = computed(() =>
+  allParts.value.some((p) =>
+    ['pending', 'hashing', 'checking', 'uploading', 'merging'].includes(p.status)
+  )
+)
+const showPartLabels = computed(() => activeParts.value.length > 1)
+
 // Cover Setting State
 const showCoverSetting = ref(false)
-const coverSettingMode = ref<'upload' | 'frame'>('upload')
+const showAICoverDialog = ref(false)
+const applyingAICover = ref(false)
 const frameVideoRef = ref<HTMLVideoElement | null>(null)
-const videoUrl = computed(() => (parts.value[0] ? URL.createObjectURL(parts.value[0].file) : ''))
-const recommendedCovers = ref<string[]>([])
-const isExtractingFrames = ref(false)
+const previewVideoUrl = ref('')
+const previewVideoError = ref(false)
 const tempCoverPreview = ref('')
 const tempCoverFile = ref<File | null>(null)
+const autoCoverPartTokens = new Map<string, string>()
 const UPLOAD_STATUS_TIMEOUT = 6000
 const UPLOAD_CHUNK_TIMEOUT = 60000
 const COMPLETE_UPLOAD_TIMEOUT = 5 * 60 * 1000
-const COVER_EXTRACT_TIMEOUT = 8000
+const scheduleBoundaryBase = ref(Date.now())
 
-let coverExtractJobId = 0
+let localPreviewObjectUrl = ''
+let scheduleBoundaryTimer: ReturnType<typeof setInterval> | undefined
+const canCaptureCover = computed(() =>
+  Boolean(activeParts.value[0] && previewVideoUrl.value && !previewVideoError.value)
+)
+const coverDialogTip = computed(() => {
+  if (!activeParts.value[0]) return '请先上传视频后再设置封面'
+  if (canCaptureCover.value) return '支持拖动视频进度条截取当前帧，也支持直接上传自定义封面'
+  if (previewVideoUrl.value) return '当前视频浏览器无法预览，仅支持本地上传自定义封面'
+  return '当前视频预览源尚未就绪，请先上传自定义封面'
+})
+const aiCoverInitialPrompt = computed(() => {
+  return activeWork.value?.form.title || activeParts.value[0]?.title || ''
+})
+const importedAIDraftIds = new Set<string>()
 
 const emptyUploadStatus = (fileHash: string): UploadStatusResult => ({
   fileHash,
@@ -107,130 +267,230 @@ const emptyUploadStatus = (fileHash: string): UploadStatusResult => ({
   uploadedChunks: [],
 })
 
-const waitForVideoEvent = (
-  video: HTMLVideoElement,
-  successEvent: 'loadedmetadata' | 'seeked',
-  timeoutMs: number,
-  ready?: () => boolean
-): Promise<void> => {
-  if (ready?.()) {
-    return Promise.resolve()
+const parseLocalDateTime = (value: string) => {
+  if (!value) return null
+  const match = value.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})$/)
+  if (!match) {
+    return null
   }
 
-  return new Promise((resolve, reject) => {
-    const timer = window.setTimeout(() => {
-      cleanup()
-      reject(new Error(`wait for ${successEvent} timed out`))
-    }, timeoutMs)
-
-    const onSuccess = () => {
-      cleanup()
-      resolve()
-    }
-
-    const onError = () => {
-      cleanup()
-      reject(new Error(`video ${successEvent} failed`))
-    }
-
-    const cleanup = () => {
-      window.clearTimeout(timer)
-      video.removeEventListener(successEvent, onSuccess)
-      video.removeEventListener('error', onError)
-    }
-
-    video.addEventListener(successEvent, onSuccess, { once: true })
-    video.addEventListener('error', onError, { once: true })
-  })
+  const [, yearRaw, monthRaw, dayRaw, hourRaw, minuteRaw] = match
+  const year = Number(yearRaw)
+  const month = Number(monthRaw)
+  const day = Number(dayRaw)
+  const hour = Number(hourRaw)
+  const minute = Number(minuteRaw)
+  const parsed = new Date(year, month - 1, day, hour, minute, 0, 0)
+  if (isNaN(parsed.getTime())) return null
+  return parsed
 }
 
-const extractFrames = async (file: File) => {
-  const currentJobId = ++coverExtractJobId
-  isExtractingFrames.value = true
-  recommendedCovers.value = []
+const formatLocalDateTime = (date: Date) => {
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  const hour = String(date.getHours()).padStart(2, '0')
+  const minute = String(date.getMinutes()).padStart(2, '0')
+  return `${year}-${month}-${day}T${hour}:${minute}`
+}
 
-  const video = document.createElement('video')
-  const objectUrl = URL.createObjectURL(file)
-  video.src = objectUrl
-  video.muted = true
-  video.playsInline = true
-  video.preload = 'metadata'
-  video.load()
+const ceilDateToMinute = (date: Date) => {
+  const next = new Date(date)
+  if (next.getSeconds() !== 0 || next.getMilliseconds() !== 0) {
+    next.setSeconds(0, 0)
+    next.setMinutes(next.getMinutes() + 1)
+  } else {
+    next.setSeconds(0, 0)
+  }
+  return next
+}
 
+const floorDateToMinute = (date: Date) => {
+  const next = new Date(date)
+  next.setSeconds(0, 0)
+  return next
+}
+
+const refreshScheduleBoundary = () => {
+  scheduleBoundaryBase.value = Date.now()
+}
+
+const getScheduleWindowStart = () =>
+  ceilDateToMinute(new Date(scheduleBoundaryBase.value + SCHEDULE_MIN_DELAY_MS))
+
+const getScheduleWindowEnd = () =>
+  floorDateToMinute(new Date(scheduleBoundaryBase.value + SCHEDULE_MAX_DELAY_MS))
+
+const scheduledPublishMinValue = computed(() => formatLocalDateTime(getScheduleWindowStart()))
+const scheduledPublishMaxValue = computed(() => formatLocalDateTime(getScheduleWindowEnd()))
+
+const normalizeScheduledPublishTime = (value: string) => {
+  const parsed = parseLocalDateTime(value)
+  if (!parsed) return ''
+
+  const minDate = getScheduleWindowStart()
+  const maxDate = getScheduleWindowEnd()
+  if (parsed.getTime() < minDate.getTime()) return formatLocalDateTime(minDate)
+  if (parsed.getTime() > maxDate.getTime()) return formatLocalDateTime(maxDate)
+  return formatLocalDateTime(parsed)
+}
+
+const getFileExtension = (fileName: string) => {
+  const match = fileName.toLowerCase().match(/\.([^.]+)$/)
+  return match?.[1] ?? ''
+}
+
+const getVideoFileRejectionReason = (file: File) => {
+  if (isSourceFileNameTooLong(file.name)) {
+    return getSourceFileNameTooLongMessage(file.name)
+  }
+  if (file.type.startsWith('video/')) return ''
+  const extension = getFileExtension(file.name)
+  if (
+    extension &&
+    VIDEO_FILE_EXTENSIONS.includes(extension as (typeof VIDEO_FILE_EXTENSIONS)[number])
+  ) {
+    return ''
+  }
+  return `不支持的格式：${file.name}`
+}
+
+const formatRejectedSummary = (values: string[], fallback: string) => {
+  if (values.length === 0) return fallback
+  const visible = values.slice(0, 2).join('、')
+  return values.length > 2 ? `${visible} 等 ${values.length} 个` : visible
+}
+
+const formatMegabytes = (value: number) => {
+  if (!Number.isFinite(value)) return '0MB'
+  return `${value >= 100 ? Math.round(value) : value.toFixed(1)}MB`
+}
+
+const formatFileSizeInMegabytes = (file: File) => {
+  return formatMegabytes(file.size / (1024 * 1024))
+}
+
+const getFileHashCacheKey = (file: File) => {
+  return `${file.name}::${file.size}::${file.lastModified}`
+}
+
+const readFileHashCache = () => {
   try {
-    await waitForVideoEvent(
-      video,
-      'loadedmetadata',
-      COVER_EXTRACT_TIMEOUT,
-      () => video.readyState >= 1
-    )
-    if (currentJobId !== coverExtractJobId) return
+    const raw = window.localStorage.getItem(FILE_HASH_CACHE_KEY)
+    if (!raw) return {} as Record<string, { hash: string; updatedAt: number }>
 
-    const duration = Number.isFinite(video.duration) ? video.duration : 0
-    if (duration <= 0 || video.videoWidth <= 0 || video.videoHeight <= 0) {
-      throw new Error('invalid video metadata')
-    }
-
-    const numFrames = 6
-    const timestamps = Array.from(
-      { length: numFrames },
-      (_, i) => (duration / (numFrames + 1)) * (i + 1)
-    )
-
-    const canvas = document.createElement('canvas')
-    const ctx = canvas.getContext('2d')
-    if (!ctx) {
-      throw new Error('canvas context unavailable')
-    }
-
-    for (const time of timestamps) {
-      if (currentJobId !== coverExtractJobId) return
-
-      const safeTime = Math.min(time, Math.max(duration - 0.1, 0))
-      video.currentTime = safeTime
-      await waitForVideoEvent(video, 'seeked', COVER_EXTRACT_TIMEOUT)
-      if (currentJobId !== coverExtractJobId) return
-
-      canvas.width = video.videoWidth
-      canvas.height = video.videoHeight
-      ctx.drawImage(video, 0, 0, canvas.width, canvas.height)
-      recommendedCovers.value.push(canvas.toDataURL('image/jpeg', 0.9))
-    }
-
-    if (
-      currentJobId === coverExtractJobId &&
-      !coverPreview.value &&
-      recommendedCovers.value.length > 0 &&
-      recommendedCovers.value[0]
-    ) {
-      await selectRecommendedCover(recommendedCovers.value[0])
-    }
-  } catch (error) {
-    if (currentJobId !== coverExtractJobId) return
-    recommendedCovers.value = []
-    console.error('Extract recommended covers failed', error)
-    toast({ title: '推荐封面生成失败，请手动上传或截取封面', variant: 'destructive' })
-  } finally {
-    if (currentJobId === coverExtractJobId) {
-      isExtractingFrames.value = false
-    }
-    URL.revokeObjectURL(objectUrl)
-    video.removeAttribute('src')
-    video.load()
+    const parsed = JSON.parse(raw) as Record<string, { hash: string; updatedAt: number }>
+    return typeof parsed === 'object' && parsed ? parsed : {}
+  } catch {
+    return {} as Record<string, { hash: string; updatedAt: number }>
   }
 }
 
-const selectRecommendedCover = async (dataUrl: string) => {
-  coverPreview.value = dataUrl
-  const res = await fetch(dataUrl)
-  const blob = await res.blob()
-  coverFile.value = new File([blob], 'cover.jpg', { type: 'image/jpeg' })
+const writeFileHashCache = (cache: Record<string, { hash: string; updatedAt: number }>) => {
+  try {
+    const entries = Object.entries(cache)
+      .sort(([, left], [, right]) => right.updatedAt - left.updatedAt)
+      .slice(0, FILE_HASH_CACHE_LIMIT)
+
+    window.localStorage.setItem(FILE_HASH_CACHE_KEY, JSON.stringify(Object.fromEntries(entries)))
+  } catch {
+    // Ignore local cache failures and continue hashing normally.
+  }
+}
+
+const getCachedFileHash = (file: File) => {
+  return readFileHashCache()[getFileHashCacheKey(file)]?.hash ?? ''
+}
+
+const setCachedFileHash = (file: File, hash: string) => {
+  if (!hash) return
+
+  const cache = readFileHashCache()
+  cache[getFileHashCacheKey(file)] = {
+    hash,
+    updatedAt: Date.now(),
+  }
+  writeFileHashCache(cache)
+}
+
+const showFileSizeLimitToast = (files: File[]) => {
+  if (files.length === 0) return
+
+  const firstFile = files[0]
+  if (!firstFile) return
+  const title = files.length === 1 ? '文件超过大小上限' : '部分文件超过大小上限'
+  const description =
+    files.length === 1
+      ? `${firstFile.name} 当前约 ${formatFileSizeInMegabytes(firstFile)}，单文件最大只支持 ${storageConfig.value.maxFileSize}MB。`
+      : `${formatRejectedSummary(
+          files.map((file) => file.name),
+          '部分文件'
+        )} 超过单文件 ${storageConfig.value.maxFileSize}MB 上限，请压缩后重试。`
+
+  uploadFeedback.value = { title, description }
+}
+
+const getOversizeIssueText = (files: File[]) => {
+  const [firstFile] = files
+  if (!firstFile) {
+    return `超过 ${storageConfig.value.maxFileSize}MB`
+  }
+
+  if (files.length === 1) {
+    return `${firstFile.name} 当前约 ${formatFileSizeInMegabytes(firstFile)}，单文件最大只能上传 ${storageConfig.value.maxFileSize}MB`
+  }
+
+  return `${formatRejectedSummary(
+    files.map((file) => file.name),
+    '部分文件'
+  )} 超过单文件 ${storageConfig.value.maxFileSize}MB 上限`
+}
+
+const showPartCountLimitToast = (maxNum: number, currentCount: number) => {
+  const remaining = Math.max(maxNum - currentCount, 0)
+  const description =
+    remaining > 0
+      ? `当前作品已经有 ${currentCount} 个分P，这次还能再添加 ${remaining} 个。`
+      : `当前作品已经达到 ${currentCount} 个分P 上限，请先删除部分分P后再继续上传。`
+
+  uploadFeedback.value = {
+    title: `单个作品最多只能上传 ${maxNum} 个分P`,
+    description,
+  }
+}
+
+const revokeLocalPreviewObjectUrl = () => {
+  if (localPreviewObjectUrl) {
+    URL.revokeObjectURL(localPreviewObjectUrl)
+    localPreviewObjectUrl = ''
+  }
+}
+
+const syncPreviewVideoUrl = () => {
+  const firstPart = activeParts.value[0]
+  previewVideoError.value = false
+
+  if (!firstPart) {
+    revokeLocalPreviewObjectUrl()
+    previewVideoUrl.value = ''
+    return
+  }
+
+  if (firstPart.status === 'success' && firstPart.filePath) {
+    revokeLocalPreviewObjectUrl()
+    previewVideoUrl.value = firstPart.filePath
+    return
+  }
+
+  revokeLocalPreviewObjectUrl()
+  localPreviewObjectUrl = URL.createObjectURL(firstPart.file)
+  previewVideoUrl.value = localPreviewObjectUrl
 }
 
 const openCoverSetting = () => {
-  tempCoverPreview.value = coverPreview.value
-  tempCoverFile.value = coverFile.value
-  coverSettingMode.value = parts.value[0] ? 'frame' : 'upload'
+  if (!activeWork.value) return
+  tempCoverPreview.value = activeWork.value.coverPreview
+  tempCoverFile.value = activeWork.value.coverFile
   showCoverSetting.value = true
 }
 
@@ -245,8 +505,15 @@ const onTempCoverChange = (e: Event) => {
 }
 
 const captureFrame = () => {
-  if (!frameVideoRef.value) return
+  if (!frameVideoRef.value || previewVideoError.value) {
+    toast({ title: '当前视频无法直接预览，请上传自定义封面', variant: 'destructive' })
+    return
+  }
   const video = frameVideoRef.value
+  if (!video.videoWidth || !video.videoHeight) {
+    toast({ title: '视频尚未就绪，请稍后重试', variant: 'destructive' })
+    return
+  }
   const canvas = document.createElement('canvas')
   canvas.width = video.videoWidth
   canvas.height = video.videoHeight
@@ -264,10 +531,192 @@ const captureFrame = () => {
     })
 }
 
+const onPreviewVideoError = () => {
+  previewVideoError.value = true
+}
+
+const clearAutoCover = (work?: VideoWork) => {
+  if (!work || work.coverSource !== 'auto') return
+  work.coverFile = null
+  work.coverPreview = ''
+  work.currentCoverUrl = ''
+  work.coverSource = 'none'
+  autoCoverPartTokens.delete(work.id)
+}
+
+const captureCoverFromVideoElement = async (video: HTMLVideoElement, fileName: string) => {
+  const canvas = document.createElement('canvas')
+  canvas.width = video.videoWidth
+  canvas.height = video.videoHeight
+  const ctx = canvas.getContext('2d')
+  if (!ctx) {
+    throw new Error('无法初始化封面画布')
+  }
+
+  ctx.drawImage(video, 0, 0, canvas.width, canvas.height)
+
+  const blob = await new Promise<Blob | null>((resolve) => {
+    canvas.toBlob(resolve, 'image/jpeg', 0.92)
+  })
+  if (!blob) {
+    throw new Error('封面生成失败')
+  }
+
+  return {
+    preview: canvas.toDataURL('image/jpeg', 0.92),
+    file: new File([blob], fileName, { type: 'image/jpeg' }),
+  }
+}
+
+const autoRecommendCoverForPart = async (part: VideoPart) => {
+  const work = works.value.find((candidate) => candidate.parts.some((item) => item.id === part.id))
+  if (!work || work.parts[0]?.id !== part.id || work.coverSource === 'manual') {
+    return
+  }
+  if (part.status !== 'success') return
+
+  const token = `${part.id}:${part.hash || part.file.name}:${part.file.size}:${part.file.lastModified}`
+  if (
+    work.coverSource === 'auto' &&
+    work.coverPreview &&
+    autoCoverPartTokens.get(work.id) === token
+  ) {
+    return
+  }
+
+  const objectUrl = URL.createObjectURL(part.file)
+  const video = document.createElement('video')
+  video.preload = 'auto'
+  video.muted = true
+  video.playsInline = true
+  video.crossOrigin = 'anonymous'
+
+  try {
+    await new Promise<void>((resolve, reject) => {
+      const timeoutId = window.setTimeout(() => {
+        cleanup()
+        reject(new Error('封面预览超时'))
+      }, 12000)
+
+      const cleanup = () => {
+        clearTimeout(timeoutId)
+        video.onloadeddata = null
+        video.onerror = null
+      }
+
+      video.onloadeddata = () => {
+        cleanup()
+        resolve()
+      }
+      video.onerror = () => {
+        cleanup()
+        reject(new Error('封面预览失败'))
+      }
+
+      video.src = objectUrl
+      void video.load()
+    })
+
+    const duration = Number(video.duration)
+    if (Number.isFinite(duration) && duration > 0.6) {
+      const targetTime = Math.min(Math.max(duration * 0.18, 0.4), Math.max(duration - 0.1, 0.4), 3)
+      if (targetTime > 0.05) {
+        await new Promise<void>((resolve, reject) => {
+          const timeoutId = window.setTimeout(() => {
+            cleanup()
+            resolve()
+          }, 6000)
+
+          const cleanup = () => {
+            clearTimeout(timeoutId)
+            video.onseeked = null
+            video.onerror = null
+          }
+
+          video.onseeked = () => {
+            cleanup()
+            resolve()
+          }
+          video.onerror = () => {
+            cleanup()
+            reject(new Error('封面定位失败'))
+          }
+
+          video.currentTime = targetTime
+        })
+      }
+    }
+
+    const cover = await captureCoverFromVideoElement(video, `auto-cover-${part.id}.jpg`)
+    const latestWork = works.value.find((candidate) => candidate.id === work.id)
+    if (!latestWork || latestWork.parts[0]?.id !== part.id || latestWork.coverSource === 'manual') {
+      return
+    }
+
+    latestWork.coverFile = cover.file
+    latestWork.coverPreview = cover.preview
+    latestWork.currentCoverUrl = ''
+    latestWork.coverSource = 'auto'
+    autoCoverPartTokens.set(latestWork.id, token)
+  } catch (error) {
+    console.warn('Auto cover recommendation skipped', error)
+  } finally {
+    URL.revokeObjectURL(objectUrl)
+  }
+}
+
 const confirmCoverSetting = () => {
-  coverPreview.value = tempCoverPreview.value
-  coverFile.value = tempCoverFile.value
+  if (activeWork.value) {
+    activeWork.value.coverPreview = tempCoverPreview.value
+    activeWork.value.coverFile = tempCoverFile.value
+    activeWork.value.currentCoverUrl = tempCoverFile.value ? '' : activeWork.value.currentCoverUrl
+    activeWork.value.coverSource = tempCoverFile.value ? 'manual' : activeWork.value.coverSource
+    autoCoverPartTokens.delete(activeWork.value.id)
+  }
   showCoverSetting.value = false
+}
+
+const applyLocalCoverFile = (coverFile: File, coverPreview: string) => {
+  if (!activeWork.value) return
+  activeWork.value.coverFile = coverFile
+  activeWork.value.coverPreview = coverPreview
+  activeWork.value.currentCoverUrl = ''
+  activeWork.value.coverSource = 'manual'
+  autoCoverPartTokens.delete(activeWork.value.id)
+}
+
+const handleAICoverPick = (payload: { file: File; sourceUrl: string; prompt: string }) => {
+  if (!activeWork.value) return
+  applyingAICover.value = true
+  try {
+    applyLocalCoverFile(payload.file, payload.sourceUrl)
+    showAICoverDialog.value = false
+    toast({ title: 'AI 封面已应用' })
+  } catch (error) {
+    console.error('Apply AI cover failed', error)
+    toast({ title: 'AI 封面应用失败', variant: 'destructive' })
+  } finally {
+    applyingAICover.value = false
+  }
+}
+
+const importPendingAIVideoDraft = () => {
+  const draft = creatorBridgeStore.pendingVideoImport
+  if (!draft || importedAIDraftIds.has(draft.id)) return
+
+  importedAIDraftIds.add(draft.id)
+  const workTitle = draft.title.trim() || getDefaultPartTitle(draft.file.name)
+  const part = createVideoPart(draft.file, {
+    title: workTitle,
+  })
+  const work = createWork([part])
+  work.form.title = workTitle
+  work.form.description = draft.prompt
+  works.value.push(work)
+  activeWorkIndex.value = works.value.length - 1
+  creatorBridgeStore.clearPendingVideoImport()
+  toast({ title: 'AI 视频已导入投稿页，开始上传' })
+  processUploadQueue()
 }
 
 onMounted(async () => {
@@ -276,7 +725,69 @@ onMounted(async () => {
     partitions.value = partitionRes.value
   }
   if (configRes.status === 'fulfilled') {
-    storageConfig.value = configRes.value.site.storage
+    const siteStorage = configRes.value.site?.storage
+    hasExplicitStorageConfig.value = hasStorageConfig(siteStorage)
+    storageConfig.value = normalizeStorageConfig(siteStorage)
+  }
+
+  refreshScheduleBoundary()
+  scheduleBoundaryTimer = window.setInterval(refreshScheduleBoundary, 30000)
+  window.addEventListener('dragover', handleWindowDragOver)
+  window.addEventListener('drop', handleWindowDrop)
+  importPendingAIVideoDraft()
+})
+
+watch(
+  () => creatorBridgeStore.pendingVideoImport?.id,
+  (draftId) => {
+    if (!draftId) return
+    importPendingAIVideoDraft()
+  }
+)
+
+watch(
+  () => [
+    activeWorkIndex.value,
+    activeParts.value[0]?.id,
+    activeParts.value[0]?.status,
+    activeParts.value[0]?.filePath,
+  ],
+  () => {
+    syncPreviewVideoUrl()
+  },
+  { immediate: true }
+)
+
+watch(
+  () => [activeWork.value?.form.publishType, activeWork.value?.form.isPrivate] as const,
+  ([publishType, isPrivate]) => {
+    if (!activeWork.value) return
+    if (isPrivate) {
+      if (activeWork.value.form.publishType !== 'immediate') {
+        activeWork.value.form.publishType = 'immediate'
+      }
+      activeWork.value.form.publishTime = ''
+      return
+    }
+    if (publishType !== 'scheduled') return
+    refreshScheduleBoundary()
+    activeWork.value.form.publishTime =
+      normalizeScheduledPublishTime(activeWork.value.form.publishTime) ||
+      scheduledPublishMinValue.value
+  }
+)
+
+watch([scheduledPublishMinValue, scheduledPublishMaxValue], () => {
+  if (
+    !activeWork.value ||
+    activeWork.value.form.isPrivate ||
+    activeWork.value.form.publishType !== 'scheduled' ||
+    !activeWork.value.form.publishTime
+  )
+    return
+  const normalized = normalizeScheduledPublishTime(activeWork.value.form.publishTime)
+  if (normalized && normalized !== activeWork.value.form.publishTime) {
+    activeWork.value.form.publishTime = normalized
   }
 })
 
@@ -287,84 +798,79 @@ const calculateFullSHA256 = (
   onProgress?: (pct: number) => void
 ): Promise<string> => {
   return new Promise((resolve, reject) => {
-    const workerCode = `
-      self.onmessage = async (e) => {
-        try {
-          const file = e.data;
-          const chunkSize = 2 * 1024 * 1024;
-          const total = file.size;
-          const chunks = [];
-          let offset = 0;
-          while (offset < total) {
-            const end = Math.min(offset + chunkSize, total);
-            const buf = await file.slice(offset, end).arrayBuffer();
-            chunks.push(new Uint8Array(buf));
-            offset = end;
-            self.postMessage({ type: 'progress', pct: Math.round((offset / total) * 100) });
-          }
-          let totalLen = 0;
-          for (const c of chunks) totalLen += c.length;
-          const merged = new Uint8Array(totalLen);
-          let pos = 0;
-          for (const c of chunks) { merged.set(c, pos); pos += c.length; }
-          const hashBuf = await crypto.subtle.digest('SHA-256', merged);
-          const arr = Array.from(new Uint8Array(hashBuf));
-          const hex = arr.map(b => b.toString(16).padStart(2, '0')).join('');
-          self.postMessage({ type: 'done', hash: hex });
-        } catch (err) {
-          self.postMessage({ type: 'error', error: err.message });
-        }
-      };
-    `
-    const blob = new Blob([workerCode], { type: 'application/javascript' })
-    const url = URL.createObjectURL(blob)
-    const worker = new Worker(url)
+    const worker = new Worker(new URL('../../workers/upload-hash.worker.ts', import.meta.url), {
+      type: 'module',
+    })
 
     const cleanup = () => {
       worker.terminate()
-      URL.revokeObjectURL(url)
+      signal?.removeEventListener('abort', handleAbort)
     }
 
-    if (signal) {
-      signal.addEventListener('abort', () => {
-        cleanup()
-        reject(new Error('canceled'))
-      })
+    const handleAbort = () => {
+      cleanup()
+      reject(new Error('canceled'))
     }
 
-    worker.onmessage = (e: MessageEvent) => {
+    signal?.addEventListener('abort', handleAbort, { once: true })
+
+    worker.onmessage = (
+      e: MessageEvent<
+        | { type: 'done'; hash: string }
+        | { type: 'error'; error: string }
+        | { type: 'progress'; pct: number }
+      >
+    ) => {
       if (e.data.type === 'progress') {
-        onProgress?.(e.data.pct as number)
+        onProgress?.(e.data.pct)
       } else if (e.data.type === 'done') {
-        resolve(e.data.hash as string)
+        resolve(e.data.hash)
         cleanup()
       } else if (e.data.type === 'error') {
-        reject(new Error(e.data.error as string))
+        reject(new Error(e.data.error))
         cleanup()
       }
     }
     worker.onerror = (err) => {
-      reject(err)
+      reject(new Error(err.message || '文件哈希计算失败'))
       cleanup()
     }
-    worker.postMessage(file)
+    worker.postMessage({
+      file,
+      chunkSize: chunkSizeBytes.value,
+    })
   })
 }
 
 // Drag and Drop
 const onDragOver = (e: DragEvent) => {
+  if (!hasDraggedFiles(e.dataTransfer)) return
   e.preventDefault()
+  e.stopPropagation()
+  if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy'
+  isDragging.value = true
+}
+const onDragEnter = (e: DragEvent) => {
+  if (!hasDraggedFiles(e.dataTransfer)) return
+  e.preventDefault()
+  e.stopPropagation()
   isDragging.value = true
 }
 const onDragLeave = (e: DragEvent) => {
+  if (!hasDraggedFiles(e.dataTransfer)) return
   e.preventDefault()
+  e.stopPropagation()
+  const nextTarget = e.relatedTarget as Node | null
+  if (nextTarget && uploadRootRef.value?.contains(nextTarget)) return
   isDragging.value = false
 }
 const onDrop = (e: DragEvent) => {
+  if (!hasDraggedFiles(e.dataTransfer)) return
   e.preventDefault()
+  e.stopPropagation()
   isDragging.value = false
-  const files = e.dataTransfer?.files
-  if (files && files.length > 0) {
+  const files = getFilesFromDataTransfer(e.dataTransfer)
+  if (files.length > 0) {
     handleFilesSelect(files)
   }
 }
@@ -377,20 +883,55 @@ const onFileChange = (e: Event) => {
   target.value = ''
 }
 
-// Concurrency & retry helpers
-const MAX_CONCURRENT_UPLOADS = 5
-const activeUploads = ref(0)
+const openVideoPicker = (target: 'initial' | 'append') => {
+  const input = target === 'initial' ? initialFileInputRef.value : appendFileInputRef.value
+  input?.click()
+}
 
-const pendingCount = computed(() => parts.value.filter((p) => p.status === 'pending').length)
+const handleWindowDragOver = (e: DragEvent) => {
+  if (!hasDraggedFiles(e.dataTransfer)) return
+  e.preventDefault()
+}
+
+const handleWindowDrop = (e: DragEvent) => {
+  if (!hasDraggedFiles(e.dataTransfer)) return
+  e.preventDefault()
+
+  const target = e.target as Node | null
+  if (target && uploadRootRef.value?.contains(target)) {
+    onDrop(e)
+  }
+}
+
+// Concurrency & retry helpers
+const activeUploads = ref(0)
 
 const queuePosition = (part: VideoPart): number => {
   if (part.status !== 'pending') return 0
   let pos = 0
-  for (const p of parts.value) {
+  for (const p of allParts.value) {
     if (p.id === part.id) return pos + 1
     if (p.status === 'pending') pos++
   }
   return 0
+}
+
+const hasDraggedFiles = (dataTransfer: DataTransfer | null | undefined) => {
+  if (!dataTransfer) return false
+  return Array.from(dataTransfer.types ?? []).includes('Files')
+}
+
+const getFilesFromDataTransfer = (dataTransfer: DataTransfer | null | undefined) => {
+  if (!dataTransfer) return []
+
+  if (dataTransfer.files?.length) {
+    return Array.from(dataTransfer.files)
+  }
+
+  return Array.from(dataTransfer.items ?? [])
+    .filter((item) => item.kind === 'file')
+    .map((item) => item.getAsFile())
+    .filter((file): file is File => file instanceof File)
 }
 
 let isCompleting = false
@@ -437,9 +978,21 @@ const withRetry = async <T,>(
   throw new Error('Max retries reached')
 }
 
+const isLikelyVideoFile = (file: File) => {
+  return !getVideoFileRejectionReason(file)
+}
+
+const exceedsConfiguredFileSizeLimit = (file: File) => {
+  return file.size > effectiveMaxFileSizeBytes.value
+}
+
 const processUploadQueue = () => {
-  while (activeUploads.value < MAX_CONCURRENT_UPLOADS) {
-    const next = parts.value.find((p) => p.status === 'pending')
+  while (activeUploads.value < storageConfig.value.maxUploadNum) {
+    let next: VideoPart | undefined
+    for (const work of works.value) {
+      next = work.parts.find((p) => p.status === 'pending')
+      if (next) break
+    }
     if (!next) break
     next.status = 'hashing'
     activeUploads.value++
@@ -451,71 +1004,142 @@ const processUploadQueue = () => {
 }
 
 const handleFilesSelect = (files: FileList | File[]) => {
-  const videoFiles = Array.from(files).filter((f) => f.type.startsWith('video/'))
+  const allFiles = Array.from(files)
+  const unsupportedFiles = allFiles
+    .map((file) => ({ file, reason: getVideoFileRejectionReason(file) }))
+    .filter((entry) => entry.reason)
+
+  const videoFiles = allFiles.filter(isLikelyVideoFile)
   if (videoFiles.length === 0) {
-    toast({ title: '请上传视频文件', variant: 'destructive' })
+    const longNameOnly = unsupportedFiles.filter((entry) => isSourceFileNameTooLong(entry.file.name))
+    const formatOnly = unsupportedFiles.filter((entry) => !isSourceFileNameTooLong(entry.file.name))
+    if (longNameOnly.length > 0 && formatOnly.length === 0) {
+      uploadFeedback.value = {
+        title: '源文件名过长，无法上传',
+        description:
+          longNameOnly.length === 1
+            ? getSourceFileNameTooLongMessage(longNameOnly[0]!.file.name)
+            : longNameOnly.map((entry) => getSourceFileNameTooLongMessage(entry.file.name)).join('；'),
+      }
+      return
+    }
+    uploadFeedback.value = {
+      title: '没有可上传的视频文件',
+      description:
+        unsupportedFiles.length > 0
+          ? `${formatRejectedSummary(
+              unsupportedFiles.map((entry) => entry.file.name),
+              '所选文件'
+            )} 未被识别为常见视频格式，请检查扩展名或重新导出。`
+          : `请上传 ${COMMON_VIDEO_FORMAT_TEXT}。`,
+    }
     return
   }
 
   const maxNum = storageConfig.value.maxUploadNum
-  const remaining = maxNum - parts.value.length
+  const currentParts = activeWork.value?.parts ?? []
+  const remaining = maxNum - currentParts.length
   if (remaining <= 0) {
-    toast({ title: `最多上传 ${maxNum} 个分P`, variant: 'destructive' })
+    showPartCountLimitToast(maxNum, currentParts.length)
     return
   }
 
   const filesToAdd = videoFiles.slice(0, remaining)
-  if (filesToAdd.length < videoFiles.length) {
-    toast({ title: `已达上限，仅添加前 ${filesToAdd.length} 个文件` })
+  const ignoredByLimit = videoFiles.slice(remaining)
+
+  const oversized = hasExplicitStorageConfig.value
+    ? filesToAdd.filter((file) => exceedsConfiguredFileSizeLimit(file))
+    : []
+  const validFiles = filesToAdd.filter((file) => !exceedsConfiguredFileSizeLimit(file))
+
+  const uploadIssues: string[] = []
+  if (unsupportedFiles.length > 0) {
+    const longNameFiles = unsupportedFiles.filter((entry) => isSourceFileNameTooLong(entry.file.name))
+    const formatFiles = unsupportedFiles.filter((entry) => !isSourceFileNameTooLong(entry.file.name))
+    if (longNameFiles.length > 0) {
+      uploadIssues.push(
+        longNameFiles.length === 1
+          ? getSourceFileNameTooLongMessage(longNameFiles[0]!.file.name)
+          : `源文件名过长（最多 ${MAX_SOURCE_FILE_NAME_LENGTH} 个字符）：${formatRejectedSummary(
+              longNameFiles.map((entry) => entry.file.name),
+              '部分文件'
+            )}。请缩短文件名后重新选择`
+      )
+    }
+    if (formatFiles.length > 0) {
+      uploadIssues.push(
+        `格式不支持：${formatRejectedSummary(
+          formatFiles.map((entry) => entry.file.name),
+          '部分文件'
+        )}`
+      )
+    }
+  }
+  if (ignoredByLimit.length > 0) {
+    uploadIssues.push(
+      `超出本次最多 ${maxNum} 个分P：${formatRejectedSummary(
+        ignoredByLimit.map((file) => file.name),
+        '部分文件'
+      )}`
+    )
+  }
+  if (hasExplicitStorageConfig.value && oversized.length > 0) {
+    uploadIssues.push(getOversizeIssueText(oversized))
+  }
+  if (uploadIssues.length > 0) {
+    uploadFeedback.value = {
+      title: validFiles.length > 0 ? '部分文件未加入上传队列' : '所选文件未通过上传校验',
+      description: uploadIssues.join('；'),
+    }
   }
 
-  const oversized = filesToAdd.filter((f) => f.size > maxFileSizeBytes.value)
-  if (oversized.length > 0) {
-    toast({
-      title: `${oversized.length} 个文件超过 ${storageConfig.value.maxFileSize}MB 限制，已跳过`,
-      variant: 'destructive',
-    })
-  }
-
-  const validFiles = filesToAdd.filter((f) => f.size <= maxFileSizeBytes.value)
   if (validFiles.length === 0) return
+  uploadFeedback.value = null
 
-  const newParts: VideoPart[] = validFiles.map((file) => ({
-    id: Math.random().toString(36).substring(2, 9),
-    file,
-    title: file.name.replace(/\.[^/.]+$/, ''),
-    progress: 0,
-    status: 'pending',
-    hash: '',
-    filePath: '',
-    instant: false,
-  }))
+  const newParts: VideoPart[] = validFiles.map((file) => createVideoPart(file))
 
-  if (!form.value.title && newParts[0]) {
-    form.value.title = newParts[0].title
+  if (activeWork.value) {
+    // 作品标题默认取首个源文件名（去扩展名），与分P标题字段解耦
+    if (!activeWork.value.form.title && newParts[0]) {
+      activeWork.value.form.title = getDefaultPartTitle(newParts[0].sourceFileName)
+    }
+    activeWork.value.parts.push(...newParts)
+  } else {
+    newParts.forEach((part) => {
+      const work = createWork([part])
+      work.form.title = getDefaultPartTitle(part.sourceFileName)
+      works.value.push(work)
+    })
+    activeWorkIndex.value = 0
   }
-
-  const isFirstVideo = parts.value.length === 0
-  parts.value.push(...newParts)
   processUploadQueue()
-
-  if (isFirstVideo && newParts[0]) {
-    void extractFrames(newParts[0].file)
-  }
 }
 
-const uploadPart = async (part: VideoPart) => {
+const uploadPart = async (part: VideoPart, isResume = false) => {
   part.abortController = new AbortController()
   const signal = part.abortController.signal
 
   try {
-    part.progress = 0
-    part.errorMessage = ''
-    part.instant = false
+    if (!isResume) {
+      part.progress = 0
+      part.errorMessage = ''
+      part.instant = false
+    } else {
+      part.errorMessage = ''
+    }
 
-    part.hash = await calculateFullSHA256(part.file, signal, (pct) => {
-      part.progress = pct
-    })
+    if (!isResume || !part.hash) {
+      const cachedHash = getCachedFileHash(part.file)
+      if (cachedHash) {
+        part.hash = cachedHash
+        part.progress = 100
+      } else {
+        part.hash = await calculateFullSHA256(part.file, signal, (pct) => {
+          part.progress = pct
+        })
+        setCachedFileHash(part.file, part.hash)
+      }
+    }
 
     // Phase 2: check status (秒传 / 断点续传)
     part.status = 'checking'
@@ -535,6 +1159,7 @@ const uploadPart = async (part: VideoPart) => {
       part.progress = 100
       part.instant = true
       part.status = 'success'
+      void autoRecommendCoverForPart(part)
       return
     }
 
@@ -582,7 +1207,7 @@ const uploadPart = async (part: VideoPart) => {
       const res = await withRetry(
         () =>
           completeUpload(
-            { fileHash: part.hash, fileName: part.file.name, totalChunks },
+            { fileHash: part.hash, fileName: part.sourceFileName, totalChunks },
             { signal, timeout: COMPLETE_UPLOAD_TIMEOUT, silent: true }
           ),
         2,
@@ -590,12 +1215,13 @@ const uploadPart = async (part: VideoPart) => {
       )
       part.filePath = res.filePath
       part.status = 'success'
+      void autoRecommendCoverForPart(part)
     } finally {
       releaseCompleteLock()
     }
   } catch (error: unknown) {
     if ((error instanceof Error && error.message === 'canceled') || signal.aborted) {
-      part.status = 'canceled'
+      if (part.status !== 'paused') part.status = 'canceled'
     } else {
       part.status = 'error'
       const err = error as { response?: { data?: { msg?: string } }; message?: string }
@@ -606,109 +1232,291 @@ const uploadPart = async (part: VideoPart) => {
 }
 
 const removePart = (index: number) => {
-  const part = parts.value[index]
+  if (!activeWork.value) return
+  const work = activeWork.value
+  const part = activeWork.value.parts[index]
   const removedFirst = index === 0
   if (part?.abortController) {
     part.abortController.abort()
   }
-  parts.value.splice(index, 1)
+  activeWork.value.parts.splice(index, 1)
   if (removedFirst) {
-    coverExtractJobId++
-    isExtractingFrames.value = false
-    recommendedCovers.value = []
-    const nextFirstPart = parts.value[0]
-    if (nextFirstPart) {
-      void extractFrames(nextFirstPart.file)
+    previewVideoError.value = false
+    clearAutoCover(work)
+    const nextFirst = work.parts[0]
+    if (nextFirst?.status === 'success') {
+      void autoRecommendCoverForPart(nextFirst)
     }
   }
   processUploadQueue()
 }
 
-onBeforeUnmount(() => {
-  coverExtractJobId++
-  isExtractingFrames.value = false
-  parts.value.forEach((p) => p.abortController?.abort())
+const pausePart = (part: VideoPart) => {
+  if (!['hashing', 'checking', 'uploading', 'merging'].includes(part.status)) return
+  part.status = 'paused'
+  part.abortController?.abort()
+}
+
+const resumePart = (part: VideoPart) => {
+  if (part.status !== 'paused' && part.status !== 'error' && part.status !== 'canceled') return
+  part.status = 'hashing'
+  activeUploads.value++
+  void uploadPart(part, true).finally(() => {
+    activeUploads.value--
+    processUploadQueue()
+  })
+}
+
+const removeWork = (index: number) => {
+  const work = works.value[index]
+  if (!work) return
+  work.parts.forEach((p) => p.abortController?.abort())
+  works.value.splice(index, 1)
+  if (activeWorkIndex.value >= works.value.length) {
+    activeWorkIndex.value = Math.max(0, works.value.length - 1)
+  }
+  previewVideoError.value = false
+}
+
+const onAddWorkFileChange = (e: Event) => {
+  const target = e.target as HTMLInputElement
+  if (!target.files?.length) return
+  const allFiles = Array.from(target.files)
+  const videoFiles = allFiles.filter(isLikelyVideoFile)
+  if (videoFiles.length === 0) {
+    uploadFeedback.value = {
+      title: '没有可上传的视频文件',
+      description: `请上传 ${COMMON_VIDEO_FORMAT_TEXT}。`,
+    }
+    target.value = ''
+    return
+  }
+  const validFiles = videoFiles.filter((file) => !exceedsConfiguredFileSizeLimit(file))
+  if (validFiles.length === 0) {
+    if (hasExplicitStorageConfig.value) {
+      showFileSizeLimitToast(videoFiles)
+    } else {
+      uploadFeedback.value = {
+        title: '没有可加入上传队列的视频',
+        description: '当前选择的文件未通过上传校验，请检查后重试。',
+      }
+    }
+    target.value = ''
+    return
+  }
+  uploadFeedback.value = null
+  validFiles.forEach((file) => {
+    const part = createVideoPart(file)
+    const work = createWork([part])
+    work.form.title = getDefaultPartTitle(part.sourceFileName)
+    works.value.push(work)
+  })
+  activeWorkIndex.value = works.value.length - 1
+  target.value = ''
+  processUploadQueue()
+}
+
+const replaceFileInputRef = ref<HTMLInputElement | null>(null)
+const replaceTargetPartIndex = ref<number | null>(null)
+
+const openReplacePicker = (index: number) => {
+  replaceTargetPartIndex.value = index
+  replaceFileInputRef.value?.click()
+}
+
+const onReplaceFileChange = (e: Event) => {
+  const target = e.target as HTMLInputElement
+  if (!target.files?.length || replaceTargetPartIndex.value === null) return
+  const file = target.files[0]
+  if (!file || !activeWork.value) return
+
+  if (isSourceFileNameTooLong(file.name)) {
+    toast({
+      title: '无法更换：源文件名过长',
+      description: getSourceFileNameTooLongMessage(file.name),
+      variant: 'destructive',
+    })
+    target.value = ''
+    return
+  }
+  const reason = getVideoFileRejectionReason(file)
+  if (reason) {
+    toast({ title: '无法更换', description: reason, variant: 'destructive' })
+    target.value = ''
+    return
+  }
+  if (exceedsConfiguredFileSizeLimit(file)) {
+    showFileSizeLimitToast([file])
+    target.value = ''
+    return
+  }
+
+  const part = activeWork.value.parts[replaceTargetPartIndex.value]
+  if (!part) return
+  if (part.abortController) {
+    part.abortController.abort()
+  }
+
+  const oldDefaultTitle = getDefaultPartTitle(part.sourceFileName)
+  const nextSourceName = file.name
+  // 仅当用户未自定义分P标题时，才跟随新源文件名刷新默认标题
+  if (!part.title || part.title === oldDefaultTitle) {
+    part.title = getDefaultPartTitle(nextSourceName)
+  }
+  part.sourceFileName = nextSourceName
+
+  if (replaceTargetPartIndex.value === 0) {
+    clearAutoCover(activeWork.value)
+  }
+
+  part.file = file
+  part.progress = 0
+  part.status = 'pending'
+  part.hash = ''
+  part.filePath = ''
+  part.errorMessage = ''
+  part.instant = false
+
+  target.value = ''
+  replaceTargetPartIndex.value = null
+
+  processUploadQueue()
+}
+
+const handleBatchApply = (data: { isOriginal: boolean; tags: string[] }) => {
+  for (const work of works.value) {
+    work.form.isOriginal = data.isOriginal
+    if (data.tags.length > 0) {
+      const merged = [...new Set([...work.form.tags, ...data.tags])]
+      work.form.tags = merged.slice(0, 10)
+    }
+  }
+  toast({ title: '批量设置已应用' })
+}
+
+const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+  if (works.value.length > 0) {
+    e.preventDefault()
+    e.returnValue = ''
+  }
+}
+
+onMounted(() => {
+  window.addEventListener('beforeunload', handleBeforeUnload)
 })
 
-// Tags
-const addTag = () => {
-  const val = form.value.tagInput.trim()
-  if (val && !form.value.tags.includes(val) && form.value.tags.length < 10) {
-    form.value.tags.push(val)
+onBeforeUnmount(() => {
+  revokeLocalPreviewObjectUrl()
+  allParts.value.forEach((p) => p.abortController?.abort())
+  if (scheduleBoundaryTimer) {
+    clearInterval(scheduleBoundaryTimer)
   }
-  form.value.tagInput = ''
-}
-const removeTag = (index: number) => {
-  form.value.tags.splice(index, 1)
-}
+  window.removeEventListener('dragover', handleWindowDragOver)
+  window.removeEventListener('drop', handleWindowDrop)
+  window.removeEventListener('beforeunload', handleBeforeUnload)
+})
 
 // Publish
 const handlePublish = async () => {
-  if (parts.value.length === 0) {
-    toast({ title: '请至少上传一个视频分P', variant: 'destructive' })
+  if (works.value.length === 0) {
+    toast({ title: '请至少添加一个作品', variant: 'destructive' })
     return
   }
-  if (parts.value.some((p) => p.status !== 'success')) {
-    toast({ title: '请等待所有视频上传完成', variant: 'destructive' })
-    return
-  }
-  if (!form.value.title) {
-    toast({ title: '请填写标题', variant: 'destructive' })
-    return
-  }
-  if (!form.value.partitionId) {
-    toast({ title: '请选择分区', variant: 'destructive' })
-    return
-  }
-  if (!coverFile.value && !coverPreview.value) {
-    toast({ title: '请上传封面', variant: 'destructive' })
-    return
-  }
-
-  let publishTimeStr = undefined
-  if (form.value.publishType === 'scheduled') {
-    if (!form.value.publishTime) {
-      toast({ title: '请选择定时发布时间', variant: 'destructive' })
+  for (let i = 0; i < works.value.length; i++) {
+    const work = works.value[i]!
+    const wLabel = works.value.length > 1 ? `作品${i + 1}：` : ''
+    if (work.parts.length === 0) {
+      toast({ title: `${wLabel}请至少上传一个视频`, variant: 'destructive' })
+      activeWorkIndex.value = i
       return
     }
-    const d = new Date(form.value.publishTime)
-    if (isNaN(d.getTime())) {
-      toast({ title: '发布时间格式不正确', variant: 'destructive' })
+    if (work.parts.some((p) => p.status !== 'success')) {
+      toast({ title: `${wLabel}请等待所有视频上传完成`, variant: 'destructive' })
+      activeWorkIndex.value = i
       return
     }
-    // 后端需要 RFC3339 格式的时间字符串
-    publishTimeStr = d.toISOString()
+    if (!work.form.title) {
+      toast({ title: `${wLabel}请填写标题`, variant: 'destructive' })
+      activeWorkIndex.value = i
+      return
+    }
+    if (!work.form.partitionId) {
+      toast({ title: `${wLabel}请选择分区`, variant: 'destructive' })
+      activeWorkIndex.value = i
+      return
+    }
+    if (!work.coverFile && !work.coverPreview) {
+      toast({ title: `${wLabel}请上传封面`, variant: 'destructive' })
+      activeWorkIndex.value = i
+      return
+    }
+    const longNamePart = work.parts.find((p) => isSourceFileNameTooLong(p.sourceFileName))
+    if (longNamePart) {
+      toast({
+        title: `${wLabel}源文件名过长`,
+        description: getSourceFileNameTooLongMessage(longNamePart.sourceFileName),
+        variant: 'destructive',
+      })
+      activeWorkIndex.value = i
+      return
+    }
   }
 
   try {
     isPublishing.value = true
-
-    let coverUrl = ''
-    if (coverFile.value) {
-      const coverRes = await uploadImage(parts.value[0]?.hash || '', coverFile.value)
-      coverUrl = coverRes.imageUrl
+    for (const work of works.value) {
+      let publishTimeStr: string | undefined
+      if (!work.form.isPrivate && work.form.publishType === 'scheduled') {
+        const normalized = normalizeScheduledPublishTime(work.form.publishTime)
+        if (!normalized) {
+          toast({ title: '发布时间格式不正确', variant: 'destructive' })
+          return
+        }
+        publishTimeStr = new Date(normalized).toISOString()
+      }
+      const tagIds = await resolveCreatorTagIds(work.form.tags)
+      let coverUrl = work.currentCoverUrl
+      if (work.coverFile) {
+        const coverRes = await uploadImage(work.parts[0]?.hash || '', work.coverFile)
+        coverUrl = coverRes.imageUrl
+      }
+      const publishPayload: PublishVideoParams = {
+        title: work.form.title,
+        description: work.form.description,
+        partitionId: work.form.partitionId!,
+        tags: tagIds,
+        isOriginal: work.form.isOriginal,
+        isPrivate: work.form.isPrivate,
+        coverUrl,
+        publishTime: publishTimeStr,
+        ...(work.parts.length === 1
+          ? {
+              // 单P：只提交源文件名，不提交分P标题
+              filePath: work.parts[0]!.filePath,
+              fileName: work.parts[0]!.sourceFileName,
+              fileHash: work.parts[0]!.hash,
+            }
+          : {
+              // 多P：fileName 为源文件名，title 为分P标题（二者分离）
+              parts: work.parts.map((p) => ({
+                title: p.title.trim() || getDefaultPartTitle(p.sourceFileName),
+                filePath: p.filePath,
+                fileName: p.sourceFileName,
+                fileHash: p.hash,
+              })),
+            }),
+      }
+      await publishVideo(publishPayload)
     }
-
-    await publishVideo({
-      title: form.value.title,
-      description: form.value.description,
-      partitionId: form.value.partitionId,
-      isOriginal: form.value.isOriginal,
-      coverUrl: coverUrl,
-      publishTime: publishTimeStr,
-      parts: parts.value.map((p) => ({
-        title: p.title,
-        filePath: p.filePath,
-        fileName: p.file.name,
-        fileHash: p.hash,
-      })),
-    })
-
-    toast({ title: '发布成功' })
+    toast({ title: works.value.length > 1 ? `${works.value.length} 个作品发布成功` : '发布成功' })
     void router.push('/creator/content')
   } catch (error) {
     console.error('Publish failed', error)
-    toast({ title: '发布失败', variant: 'destructive' })
+    // 业务错误文案（含源文件名过长）已由 request 拦截器 toast，避免再弹笼统的「发布失败」盖掉原因
+    const message = error instanceof Error ? error.message.trim() : ''
+    if (!message) {
+      toast({ title: '发布失败', description: '请稍后重试', variant: 'destructive' })
+    }
   } finally {
     isPublishing.value = false
   }
@@ -716,168 +1524,388 @@ const handlePublish = async () => {
 </script>
 
 <template>
-  <div class="max-w-5xl mx-auto py-8 px-4">
+  <div
+    ref="uploadRootRef"
+    class="max-w-5xl mx-auto py-8 px-4"
+    @dragenter="onDragEnter"
+    @dragover="onDragOver"
+    @dragleave="onDragLeave"
+    @drop="onDrop"
+  >
+    <input
+      ref="initialFileInputRef"
+      type="file"
+      :accept="VIDEO_INPUT_ACCEPT"
+      multiple
+      class="hidden"
+      @change="onFileChange"
+    />
+    <input
+      ref="appendFileInputRef"
+      type="file"
+      :accept="VIDEO_INPUT_ACCEPT"
+      multiple
+      class="hidden"
+      @change="onFileChange"
+    />
+    <input
+      ref="addWorkFileInputRef"
+      type="file"
+      :accept="VIDEO_INPUT_ACCEPT"
+      multiple
+      class="hidden"
+      @change="onAddWorkFileChange"
+    />
+    <input
+      ref="replaceFileInputRef"
+      type="file"
+      :accept="VIDEO_INPUT_ACCEPT"
+      class="hidden"
+      @change="onReplaceFileChange"
+    />
+
+    <div
+      v-if="uploadFeedback"
+      class="upload-feedback-alert mb-6 flex items-start gap-3 rounded-2xl px-4 py-4"
+    >
+      <div
+        class="upload-feedback-alert__icon mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-full"
+      >
+        <AlertTriangle class="h-4.5 w-4.5" />
+      </div>
+      <div class="min-w-0 space-y-1">
+        <p class="upload-feedback-alert__title text-sm font-semibold tracking-[0.01em]">
+          {{ uploadFeedback.title }}
+        </p>
+        <p class="upload-feedback-alert__description text-sm leading-6">
+          {{ uploadFeedback.description }}
+        </p>
+      </div>
+    </div>
+
     <!-- Step 1: Upload Area -->
     <div
-      v-if="parts.length === 0"
-      class="bg-card rounded-xl border-2 border-dashed p-16 transition-colors flex flex-col items-center justify-center min-h-[400px]"
-      :class="{ 'border-primary bg-primary/5': isDragging }"
-      @dragover="onDragOver"
-      @dragleave="onDragLeave"
-      @drop="onDrop"
+      v-if="works.length === 0"
+      class="bg-card rounded-3xl border-2 border-dashed p-16 transition-all duration-300 flex flex-col items-center justify-center min-h-[440px] hover:border-primary/50 hover:bg-muted/10"
+      :class="{ 'border-primary bg-primary/5 scale-[1.02] shadow-xl': isDragging }"
     >
-      <div class="h-24 w-24 bg-primary/10 rounded-full flex items-center justify-center mb-6">
+      <div
+        class="h-24 w-24 bg-primary/10 rounded-full flex items-center justify-center mb-6 transition-transform duration-500 group-hover:scale-110"
+      >
         <UploadCloud class="h-12 w-12 text-primary" />
       </div>
-      <h3 class="text-2xl font-semibold mb-3">拖拽视频到此处，或点击上传</h3>
-      <p class="text-muted-foreground mb-8 text-center max-w-md">
-        支持 mp4, webm 格式，单文件不超过 {{ storageConfig.maxFileSize }}MB，最多
-        {{ storageConfig.maxUploadNum }} 个分P。建议上传 1080P 以上高清视频。
+      <h3 class="text-3xl font-bold tracking-tight mb-4">拖拽视频到此处，或点击上传</h3>
+      <p class="text-muted-foreground mb-10 text-center max-w-lg leading-relaxed">
+        {{ uploadConstraintsText }}
       </p>
-      <Button size="lg" class="relative overflow-hidden cursor-pointer text-lg px-8 py-6">
+      <Button
+        size="lg"
+        class="cursor-pointer text-lg px-10 py-7 rounded-2xl shadow-lg shadow-primary/20 hover:shadow-primary/30 transition-all font-medium"
+        @click="openVideoPicker('initial')"
+      >
         选择视频
-        <input
-          type="file"
-          accept="video/*"
-          multiple
-          class="absolute inset-0 opacity-0 cursor-pointer"
-          @change="onFileChange"
-        />
       </Button>
     </div>
 
     <!-- Step 2: Form Area -->
     <div v-else class="space-y-8">
-      <!-- Parts List Section -->
-      <div class="bg-card rounded-xl border p-6 shadow-sm">
+      <!-- Video Works Section -->
+      <div class="bg-card rounded-2xl border p-8 shadow-sm">
         <div class="flex items-center justify-between mb-6">
-          <h2 class="text-xl font-bold flex items-center gap-2">发布视频</h2>
-          <div class="flex items-center gap-3 text-sm text-muted-foreground">
-            <span>共 {{ parts.length }} P</span>
-            <span v-if="activeUploads > 0" class="text-primary">
-              {{ activeUploads }} 个上传中
-            </span>
-            <span v-if="pendingCount > 0" class="text-orange-500">
-              {{ pendingCount }} 个排队中
-            </span>
-          </div>
-        </div>
-
-        <div class="space-y-3 mb-4">
-          <div
-            v-for="(part, index) in parts"
-            :key="part.id"
-            class="flex items-center gap-4 p-4 rounded-lg border bg-muted/20"
+          <h2 class="text-2xl font-bold tracking-tight">发布视频</h2>
+          <Button
+            variant="outline"
+            size="sm"
+            class="hover:border-primary hover:text-primary hover:bg-primary/5"
+            @click="showBatchDialog = true"
+            >批量操作</Button
           >
-            <div
-              class="flex-shrink-0 w-8 h-8 rounded bg-muted flex items-center justify-center text-muted-foreground font-medium"
-            >
-              P{{ index + 1 }}
-            </div>
-            <div class="flex-grow min-w-0">
-              <div class="flex items-center justify-between mb-1">
-                <Input
-                  :model-value="part.title"
-                  class="h-8 text-sm max-w-[300px] border-transparent hover:border-input focus-visible:border-input bg-transparent px-2 -ml-2"
-                  placeholder="分P标题"
-                  @update:model-value="(v) => (part.title = String(v))"
-                />
-                <span class="text-xs text-muted-foreground truncate ml-4" :title="part.file.name">
-                  {{ part.file.name }} ({{ (part.file.size / 1024 / 1024).toFixed(2) }} MB)
-                </span>
-              </div>
-              <div class="flex items-center gap-3">
-                <div class="flex-grow bg-muted rounded-full h-1.5 overflow-hidden">
-                  <div
-                    class="h-full transition-all duration-300"
-                    :class="{
-                      'bg-primary': ['uploading', 'success'].includes(part.status),
-                      'bg-destructive': part.status === 'error',
-                      'bg-orange-400': ['hashing', 'checking', 'merging'].includes(part.status),
-                      'bg-muted-foreground': ['pending', 'canceled'].includes(part.status),
-                    }"
-                    :style="{ width: `${part.progress}%` }"
-                  ></div>
-                </div>
-                <span
-                  class="text-xs w-20 text-right"
-                  :class="{
-                    'text-primary': part.status === 'success',
-                    'text-destructive': part.status === 'error',
-                    'text-orange-500': ['hashing', 'checking', 'merging'].includes(part.status),
-                    'text-muted-foreground': ['pending', 'uploading', 'canceled'].includes(
-                      part.status
-                    ),
-                  }"
-                >
-                  <template v-if="part.status === 'success'">{{
-                    part.instant ? '秒传成功' : '上传成功'
-                  }}</template>
-                  <template v-else-if="part.status === 'error'">
-                    <span :title="part.errorMessage">上传失败</span>
-                  </template>
-                  <template v-else-if="part.status === 'pending'">
-                    排队 #{{ queuePosition(part) }}
-                  </template>
-                  <template v-else-if="part.status === 'hashing'">计算哈希</template>
-                  <template v-else-if="part.status === 'checking'">校验中</template>
-                  <template v-else-if="part.status === 'merging'">合并中</template>
-                  <template v-else-if="part.status === 'canceled'">已取消</template>
-                  <template v-else>{{ part.progress }}%</template>
-                </span>
-              </div>
-            </div>
-            <Button
-              variant="ghost"
-              size="icon"
-              class="flex-shrink-0 text-muted-foreground hover:text-destructive"
-              @click="removePart(index)"
-            >
-              <X class="h-4 w-4" />
-            </Button>
-          </div>
         </div>
 
-        <Button
-          variant="outline"
-          class="w-full border-dashed relative overflow-hidden"
-          :disabled="parts.length >= storageConfig.maxUploadNum"
-        >
-          <Plus class="mr-2 h-4 w-4" />
-          添加分P（还可添加 {{ storageConfig.maxUploadNum - parts.length }} 个）
-          <input
-            type="file"
-            accept="video/*"
-            multiple
-            class="absolute inset-0 opacity-0 cursor-pointer"
-            :disabled="parts.length >= storageConfig.maxUploadNum"
-            @change="onFileChange"
-          />
-        </Button>
+        <!-- Work Tabs -->
+        <div class="flex items-center gap-2 mb-4 overflow-x-auto pb-2 pt-2 pr-2 upload-tabs-scroll">
+          <div
+            v-for="(work, wIdx) in works"
+            :key="work.id"
+            class="upload-work-tab flex-shrink-0 relative flex flex-col items-start gap-1 p-3 rounded-lg border cursor-pointer transition-all w-[200px] group"
+            :class="
+              activeWorkIndex === wIdx
+                ? 'bg-primary text-primary-foreground border-primary shadow-sm'
+                : 'bg-card text-foreground border-border hover:border-primary/50'
+            "
+            @click="activeWorkIndex = wIdx"
+          >
+            <div class="w-full pr-4">
+              <span class="truncate block text-[13px] font-medium w-full text-left">{{
+                work.form.title || work.parts[0]?.sourceFileName || `作品${wIdx + 1}`
+              }}</span>
+            </div>
+            <div
+              v-if="work.parts.length > 0 && work.parts.every((p) => p.status === 'success')"
+              class="flex items-center gap-1 shrink-0 mt-0.5"
+              :class="
+                activeWorkIndex === wIdx
+                  ? 'text-[var(--signal-foreground)] opacity-90'
+                  : 'text-[var(--status-success-ink)]'
+              "
+            >
+              <CheckCircle2
+                class="w-3.5 h-3.5"
+                :class="
+                  activeWorkIndex === wIdx
+                    ? 'fill-primary-foreground text-primary'
+                    : 'fill-[var(--status-success)] text-[var(--signal-foreground)]'
+                "
+              />
+              <span class="text-[11px] font-medium">上传完成</span>
+            </div>
+            <div
+              v-else-if="
+                work.parts.length > 0 &&
+                work.parts.some((p) =>
+                  ['uploading', 'hashing', 'checking', 'merging', 'pending'].includes(p.status)
+                )
+              "
+              class="flex items-center gap-1 shrink-0 mt-0.5"
+              :class="activeWorkIndex === wIdx ? 'text-white/80' : 'text-primary'"
+            >
+              <Loader2 class="w-3 h-3 animate-spin" />
+              <span class="text-[11px] font-medium">上传中</span>
+            </div>
+            <div v-else class="h-4"></div>
+
+            <button
+              v-if="works.length > 1"
+              class="absolute top-2 right-2 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"
+              :class="
+                activeWorkIndex === wIdx
+                  ? 'text-white/80 hover:text-white'
+                  : 'text-muted-foreground hover:text-foreground'
+              "
+              @click.stop="removeWork(wIdx)"
+            >
+              <X class="w-3.5 h-3.5" />
+            </button>
+          </div>
+          <button
+            class="flex-shrink-0 flex items-center gap-1 px-4 py-2.5 rounded-lg border border-dashed text-sm text-muted-foreground hover:text-foreground hover:bg-muted/40 transition-colors"
+            @click="addWorkFileInputRef?.click()"
+          >
+            <Plus class="h-3.5 w-3.5" />
+            添加视频
+          </button>
+        </div>
+
+        <!-- Active Work Parts -->
+        <template v-if="activeWork">
+          <Button
+            variant="ghost"
+            size="sm"
+            class="text-primary hover:bg-primary/10 mb-3"
+            :disabled="activeParts.length >= storageConfig.maxUploadNum"
+            @click="openVideoPicker('append')"
+          >
+            <Plus class="mr-1 h-3.5 w-3.5" />
+            添加分P
+          </Button>
+
+          <div class="space-y-2">
+            <div
+              v-for="(part, index) in activeParts"
+              :key="part.id"
+              class="flex items-center gap-4 p-4 rounded-lg border bg-muted/20"
+            >
+              <div
+                v-if="showPartLabels"
+                class="flex-shrink-0 w-8 h-8 rounded bg-primary/10 text-primary flex items-center justify-center font-semibold text-sm"
+              >
+                P{{ index + 1 }}
+              </div>
+              <div
+                v-else
+                class="flex-shrink-0 w-8 h-8 rounded bg-primary/10 text-primary flex items-center justify-center"
+              >
+                <Play class="h-4 w-4" />
+              </div>
+              <div class="flex-grow min-w-0">
+                <!--
+                  列表只展示「一个」名称字段：
+                  - 单P：只读展示（默认=源文件名去扩展名），不可改
+                  - 多P：可编辑分P标题（默认=源文件名去扩展名）
+                  源文件名 sourceFileName 始终内部保存，发布时作为 fileName 提交，UI 不单独展示
+                -->
+                <div
+                  class="flex items-center justify-between gap-3"
+                  :class="part.status !== 'success' ? 'mb-1' : ''"
+                >
+                  <template v-if="showPartLabels">
+                    <Label :for="`part-title-${part.id}`" class="sr-only">分P标题</Label>
+                    <input
+                      :id="`part-title-${part.id}`"
+                      :value="part.title"
+                      maxlength="200"
+                      class="flex h-8 min-w-0 flex-1 rounded-md border border-input bg-background px-3 py-1.5 text-xs ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                      placeholder="请输入分P标题"
+                      @input="part.title = ($event.target as HTMLInputElement).value"
+                    />
+                  </template>
+                  <span
+                    v-else
+                    class="min-w-0 flex-1 truncate text-sm font-medium"
+                    :title="part.title"
+                    >{{ part.title }}</span
+                  >
+                  <div
+                    v-if="part.status === 'success'"
+                    class="flex shrink-0 items-center gap-1.5 text-[var(--status-success-ink)]"
+                  >
+                    <CheckCircle2
+                      class="h-[16px] w-[16px] fill-[var(--status-success)] text-[var(--signal-foreground)]"
+                    />
+                    <span class="text-xs font-medium">{{
+                      part?.instant ? '秒传完成' : '上传完成'
+                    }}</span>
+                  </div>
+                </div>
+                <div v-if="part.status !== 'success'" class="flex items-center gap-3">
+                  <div class="flex-grow bg-muted rounded-full h-1.5 overflow-hidden">
+                    <div
+                      class="h-full transition-all duration-300"
+                      :class="{
+                        'bg-primary': part.status === 'uploading',
+                        'bg-destructive': part.status === 'error',
+                        'bg-[var(--status-warning)]': ['hashing', 'checking', 'merging'].includes(
+                          part.status
+                        ),
+                        'bg-muted-foreground': ['pending', 'canceled', 'paused'].includes(
+                          part.status
+                        ),
+                      }"
+                      :style="{ width: `${part.progress}%` }"
+                    ></div>
+                  </div>
+                  <span
+                    class="text-xs w-16 text-right shrink-0"
+                    :class="{
+                      'text-destructive': part.status === 'error',
+                      'text-[var(--status-warning-ink)]': [
+                        'hashing',
+                        'checking',
+                        'merging',
+                      ].includes(part.status),
+                      'text-muted-foreground': [
+                        'pending',
+                        'uploading',
+                        'canceled',
+                        'paused',
+                      ].includes(part.status),
+                    }"
+                  >
+                    <template v-if="part.status === 'error'"
+                      ><span :title="part.errorMessage">上传失败</span></template
+                    >
+                    <template v-else-if="part.status === 'pending'"
+                      >排队 #{{ queuePosition(part) }}</template
+                    >
+                    <template v-else-if="part.status === 'hashing'">计算哈希</template>
+                    <template v-else-if="part.status === 'checking'">校验中</template>
+                    <template v-else-if="part.status === 'merging'">合并中</template>
+                    <template v-else-if="part.status === 'canceled'">已取消</template>
+                    <template v-else-if="part.status === 'paused'">已暂停</template>
+                    <template v-else>{{ part.progress }}%</template>
+                  </span>
+                </div>
+              </div>
+              <div class="flex items-center gap-1 shrink-0">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  class="h-7 text-xs text-primary hover:bg-primary/10 px-2"
+                  @click="openReplacePicker(index)"
+                >
+                  <RefreshCw class="h-3.5 w-3.5 mr-1" />更换视频
+                </Button>
+                <Button
+                  v-if="['uploading', 'hashing', 'checking'].includes(part.status)"
+                  variant="ghost"
+                  size="icon"
+                  class="h-7 w-7 text-muted-foreground hover:text-primary hover:bg-primary/10"
+                  @click="pausePart(part)"
+                >
+                  <Pause class="h-3.5 w-3.5" />
+                </Button>
+                <Button
+                  v-if="
+                    part.status === 'paused' ||
+                    part.status === 'error' ||
+                    part.status === 'canceled'
+                  "
+                  variant="ghost"
+                  size="icon"
+                  class="h-7 w-7 text-primary hover:bg-primary/10"
+                  @click="resumePart(part)"
+                >
+                  <RotateCcw class="h-3.5 w-3.5" />
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  class="h-7 w-7 text-muted-foreground hover:text-destructive hover:bg-destructive/10"
+                  @click="removePart(index)"
+                >
+                  <X class="h-3.5 w-3.5" />
+                </Button>
+              </div>
+            </div>
+          </div>
+        </template>
       </div>
 
       <!-- Basic Settings Section -->
-      <div class="bg-card rounded-xl border p-6 shadow-sm">
-        <h2 class="text-xl font-bold mb-6">基本设置</h2>
+      <div v-if="activeWork" class="bg-card rounded-2xl border p-8 shadow-sm">
+        <h2 class="text-2xl font-bold tracking-tight mb-8">基本设置</h2>
 
-        <div class="max-w-4xl space-y-8">
+        <div class="max-w-4xl space-y-10">
           <!-- Cover -->
           <div class="space-y-4">
-            <Label class="text-base">视频封面 <span class="text-red-500">*</span></Label>
+            <div class="flex items-center gap-3">
+              <Label class="text-base">视频封面 <span class="text-red-500">*</span></Label>
+              <span title="AI 生成封面">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="icon"
+                  class="h-9 w-9 rounded-full"
+                  :disabled="applyingAICover"
+                  @click="showAICoverDialog = true"
+                >
+                  <Loader2 v-if="applyingAICover" class="h-4 w-4 animate-spin" />
+                  <Bot v-else class="h-4 w-4" />
+                </Button>
+              </span>
+            </div>
 
             <div class="flex flex-col gap-4">
               <!-- Main Cover -->
               <div
-                class="relative w-[240px] aspect-video rounded-lg border-2 overflow-hidden group bg-muted/30"
-                :class="!coverPreview ? 'border-dashed' : 'border-transparent'"
+                class="relative w-[240px] aspect-video rounded-xl border-2 overflow-hidden group bg-muted/30 transition-all duration-300 hover:shadow-lg hover:border-primary/50"
+                :class="
+                  !activeWork?.coverPreview ? 'border-dashed' : 'border-transparent shadow-md'
+                "
               >
-                <img v-if="coverPreview" :src="coverPreview" class="w-full h-full object-cover" />
+                <img
+                  v-if="activeWork?.coverPreview"
+                  :src="activeWork.coverPreview"
+                  class="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
+                />
                 <div
                   v-else
                   class="absolute inset-0 flex flex-col items-center justify-center text-muted-foreground"
                 >
-                  <ImageIcon class="h-8 w-8 mb-2 opacity-50" />
-                  <span class="text-sm">点击设置封面</span>
+                  <ImageIcon
+                    class="h-8 w-8 mb-2 opacity-50 group-hover:scale-110 transition-transform"
+                  />
+                  <span class="text-sm font-medium">点击设置封面</span>
                 </div>
 
                 <div
@@ -887,53 +1915,14 @@ const handlePublish = async () => {
                   <Button size="sm" variant="secondary" class="h-7 text-xs"> 封面设置 </Button>
                 </div>
                 <div
-                  v-if="!coverPreview"
+                  v-if="!activeWork?.coverPreview"
                   class="absolute inset-0 cursor-pointer"
                   @click="openCoverSetting"
                 ></div>
               </div>
 
-              <!-- Recommended Covers -->
-              <div class="bg-muted/30 p-4 rounded-lg border max-w-full">
-                <p class="text-sm text-muted-foreground mb-3">
-                  系统默认选中第一帧为视频封面，以下为更多智能推荐封面
-                </p>
-                <div class="flex gap-3 overflow-x-auto pb-2">
-                  <div
-                    v-if="isExtractingFrames"
-                    class="flex items-center gap-2 text-sm text-muted-foreground h-[68px]"
-                  >
-                    <Loader2 class="h-4 w-4 animate-spin" />
-                    正在生成推荐封面...
-                  </div>
-                  <template v-else>
-                    <div
-                      v-for="(cover, index) in recommendedCovers"
-                      :key="index"
-                      class="relative w-[120px] aspect-video rounded border-2 cursor-pointer flex-shrink-0 overflow-hidden transition-colors"
-                      :class="
-                        coverPreview === cover
-                          ? 'border-primary'
-                          : 'border-transparent hover:border-primary/50'
-                      "
-                      @click="selectRecommendedCover(cover)"
-                    >
-                      <img :src="cover" class="w-full h-full object-cover" />
-                      <div
-                        v-if="coverPreview === cover"
-                        class="absolute inset-0 bg-black/20 flex items-center justify-center"
-                      >
-                        <Check class="h-6 w-6 text-white drop-shadow-md" />
-                      </div>
-                    </div>
-                  </template>
-                  <div
-                    v-if="!isExtractingFrames && recommendedCovers.length === 0"
-                    class="text-sm text-muted-foreground h-[68px] flex items-center"
-                  >
-                    上传视频后将自动生成推荐封面
-                  </div>
-                </div>
+              <div class="rounded-lg border bg-muted/30 p-4 text-sm text-muted-foreground">
+                <p>{{ coverDialogTip }}</p>
               </div>
             </div>
           </div>
@@ -943,12 +1932,18 @@ const handlePublish = async () => {
             <Label for="title" class="text-base">标题 <span class="text-red-500">*</span></Label>
             <Input
               id="title"
-              :model-value="form.title"
+              :model-value="activeWork?.form.title ?? ''"
               placeholder="给视频起个响亮的标题吧"
               class="text-lg"
-              @update:model-value="(v) => (form.title = String(v))"
+              @update:model-value="
+                (v) => {
+                  if (activeWork) activeWork.form.title = String(v)
+                }
+              "
             />
-            <div class="text-xs text-muted-foreground text-right">{{ form.title.length }}/80</div>
+            <div class="text-xs text-muted-foreground text-right">
+              {{ activeWork?.form.title.length ?? 0 }}/80
+            </div>
           </div>
 
           <!-- Type (Original / Copied) -->
@@ -957,7 +1952,7 @@ const handlePublish = async () => {
             <div class="flex gap-6 mt-2">
               <label class="flex items-center gap-2 cursor-pointer">
                 <input
-                  v-model="form.isOriginal"
+                  v-model="activeWork.form.isOriginal"
                   type="radio"
                   :value="true"
                   class="accent-primary w-4 h-4"
@@ -966,7 +1961,7 @@ const handlePublish = async () => {
               </label>
               <label class="flex items-center gap-2 cursor-pointer">
                 <input
-                  v-model="form.isOriginal"
+                  v-model="activeWork.form.isOriginal"
                   type="radio"
                   :value="false"
                   class="accent-primary w-4 h-4"
@@ -977,19 +1972,23 @@ const handlePublish = async () => {
           </div>
 
           <!-- Partition -->
-          <div class="space-y-2">
+          <div class="space-y-3">
             <Label class="text-base">分区 <span class="text-red-500">*</span></Label>
-            <div class="grid grid-cols-3 sm:grid-cols-5 md:grid-cols-8 gap-2 mt-2">
+            <div class="grid grid-cols-3 sm:grid-cols-5 md:grid-cols-8 gap-3 mt-2">
               <div
                 v-for="p in partitions"
                 :key="p.id"
-                class="px-3 py-2 rounded-lg border text-center text-sm cursor-pointer transition-colors"
+                class="px-3 py-2.5 rounded-xl border text-center text-sm cursor-pointer transition-all duration-200"
                 :class="
-                  form.partitionId === p.id
-                    ? 'bg-primary/10 border-primary text-primary font-medium'
-                    : 'hover:bg-muted'
+                  activeWork?.form.partitionId === p.id
+                    ? 'bg-primary text-primary-foreground font-medium shadow-md shadow-primary/30 scale-105 border-transparent'
+                    : 'hover:bg-muted/80 hover:scale-105 border-border/60 bg-card'
                 "
-                @click="form.partitionId = p.id"
+                @click="
+                  () => {
+                    if (activeWork) activeWork.form.partitionId = p.id
+                  }
+                "
               >
                 {{ p.name }}
               </div>
@@ -999,23 +1998,14 @@ const handlePublish = async () => {
           <!-- Tags -->
           <div class="space-y-2">
             <Label class="text-base">标签</Label>
-            <div class="flex flex-wrap gap-2 mb-2">
-              <span
-                v-for="(tag, index) in form.tags"
-                :key="index"
-                class="bg-primary/10 text-primary px-3 py-1.5 rounded-full text-sm flex items-center gap-1"
-              >
-                {{ tag }}
-                <X class="h-3 w-3 cursor-pointer hover:text-primary/70" @click="removeTag(index)" />
-              </span>
-            </div>
-            <input
-              v-model="form.tagInput"
-              type="text"
-              class="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-              placeholder="输入标签后按回车添加"
-              :disabled="form.tags.length >= 10"
-              @keydown.enter.prevent="addTag"
+            <TagInput
+              :model-value="activeWork.form.tags"
+              :max="10"
+              @update:model-value="
+                (v) => {
+                  if (activeWork) activeWork.form.tags = v
+                }
+              "
             />
           </div>
 
@@ -1024,11 +2014,49 @@ const handlePublish = async () => {
             <Label for="desc" class="text-base">简介</Label>
             <textarea
               id="desc"
-              v-model="form.description"
+              :value="activeWork?.form.description ?? ''"
               class="flex w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 min-h-[120px] resize-y"
               placeholder="填写更全面的相关信息，让更多人能找到你的视频"
               rows="4"
+              @input="
+                (e) => {
+                  if (activeWork)
+                    activeWork.form.description = (e.target as HTMLTextAreaElement).value
+                }
+              "
             ></textarea>
+          </div>
+
+          <!-- Privacy -->
+          <div class="space-y-3">
+            <Label class="text-base">可见性</Label>
+            <label
+              class="flex items-start gap-3 rounded-2xl border border-border/60 bg-muted/20 p-4 transition-colors hover:border-primary/40"
+            >
+              <input
+                v-model="activeWork.form.isPrivate"
+                type="checkbox"
+                class="mt-1 h-4 w-4 shrink-0 accent-primary"
+              />
+              <div class="space-y-1">
+                <div class="flex flex-wrap items-center gap-2">
+                  <span class="text-sm font-medium text-foreground">设为私密视频</span>
+                  <span
+                    class="rounded-full px-2 py-0.5 text-[11px] font-medium"
+                    :class="
+                      activeWork.form.isPrivate
+                        ? 'bg-[var(--status-warning-soft)] text-[var(--status-warning-ink)]'
+                        : 'bg-[var(--status-success-soft)] text-[var(--status-success-ink)]'
+                    "
+                  >
+                    {{ activeWork.form.isPrivate ? '仅自己可见' : '公开视频' }}
+                  </span>
+                </div>
+                <p class="text-sm text-muted-foreground">
+                  私密作品不会出现在公开列表、推荐和搜索中，且前端不允许设置定时发布。
+                </p>
+              </div>
+            </label>
           </div>
 
           <!-- Publish Time -->
@@ -1038,32 +2066,47 @@ const handlePublish = async () => {
               <div class="flex gap-6">
                 <label class="flex items-center gap-2 cursor-pointer">
                   <input
-                    v-model="form.publishType"
+                    v-model="activeWork.form.publishType"
                     type="radio"
                     value="immediate"
                     class="accent-primary w-4 h-4"
                   />
                   <span class="text-sm">立即发布</span>
                 </label>
-                <label class="flex items-center gap-2 cursor-pointer">
+                <label
+                  class="flex items-center gap-2 transition-opacity"
+                  :class="
+                    isActiveScheduleDisabled
+                      ? 'cursor-not-allowed text-muted-foreground/60 opacity-50'
+                      : 'cursor-pointer'
+                  "
+                >
                   <input
-                    v-model="form.publishType"
+                    v-model="activeWork.form.publishType"
                     type="radio"
                     value="scheduled"
                     class="accent-primary w-4 h-4"
+                    :disabled="isActiveScheduleDisabled"
                   />
                   <span class="text-sm">定时发布</span>
                 </label>
               </div>
 
-              <div v-if="form.publishType === 'scheduled'" class="flex items-center gap-4">
-                <Input
-                  type="datetime-local"
-                  :model-value="form.publishTime"
-                  class="w-[250px]"
-                  @update:model-value="(v) => (form.publishTime = String(v))"
-                />
-                <span class="text-sm text-muted-foreground">请选择至少2小时后的时间</span>
+              <div
+                v-if="isActiveScheduleDisabled"
+                class="rounded-2xl border border-dashed border-border/60 bg-muted/15 px-4 py-3 text-sm text-muted-foreground"
+              >
+                私密视频仅支持立即发布。取消私密后，才可以设置最早 5 分钟、最晚 15 天的定时发布。
+              </div>
+
+              <div
+                v-if="activeWork?.form.publishType === 'scheduled'"
+                class="mt-3 flex items-center gap-4 rounded-2xl border border-border/60 bg-muted/20 p-4"
+              >
+                <ScheduledPublishPicker v-model="activeWork.form.publishTime" />
+                <div class="text-sm text-muted-foreground whitespace-nowrap">
+                  (目前支持最早≥5分钟，最晚≤15天)
+                </div>
               </div>
             </div>
           </div>
@@ -1073,7 +2116,7 @@ const handlePublish = async () => {
       <!-- Actions -->
       <div class="flex items-center justify-end gap-4 pt-4">
         <Button
-          class="px-10 py-6 text-lg"
+          class="px-12 py-7 text-lg rounded-2xl font-semibold shadow-lg shadow-primary/20 hover:shadow-primary/30 transition-all"
           :disabled="isPublishing || isUploadingAny"
           @click="handlePublish"
         >
@@ -1083,88 +2126,215 @@ const handlePublish = async () => {
       </div>
     </div>
 
+    <!-- Batch Operations Dialog -->
+    <BatchOperationDialog
+      :open="showBatchDialog"
+      @update:open="showBatchDialog = $event"
+      @apply="handleBatchApply"
+    />
+
     <!-- Cover Setting Dialog -->
     <Dialog :open="showCoverSetting" @update:open="showCoverSetting = $event">
-      <DialogContent class="sm:max-w-[700px]">
-        <DialogHeader>
+      <DialogContent
+        class="flex max-h-[min(90vh,860px)] flex-col overflow-hidden p-0 sm:max-w-[760px]"
+      >
+        <DialogHeader class="border-b border-border/70 px-6 py-5">
           <DialogTitle>设置封面</DialogTitle>
+          <DialogDescription class="sr-only">
+            设置视频封面，可上传自定义图片；若浏览器支持视频预览，也可以截取当前帧。
+          </DialogDescription>
         </DialogHeader>
 
-        <div class="space-y-6 py-4">
-          <div class="flex gap-4 border-b pb-4">
-            <Button
-              :variant="coverSettingMode === 'upload' ? 'default' : 'ghost'"
-              @click="coverSettingMode = 'upload'"
-              >本地上传</Button
-            >
-            <Button
-              :variant="coverSettingMode === 'frame' ? 'default' : 'ghost'"
-              :disabled="!parts[0]"
-              @click="coverSettingMode = 'frame'"
-              >截取视频帧</Button
-            >
+        <div class="cover-dialog-scroll flex-1 space-y-5 overflow-y-auto px-6 py-5">
+          <div
+            class="rounded-2xl border border-border/70 bg-muted/30 px-4 py-3 text-sm text-muted-foreground"
+          >
+            {{ coverDialogTip }}
           </div>
 
-          <div v-if="coverSettingMode === 'upload'" class="space-y-4">
-            <div
-              class="relative aspect-video rounded-lg border-2 border-dashed overflow-hidden group bg-muted/30 cursor-pointer transition-colors hover:border-primary/50 max-w-md mx-auto"
-            >
-              <img
-                v-if="tempCoverPreview"
-                :src="tempCoverPreview"
-                class="w-full h-full object-cover"
-              />
+          <div
+            class="grid gap-5"
+            :class="canCaptureCover ? 'lg:grid-cols-[minmax(0,1.2fr)_260px]' : 'lg:grid-cols-1'"
+          >
+            <div v-if="canCaptureCover" class="space-y-4">
               <div
-                v-else
-                class="absolute inset-0 flex flex-col items-center justify-center text-muted-foreground"
+                class="relative aspect-video max-h-[38vh] min-h-[220px] overflow-hidden rounded-2xl bg-black flex items-center justify-center"
               >
-                <UploadCloud class="h-10 w-10 mb-3 opacity-50" />
-                <span class="text-sm font-medium">点击上传封面</span>
-                <span class="text-xs mt-1 opacity-70">建议比例 16:9</span>
+                <video
+                  v-if="previewVideoUrl"
+                  ref="frameVideoRef"
+                  :src="previewVideoUrl"
+                  controls
+                  class="h-full w-full"
+                  crossorigin="anonymous"
+                  @loadeddata="previewVideoError = false"
+                  @error="onPreviewVideoError"
+                ></video>
+                <div
+                  v-else
+                  class="absolute inset-0 flex items-center justify-center px-6 text-center text-sm text-white/70"
+                >
+                  暂无可预览视频
+                </div>
+              </div>
+              <div
+                class="flex flex-col gap-3 rounded-2xl bg-muted/45 p-4 sm:flex-row sm:items-center sm:justify-between"
+              >
+                <span class="text-sm leading-6 text-muted-foreground">
+                  拖动视频进度条到目标时间，点击右侧按钮截取当前画面
+                </span>
+                <Button
+                  class="shrink-0"
+                  :disabled="!previewVideoUrl || previewVideoError"
+                  @click="captureFrame"
+                >
+                  截取当前帧
+                </Button>
+              </div>
+            </div>
+
+            <div class="space-y-4">
+              <div
+                class="relative aspect-video overflow-hidden rounded-2xl border-2 border-dashed group bg-muted/30 cursor-pointer transition-colors hover:border-primary/50"
+              >
+                <img
+                  v-if="tempCoverPreview"
+                  :src="tempCoverPreview"
+                  class="h-full w-full object-cover"
+                />
+                <div
+                  v-else
+                  class="absolute inset-0 flex flex-col items-center justify-center px-6 text-center text-muted-foreground"
+                >
+                  <UploadCloud class="mb-3 h-10 w-10 opacity-50" />
+                  <span class="text-sm font-medium">点击上传封面</span>
+                  <span class="mt-1 text-xs opacity-70">建议比例 16:9</span>
+                </div>
+
+                <div
+                  v-if="tempCoverPreview"
+                  class="absolute inset-0 flex items-center justify-center bg-black/50 opacity-0 transition-opacity group-hover:opacity-100"
+                >
+                  <span class="text-sm font-medium text-white">更换封面</span>
+                </div>
+                <input
+                  type="file"
+                  accept="image/*"
+                  class="absolute inset-0 cursor-pointer opacity-0"
+                  @change="onTempCoverChange"
+                />
               </div>
 
-              <div
-                v-if="tempCoverPreview"
-                class="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center"
-              >
-                <span class="text-white text-sm font-medium">更换封面</span>
-              </div>
-              <input
-                type="file"
-                accept="image/*"
-                class="absolute inset-0 opacity-0 cursor-pointer"
-                @change="onTempCoverChange"
-              />
-            </div>
-          </div>
-
-          <div v-else-if="coverSettingMode === 'frame' && parts[0]" class="space-y-4">
-            <div
-              class="relative aspect-video bg-black rounded-lg overflow-hidden flex items-center justify-center"
-            >
-              <video ref="frameVideoRef" :src="videoUrl" controls class="w-full h-full"></video>
-            </div>
-            <div class="flex justify-between items-center bg-muted/50 p-3 rounded-lg">
-              <span class="text-sm text-muted-foreground"
-                >拖动进度条，点击右侧按钮截取当前画面作为封面</span
-              >
-              <Button @click="captureFrame">截取当前帧</Button>
-            </div>
-
-            <div v-if="tempCoverPreview" class="mt-4">
-              <p class="text-sm font-medium mb-2">已截取封面预览：</p>
-              <div class="w-[200px] aspect-video rounded border overflow-hidden">
-                <img :src="tempCoverPreview" class="w-full h-full object-cover" />
+              <div class="space-y-2">
+                <p class="text-sm font-medium text-foreground">当前封面预览</p>
+                <div
+                  class="flex aspect-video items-center justify-center overflow-hidden rounded-2xl border bg-muted/20"
+                >
+                  <img
+                    v-if="tempCoverPreview"
+                    :src="tempCoverPreview"
+                    class="h-full w-full object-cover"
+                  />
+                  <div v-else class="px-6 text-center text-sm text-muted-foreground">
+                    {{
+                      canCaptureCover
+                        ? '可以从视频中截帧，也可以直接上传自定义封面'
+                        : '当前视频浏览器无法预览，请直接上传自定义封面'
+                    }}
+                  </div>
+                </div>
               </div>
             </div>
           </div>
         </div>
 
-        <DialogFooter>
+        <DialogFooter class="border-t border-border/70 px-6 py-4 sm:justify-end">
           <Button variant="outline" @click="showCoverSetting = false">取消</Button>
           <Button @click="confirmCoverSetting">确定</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
+
+    <AiChatDialog
+      :open="showAICoverDialog"
+      mode="cover-picker"
+      initial-model="image"
+      :initial-prompt="aiCoverInitialPrompt"
+      @update:open="showAICoverDialog = $event"
+      @cover-pick="handleAICoverPick"
+    />
   </div>
 </template>
+
+<style lang="scss">
+.upload-feedback-alert {
+  position: relative;
+  overflow: hidden;
+  border: 1px solid var(--status-warning-border);
+  background: linear-gradient(
+    135deg,
+    color-mix(in oklch, var(--status-warning-soft) 88%, var(--bg-surface-1)),
+    color-mix(in oklch, var(--status-warning-soft) 74%, var(--bg-surface-2))
+  );
+  box-shadow:
+    inset 0 1px 0 color-mix(in oklch, var(--bg-surface-0) 88%, transparent),
+    0 22px 56px -40px color-mix(in oklch, var(--status-warning) 34%, transparent);
+  backdrop-filter: blur(14px);
+
+  &__icon {
+    background: color-mix(in oklch, var(--status-warning) 16%, var(--bg-surface-0));
+    color: color-mix(in oklch, var(--status-warning-ink) 74%, var(--text-1));
+    box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--status-warning-border) 82%, transparent);
+  }
+
+  &__title {
+    color: color-mix(in oklch, var(--status-warning-ink) 78%, var(--text-1));
+  }
+
+  &__description {
+    color: color-mix(in oklch, var(--status-warning-ink) 64%, var(--text-2));
+  }
+}
+
+.dark .upload-feedback-alert {
+  box-shadow:
+    inset 0 1px 0 color-mix(in oklch, white 10%, transparent),
+    0 24px 60px -38px color-mix(in oklch, var(--status-warning) 46%, transparent);
+}
+
+.cover-dialog-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: oklch(var(--foreground) / 0.15) transparent;
+
+  &::-webkit-scrollbar {
+    width: 6px;
+
+    &-track {
+      background: transparent;
+    }
+
+    &-thumb {
+      border-radius: 999px;
+      background: oklch(var(--foreground) / 0.15);
+      background-clip: padding-box;
+
+      &:hover {
+        background: oklch(var(--foreground) / 0.25);
+      }
+    }
+  }
+}
+
+.upload-tabs-scroll::-webkit-scrollbar {
+  height: 4px;
+
+  &-track {
+    background: transparent;
+  }
+
+  &-thumb {
+    border-radius: 999px;
+    background: oklch(var(--foreground) / 0.12);
+  }
+}
+</style>

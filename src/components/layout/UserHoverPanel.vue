@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRouter, type RouteLocationRaw } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { useThemeStore } from '@/stores/theme'
 import { User, LogOut, FileVideo, Sun, Moon } from 'lucide-vue-next'
@@ -28,9 +28,16 @@ const formatCount = (n: number): string => {
   return n.toString()
 }
 
-const navigate = (path: string) => {
+const navigate = (target: RouteLocationRaw) => {
   emit('close')
-  void router.push(path)
+  void router.push(target)
+}
+
+const navigateToUserTab = (tab: 'following' | 'fans' | 'dynamic') => {
+  navigate({
+    path: `/user/${authStore.userId}`,
+    query: { tab },
+  })
 }
 
 const handleLogout = () => {
@@ -79,28 +86,17 @@ const toggleTheme = () => {
 
     <!-- Stats -->
     <div class="panel-stats">
-      <div class="stat-item" @click="navigate(`/user/${authStore.userId}`)">
+      <div class="stat-item" @click="navigateToUserTab('following')">
         <span class="stat-value">{{ formatCount(authStore.user?.followCount ?? 0) }}</span>
         <span class="stat-label">关注</span>
       </div>
-      <div class="stat-item" @click="navigate(`/user/${authStore.userId}`)">
+      <div class="stat-item" @click="navigateToUserTab('fans')">
         <span class="stat-value">{{ formatCount(authStore.user?.fansCount ?? 0) }}</span>
         <span class="stat-label">粉丝</span>
       </div>
-      <div class="stat-item" @click="navigate(`/user/${authStore.userId}`)">
+      <div class="stat-item" @click="navigateToUserTab('dynamic')">
         <span class="stat-value">{{ formatCount(authStore.user?.dynamicCount ?? 0) }}</span>
         <span class="stat-label">动态</span>
-      </div>
-    </div>
-
-    <!-- VIP Banner -->
-    <div class="vip-wrap px-4 pb-3">
-      <div class="vip-banner">
-        <div class="vip-text text-left">
-          <div class="text-xs font-medium text-[#ff6699]">悄悄成为大会员</div>
-          <div class="text-[10px] text-[#ff6699]/80 mt-0.5">然后惊艳所有人</div>
-        </div>
-        <div class="vip-btn">会员中心</div>
       </div>
     </div>
 
@@ -285,20 +281,28 @@ const toggleTheme = () => {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  background: linear-gradient(90deg, #fff0f5 0%, #fff 100%);
-  border: 1px solid #ffe4e1;
+  background: linear-gradient(
+    90deg,
+    oklch(from var(--color-accent) l c h / 0.08) 0%,
+    var(--color-card) 100%
+  );
+  border: 1px solid oklch(from var(--color-accent) l c h / 0.2);
   border-radius: 6px;
   padding: 10px 14px;
 }
 
 :global(.dark) .vip-banner {
-  background: linear-gradient(90deg, rgb(255, 102, 153, 0.1) 0%, rgb(255, 102, 153, 0) 100%);
-  border-color: rgb(255, 102, 153, 0.2);
+  background: linear-gradient(
+    90deg,
+    oklch(from var(--color-brand-pink) l c h / 0.14) 0%,
+    oklch(from var(--color-brand-pink) l c h / 0) 100%
+  );
+  border-color: oklch(from var(--color-brand-pink) l c h / 0.22);
 }
 
 .vip-btn {
-  background: #ff6699;
-  color: white;
+  background: var(--color-accent);
+  color: var(--signal-foreground);
   font-size: 12px;
   padding: 4px 10px;
   border-radius: 4px;

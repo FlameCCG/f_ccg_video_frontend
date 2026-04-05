@@ -140,23 +140,23 @@ watch(() => props.author.id, fetchRelation)
 
 <style scoped>
 .author-card {
-  box-shadow: 0 2px 8px rgb(0 0 0 / 0.04);
+  box-shadow: 0 2px 8px oklch(0% 0 0deg / 0.04);
   border: 1px solid oklch(var(--border) / 0.4);
   transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .author-card:hover {
-  box-shadow: 0 8px 24px rgb(0 0 0 / 0.08);
+  box-shadow: 0 8px 24px oklch(0% 0 0deg / 0.08);
   border-color: oklch(var(--border) / 0.8);
   transform: translateY(-2px);
 }
 
 :global(.dark) .author-card {
-  box-shadow: 0 2px 8px rgb(0 0 0 / 0.2);
+  box-shadow: 0 2px 8px oklch(0% 0 0deg / 0.25);
 }
 
 :global(.dark) .author-card:hover {
-  box-shadow: 0 8px 24px rgb(0 0 0 / 0.4);
+  box-shadow: 0 8px 24px oklch(0% 0 0deg / 0.45);
 }
 
 .avatar-wrapper::before {
@@ -188,14 +188,14 @@ watch(() => props.author.id, fetchRelation)
   cursor: pointer;
   transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
   border: 1px solid transparent;
-  background-color: var(--color-primary);
-  color: white;
+  background-color: oklch(var(--primary));
+  color: oklch(var(--primary-foreground));
   box-shadow: 0 4px 12px oklch(var(--primary) / 0.3);
   letter-spacing: 0.02em;
 }
 
 .follow-btn:hover:not(:disabled) {
-  background-color: var(--color-primary);
+  background-color: oklch(var(--primary) / 0.9);
   transform: translateY(-2px);
   box-shadow: 0 6px 16px oklch(var(--primary) / 0.4);
 }
@@ -226,15 +226,15 @@ watch(() => props.author.id, fetchRelation)
 }
 
 .follow-btn.is-mutual {
-  background: oklch(var(--accent) / 0.1);
-  color: var(--color-accent);
-  border: 1px solid oklch(var(--accent) / 0.3);
+  background: oklch(var(--primary) / 0.1);
+  color: oklch(var(--primary));
+  border: 1px solid oklch(var(--primary) / 0.3);
   box-shadow: none;
 }
 
 .follow-btn.is-mutual:hover:not(:disabled) {
-  background: oklch(var(--accent) / 0.15);
-  border-color: oklch(var(--accent) / 0.4);
-  box-shadow: 0 4px 12px oklch(var(--accent) / 0.2);
+  background: oklch(var(--primary) / 0.15);
+  border-color: oklch(var(--primary) / 0.4);
+  box-shadow: 0 4px 12px oklch(var(--primary) / 0.2);
 }
 </style>

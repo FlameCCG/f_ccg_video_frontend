@@ -1,4 +1,4 @@
-﻿<script setup lang="ts">
+<script setup lang="ts">
 import { ref, watch, nextTick } from 'vue'
 import {
   getFolderList,
@@ -322,7 +322,7 @@ const handleOpenChange = (val: boolean) => {
 }
 
 .check-icon {
-  color: #fff;
+  color: var(--color-primary-foreground);
 }
 
 .folder-name {
@@ -408,7 +408,7 @@ const handleOpenChange = (val: boolean) => {
 }
 
 .folder-create-confirm:hover:not(:disabled) {
-  background: #0090c1;
+  background: oklch(from var(--color-primary) calc(l - 0.05) c h);
 }
 
 .folder-create-confirm:disabled {

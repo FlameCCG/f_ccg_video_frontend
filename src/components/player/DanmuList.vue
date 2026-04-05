@@ -440,7 +440,7 @@ watch(
       <div ref="scrollRef" class="danmu-scroll flex-1 overflow-y-auto px-2 py-1">
         <div v-if="loading" class="flex items-center justify-center py-10">
           <div
-            class="h-5 w-5 animate-spin rounded-full border-2 border-[#00a1d6]/30 border-t-[#00a1d6]"
+            class="h-5 w-5 animate-spin rounded-full border-2 border-primary/30 border-t-primary"
           ></div>
         </div>
         <div
@@ -512,7 +512,7 @@ watch(
 
 .danmu-scroll {
   scrollbar-width: thin;
-  scrollbar-color: #e3e5e7 transparent;
+  scrollbar-color: var(--color-border) transparent;
 }
 
 .danmu-scroll::-webkit-scrollbar {
@@ -525,7 +525,7 @@ watch(
 }
 
 .danmu-scroll::-webkit-scrollbar-thumb:hover {
-  background: #c9ccd0;
+  background: var(--color-muted-foreground);
 }
 
 /* Calendar day cells */
@@ -548,12 +548,12 @@ watch(
 }
 
 .calendar-day.is-other {
-  color: #e3e5e7;
+  color: var(--color-border);
   pointer-events: none;
 }
 
 .calendar-day.is-disabled {
-  color: #c9ccd0;
+  color: var(--color-muted-foreground);
   cursor: default;
 }
 
@@ -565,17 +565,17 @@ watch(
 .calendar-day.is-today {
   color: var(--color-primary);
   font-weight: 600;
-  outline: 1px solid #00a1d6;
+  outline: 1px solid var(--color-primary);
   outline-offset: -1px;
 }
 
 .calendar-day.is-selected {
-  color: #fff;
+  color: var(--color-primary-foreground);
   background-color: var(--color-primary);
   font-weight: 500;
 }
 
 .calendar-day.is-selected:hover {
-  background: #0091c2;
+  background: oklch(from var(--color-primary) calc(l - 0.05) c h);
 }
 </style>

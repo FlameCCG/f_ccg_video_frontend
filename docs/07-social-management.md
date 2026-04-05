@@ -1,4 +1,4 @@
-# 社交管理
+﻿# 社交管理
 
 分类说明：关注/粉丝/关系链
 
@@ -62,7 +62,7 @@ Base URL：/v1
 
 ## [GET] 关注列表
 
-- 接口路径: GET /common/social/{id}/focus
+- 接口路径: GET /common/social/focus
 - 认证: 需要登录（客户端全局自动携带 Token）
 - 依赖接口: 无
 - 接口说明: 获取指定用户的关注列表（需登录）
@@ -110,7 +110,7 @@ Base URL：/v1
 
 ## [GET] 粉丝列表
 
-- 接口路径: GET /common/social/{id}/fans
+- 接口路径: GET /common/social/fans
 - 认证: 需要登录（客户端全局自动携带 Token）
 - 依赖接口: 无
 - 接口说明: 获取指定用户的粉丝列表（需登录）
@@ -158,7 +158,7 @@ Base URL：/v1
 
 ## [GET] 查询关注关系
 
-- 接口路径: GET /common/social/{id}/relation
+- 接口路径: GET /common/social/relation
 - 认证: 需要登录（客户端全局自动携带 Token）
 - 依赖接口: 无
 - 接口说明: 查询与指定用户的关注关系（需登录）
@@ -190,3 +190,4 @@ Base URL：/v1
   "msg": "查询成功"
 }
 ```
+

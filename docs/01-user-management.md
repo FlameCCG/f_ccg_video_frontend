@@ -1,4 +1,4 @@
-# 用户管理
+﻿# 用户管理
 
 分类说明：注册登录、用户信息、设置、记录
 
@@ -14,6 +14,7 @@ Base URL：/v1
 - 响应结构: code=0 成功，code=1 失败；msg 为提示信息
 
 请求参数:
+
 - 无
 
 响应字段:
@@ -22,6 +23,7 @@ Base URL：/v1
 | data | object | 响应数据 |
 
 响应示例:
+
 ```json
 {
   "code": 0,
@@ -58,6 +60,7 @@ Base URL：/v1
 | data.refreshToken | string | 刷新令牌 |
 
 响应示例:
+
 ```json
 {
   "code": 0,
@@ -91,6 +94,148 @@ Base URL：/v1
 | data.refreshToken | string | 刷新令牌 |
 
 响应示例:
+
+```json
+{
+  "code": 0,
+  "data": {
+    "accessToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+    "refreshToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+  },
+  "msg": "登录成功"
+}
+```
+
+## [POST] Google登录
+
+- 接口路径: POST /common/user/login/google
+- 认证: 可选登录（客户端可携带 Token）
+- 依赖接口: 无
+- 接口说明: 使用Google授权码登录，未注册用户会自动注册
+- HTTP 状态码: 200（业务码 code 判断成功/失败）
+- 响应结构: code=0 成功，code=1 失败；msg 为提示信息
+
+请求参数:
+| 名称 | 位置 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- | --- |
+| code | body | string | 否 | Google授权码 |
+
+响应字段:
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| data | JwtToken | - |
+| data.accessToken | string | 访问令牌 |
+| data.refreshToken | string | 刷新令牌 |
+
+响应示例:
+
+```json
+{
+  "code": 0,
+  "data": {
+    "accessToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+    "refreshToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+  },
+  "msg": "登录成功"
+}
+```
+
+## [POST] GitHub登录
+
+- 接口路径: POST /common/user/login/github
+- 认证: 可选登录（客户端可携带 Token）
+- 依赖接口: 无
+- 接口说明: 使用GitHub授权码登录，未注册用户会自动注册；需回传与获取登录URL时一致的 state，支持可选 PKCE codeVerifier
+- HTTP 状态码: 200（业务码 code 判断成功/失败）
+- 响应结构: code=0 成功，code=1 失败；msg 为提示信息
+
+请求参数:
+| 名称 | 位置 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- | --- |
+| code | body | string | 是 | GitHub授权码 |
+| state | body | string | 是 | GitHub登录流程中的 state；后端会校验并一次性消费 |
+| codeVerifier | body | string | 否 | PKCE codeVerifier，若生成登录URL时传了 codeChallenge 则需要回传 |
+
+响应字段:
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| data | JwtToken | - |
+| data.accessToken | string | 访问令牌 |
+| data.refreshToken | string | 刷新令牌 |
+
+响应示例:
+
+```json
+{
+  "code": 0,
+  "data": {
+    "accessToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+    "refreshToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+  },
+  "msg": "登录成功"
+}
+```
+
+## [POST] LinuxDo登录
+
+- 接口路径: POST /common/user/login/linuxdo
+- 认证: 可选登录（客户端可携带 Token）
+- 依赖接口: 无
+- 接口说明: 使用 LinuxDo 授权码登录，未注册用户会自动注册；需回传与获取登录URL时一致的 state
+- HTTP 状态码: 200（业务码 code 判断成功/失败）
+- 响应结构: code=0 成功，code=1 失败；msg 为提示信息
+
+请求参数:
+| 名称 | 位置 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- | --- |
+| code | body | string | 是 | LinuxDo 授权码 |
+| state | body | string | 是 | LinuxDo 登录流程中的 state；后端会校验并一次性消费 |
+
+响应字段:
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| data | JwtToken | - |
+| data.accessToken | string | 访问令牌 |
+| data.refreshToken | string | 刷新令牌 |
+
+响应示例:
+
+```json
+{
+  "code": 0,
+  "data": {
+    "accessToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+    "refreshToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+  },
+  "msg": "登录成功"
+}
+```
+
+## [POST] X登录
+
+- 接口路径: POST /common/user/login/x
+- 认证: 可选登录（客户端可携带 Token）
+- 依赖接口: 无
+- 接口说明: 使用X授权码登录，未注册用户会自动注册；需回传与获取登录URL时一致的 state，并配合 PKCE 的 codeVerifier
+- HTTP 状态码: 200（业务码 code 判断成功/失败）
+- 响应结构: code=0 成功，code=1 失败；msg 为提示信息
+
+请求参数:
+| 名称 | 位置 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- | --- |
+| code | body | string | 是 | X授权码 |
+| state | body | string | 是 | X登录流程中的 state；后端会校验并一次性消费 |
+| codeVerifier | body | string | 是 | X PKCE codeVerifier |
+
+响应字段:
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| data | JwtToken | - |
+| data.accessToken | string | 访问令牌 |
+| data.refreshToken | string | 刷新令牌 |
+
+响应示例:
+
 ```json
 {
   "code": 0,
@@ -124,6 +269,7 @@ Base URL：/v1
 | data.refreshToken | string | 刷新令牌 |
 
 响应示例:
+
 ```json
 {
   "code": 0,
@@ -167,6 +313,7 @@ Base URL：/v1
 | data.users[].followerCount | integer(int64) | - |
 
 响应示例:
+
 ```json
 {
   "code": 0,
@@ -178,9 +325,7 @@ Base URL：/v1
         "username": "alice",
         "avatar": "https://cdn.example.com/avatar/1001.png",
         "highlight": {
-          "key": [
-            "value"
-          ]
+          "key": ["value"]
         },
         "level": 3,
         "followerCount": 1
@@ -193,7 +338,7 @@ Base URL：/v1
 
 ## [GET] 获取用户详情
 
-- 接口路径: GET /common/user/{id}
+- 接口路径: GET /common/user/detail
 - 认证: 可选登录（客户端可携带 Token）
 - 依赖接口: 无
 - 接口说明: 根据用户ID获取用户公开信息
@@ -224,6 +369,7 @@ Base URL：/v1
 | data.totalViews | integer(int64) | 播放总数 |
 
 响应示例:
+
 ```json
 {
   "code": 0,
@@ -256,6 +402,7 @@ Base URL：/v1
 - 响应结构: code=0 成功，code=1 失败；msg 为提示信息
 
 请求参数:
+
 - 无
 
 响应字段:
@@ -277,8 +424,11 @@ Base URL：/v1
 | data.fansCount | integer(int64) | 粉丝数 |
 | data.dynamicCount | integer(int64) | 动态数量 |
 | data.registerSource | string | 注册来源 |
+| data.hasPassword | boolean | 是否已设置登录密码（第三方首次登录可能为 false） |
+| data.isThirdParty | boolean | 是否绑定第三方登录（OpenID 非空） |
 
 响应示例:
+
 ```json
 {
   "code": 0,
@@ -297,7 +447,9 @@ Base URL：/v1
     "followCount": 1,
     "fansCount": 1,
     "dynamicCount": 1,
-    "registerSource": "email"
+    "registerSource": "email",
+    "hasPassword": true,
+    "isThirdParty": false
   },
   "msg": "获取成功"
 }
@@ -327,6 +479,7 @@ Base URL：/v1
 | data | object | 响应数据 |
 
 响应示例:
+
 ```json
 {
   "code": 0,
@@ -357,6 +510,7 @@ Base URL：/v1
 | data | object | 响应数据 |
 
 响应示例:
+
 ```json
 {
   "code": 0,
@@ -388,6 +542,7 @@ Base URL：/v1
 | data | object | 响应数据 |
 
 响应示例:
+
 ```json
 {
   "code": 0,
@@ -417,6 +572,7 @@ Base URL：/v1
 | data | object | 响应数据 |
 
 响应示例:
+
 ```json
 {
   "code": 0,
@@ -435,6 +591,7 @@ Base URL：/v1
 - 响应结构: code=0 成功，code=1 失败；msg 为提示信息
 
 请求参数:
+
 - 无
 
 响应字段:
@@ -443,6 +600,7 @@ Base URL：/v1
 | data | object | - |
 
 响应示例:
+
 ```json
 {
   "code": 0,
@@ -467,12 +625,8 @@ Base URL：/v1
 | openFans | body | boolean | 否 | 是否公开粉丝（可选） |
 | openFollow | body | boolean | 否 | 是否公开关注（可选） |
 | openLikeVideo | body | boolean | 否 | 是否公开点赞视频（可选） |
-| openLikeArticle | body | boolean | 否 | 是否公开点赞文章（可选） |
 | openCoinVideo | body | boolean | 否 | 是否公开投币视频（可选） |
-| openCoinArticle | body | boolean | 否 | 是否公开投币文章（可选） |
-| openFollowAnime | body | boolean | 否 | 是否公开追番（可选） |
-| homeStyleID | body | integer | 否 | 首页风格ID（可选） |
-| bannerId | body | integer | 否 | 预制横幅ID（可选） |
+| bannerId | body | integer(uint) | 否 | 系统默认横幅ID（可选，仅允许传系统默认横幅列表中的ID；传入后会清空已有 bannerUrl） |
 | bannerUrl | body | string | 否 | 自定义横幅URL（可选） |
 | likeTags | body | array<string> | 否 | 喜欢的标签列表（可选） |
 
@@ -482,11 +636,74 @@ Base URL：/v1
 | data | object | 响应数据 |
 
 响应示例:
+
 ```json
 {
   "code": 0,
   "data": {},
   "msg": "更新成功"
+}
+```
+
+## [GET] 获取系统默认用户主页横幅列表
+
+- 接口路径: GET /common/user/banner/defaults
+- 认证: 可选登录（客户端可携带 Token）
+- 依赖接口: 无
+- 接口说明: 获取系统配置的默认用户主页横幅列表，返回配置中的 bannerId 顺序以及对应可展示的横幅详情
+- HTTP 状态码: 200（业务码 code 判断成功/失败）
+- 响应结构: code=0 成功，code=1 失败；msg 为提示信息
+
+请求参数:
+
+- 无
+
+响应字段:
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| data | object | - |
+| data.bannerIds | array<integer(uint)> | 配置中的默认横幅ID列表 |
+| data.currentBannerId | integer(uint) | 当前用户配置的 bannerId；若用户使用自定义 bannerUrl，则固定返回 0 |
+| data.currentBannerImageUrl | string | 当前用户配置的 bannerId 对应图片URL；若用户使用自定义 bannerUrl，则返回自定义图片URL |
+| data.list | array<BannerItem> | 实际查询到的可展示横幅列表（按 bannerIds 顺序返回） |
+| data.list[].type | integer | 轮播图类型（1首页/分区轮播图 2顶部横幅 3用户主页横幅） |
+
+响应示例:
+
+```json
+{
+  "code": 0,
+  "data": {
+    "bannerIds": [
+      21,
+      19
+    ],
+    "currentBannerId": 19,
+    "currentBannerImageUrl": "https://cdn.example.com/banner-user-19.jpg",
+    "list": [
+      {
+        "id": 21,
+        "cover": "https://cdn.example.com/banner-user-21.jpg",
+        "href": "",
+        "show": true,
+        "type": 3,
+        "partitionId": 0,
+        "createdAt": "2024-06-01T12:00:00Z",
+        "updatedAt": "2024-06-01T12:00:00Z"
+      },
+      {
+        "id": 19,
+        "cover": "https://cdn.example.com/banner-user-19.jpg",
+        "href": "",
+        "show": true,
+        "type": 3,
+        "partitionId": 0,
+        "createdAt": "2024-06-01T12:00:00Z",
+        "updatedAt": "2024-06-01T12:00:00Z"
+      }
+    ]
+  },
+  "msg": "获取成功"
 }
 ```
 
@@ -512,6 +729,7 @@ Base URL：/v1
 | data.bannerUrl | string | 横幅图片URL |
 
 响应示例:
+
 ```json
 {
   "code": 0,
@@ -552,6 +770,7 @@ Base URL：/v1
 | data.list[].isFriend | boolean | 是否互相关注 |
 
 响应示例:
+
 ```json
 {
   "code": 0,
@@ -600,6 +819,7 @@ Base URL：/v1
 | data.total | integer(int64) | - |
 
 响应示例:
+
 ```json
 {
   "code": 0,
@@ -647,6 +867,7 @@ Base URL：/v1
 | data.total | integer(int64) | - |
 
 响应示例:
+
 ```json
 {
   "code": 0,
@@ -692,6 +913,7 @@ Base URL：/v1
 | data.total | integer(int64) | - |
 
 响应示例:
+
 ```json
 {
   "code": 0,
@@ -723,7 +945,7 @@ Base URL：/v1
 | 名称 | 位置 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- | --- |
 | range | query | string | 否 | 时间范围 可选: 7d/30d/month |
-| type | query | string | 否 | 指标类型 可选: fans/views/comments/coins/danmu/favorites，默认 views |
+| type | query | string | 否 | 指标类型 可选: fans/views/comments/coins/danmu/favorites |
 
 响应字段:
 | 字段 | 类型 | 说明 |
@@ -736,25 +958,16 @@ Base URL：/v1
 | data.total | integer(int64) | 当前时间范围内该指标总增量 |
 
 响应示例:
+
 ```json
 {
   "code": 0,
   "data": {
-    "range": "7d",
-    "type": "views",
-    "x": [
-      "2026-03-18",
-      "2026-03-19",
-      "2026-03-20",
-      "..."
-    ],
-    "values": [
-      3,
-      8,
-      5,
-      "..."
-    ],
-    "total": 16
+    "range": "2024-06-01T12:00:00Z",
+    "type": "pwd",
+    "x": ["2024-06-01"],
+    "values": [1],
+    "total": 1
   },
   "msg": "获取成功"
 }
@@ -771,7 +984,7 @@ Base URL：/v1
 
 请求参数:
 
-无
+- 无
 
 响应字段:
 | 字段 | 类型 | 说明 |
@@ -785,16 +998,17 @@ Base URL：/v1
 | data.favorites | integer(int64) | 收藏总量 |
 
 响应示例:
+
 ```json
 {
   "code": 0,
   "data": {
-    "fans": 0,
-    "views": 26,
-    "comments": 4,
-    "coins": 0,
-    "danmu": 11,
-    "favorites": 0
+    "fans": 1,
+    "views": 1,
+    "comments": 1,
+    "coins": 5,
+    "danmu": 1,
+    "favorites": 1
   },
   "msg": "获取成功"
 }
@@ -826,6 +1040,7 @@ Base URL：/v1
 | data.list | array<UserVideoItem> | - |
 | data.list[].id | integer(uint) | 视频ID |
 | data.list[].title | string | 标题 |
+| data.list[].description | string | 视频描述 |
 | data.list[].cover | string | 封面 |
 | data.list[].views | integer(int64) | 播放数 |
 | data.list[].danmuCount | integer(int64) | 弹幕数 |
@@ -840,6 +1055,7 @@ Base URL：/v1
 | data.list[].authorName | string | 作者名称 |
 
 响应示例:
+
 ```json
 {
   "code": 0,
@@ -848,6 +1064,7 @@ Base URL：/v1
       {
         "id": 1001,
         "title": "示例标题",
+        "description": "示例说明",
         "cover": "https://cdn.example.com/cover/2001.jpg",
         "views": 1,
         "danmuCount": 1,
@@ -889,6 +1106,7 @@ Base URL：/v1
 | data.list | array<UserVideoItem> | - |
 | data.list[].id | integer(uint) | 视频ID |
 | data.list[].title | string | 标题 |
+| data.list[].description | string | 视频描述 |
 | data.list[].cover | string | 封面 |
 | data.list[].views | integer(int64) | 播放数 |
 | data.list[].danmuCount | integer(int64) | 弹幕数 |
@@ -903,6 +1121,7 @@ Base URL：/v1
 | data.list[].authorName | string | 作者名称 |
 
 响应示例:
+
 ```json
 {
   "code": 0,
@@ -911,6 +1130,7 @@ Base URL：/v1
       {
         "id": 2001,
         "title": "示例标题",
+        "description": "示例说明",
         "cover": "https://cdn.example.com/cover/2001.jpg",
         "views": 1,
         "danmuCount": 1,
@@ -952,6 +1172,7 @@ Base URL：/v1
 | data.list | array<UserVideoItem> | - |
 | data.list[].id | integer(uint) | 视频ID |
 | data.list[].title | string | 标题 |
+| data.list[].description | string | 视频描述 |
 | data.list[].cover | string | 封面 |
 | data.list[].views | integer(int64) | 播放数 |
 | data.list[].danmuCount | integer(int64) | 弹幕数 |
@@ -966,6 +1187,7 @@ Base URL：/v1
 | data.list[].authorName | string | 作者名称 |
 
 响应示例:
+
 ```json
 {
   "code": 0,
@@ -974,6 +1196,7 @@ Base URL：/v1
       {
         "id": 2001,
         "title": "示例标题",
+        "description": "示例说明",
         "cover": "https://cdn.example.com/cover/2001.jpg",
         "views": 1,
         "danmuCount": 1,
@@ -1014,6 +1237,7 @@ Base URL：/v1
 | data | object | 响应数据 |
 
 响应示例:
+
 ```json
 {
   "code": 0,
@@ -1044,6 +1268,7 @@ Base URL：/v1
 | data.name | string | 标签名称 |
 
 响应示例:
+
 ```json
 {
   "code": 0,
@@ -1054,3 +1279,4 @@ Base URL：/v1
   "msg": "创建成功"
 }
 ```
+

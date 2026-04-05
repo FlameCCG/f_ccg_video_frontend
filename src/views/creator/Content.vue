@@ -184,9 +184,7 @@ const handleDelete = async () => {
             <!-- Cover -->
             <div class="relative w-40 aspect-video rounded-lg overflow-hidden shrink-0 bg-muted">
               <img :src="video.cover" :alt="video.title" class="w-full h-full object-cover" />
-              <div
-                class="absolute bottom-1 right-1 bg-black/70 text-white text-xs px-1.5 py-0.5 rounded"
-              >
+              <div class="media-chip absolute bottom-1 right-1 rounded px-1.5 py-0.5 text-xs">
                 {{ formatTime(video.duration) }}
               </div>
             </div>
@@ -205,13 +203,13 @@ const handleDelete = async () => {
                       v-if="video.status"
                       class="px-2 py-0.5 text-[11px] rounded-sm whitespace-nowrap"
                       :class="{
-                        'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400':
+                        'bg-[var(--status-success-soft)] text-[var(--status-success-ink)]':
                           video.status === 1,
-                        'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400':
+                        'bg-[var(--status-warning-soft)] text-[var(--status-warning-ink)]':
                           video.status === 2,
-                        'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400':
+                        'bg-[var(--status-danger-soft)] text-[var(--status-danger-ink)]':
                           video.status === 3,
-                        'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400':
+                        'bg-[var(--status-info-soft)] text-[var(--status-info-ink)]':
                           video.status === 4,
                       }"
                     >
@@ -230,13 +228,13 @@ const handleDelete = async () => {
                       v-if="video.auditStatus && video.auditStatus !== video.status"
                       class="px-2 py-0.5 text-[11px] rounded-sm whitespace-nowrap"
                       :class="{
-                        'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400':
+                        'bg-[var(--status-success-soft)] text-[var(--status-success-ink)]':
                           video.auditStatus === 1,
-                        'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400':
+                        'bg-[var(--status-warning-soft)] text-[var(--status-warning-ink)]':
                           video.auditStatus === 2,
-                        'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400':
+                        'bg-[var(--status-danger-soft)] text-[var(--status-danger-ink)]':
                           video.auditStatus === 3,
-                        'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400':
+                        'bg-[var(--status-info-soft)] text-[var(--status-info-ink)]':
                           video.auditStatus === 4,
                       }"
                     >
@@ -286,7 +284,7 @@ const handleDelete = async () => {
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end">
                   <DropdownMenuItem
-                    class="text-red-500 cursor-pointer"
+                    class="cursor-pointer text-destructive focus:text-destructive"
                     @select="confirmDelete(video.id)"
                   >
                     <Trash2 class="mr-2 h-4 w-4" />
@@ -311,9 +309,7 @@ const handleDelete = async () => {
         </DialogHeader>
         <DialogFooter>
           <Button variant="outline" @click="deleteDialogOpen = false">取消</Button>
-          <Button class="bg-red-500 hover:bg-red-600 text-white" @click="handleDelete">
-            确认删除
-          </Button>
+          <Button variant="destructive" @click="handleDelete"> 确认删除 </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

@@ -1176,8 +1176,8 @@ const handlePublish = async () => {
             class="upload-work-tab flex-shrink-0 relative flex flex-col items-start gap-1 p-3 rounded-lg border cursor-pointer transition-all w-[200px] group"
             :class="
               activeWorkIndex === wIdx
-                ? 'bg-[#00a1d6] text-white border-[#00a1d6] shadow-sm'
-                : 'bg-card text-foreground border-border hover:border-[#00a1d6]/50'
+                ? 'bg-primary text-primary-foreground border-primary shadow-sm'
+                : 'bg-card text-foreground border-border hover:border-primary/50'
             "
             @click="activeWorkIndex = wIdx"
           >
@@ -1189,14 +1189,18 @@ const handlePublish = async () => {
             <div
               v-if="work.parts.length > 0 && work.parts.every((p) => p.status === 'success')"
               class="flex items-center gap-1 shrink-0 mt-0.5"
-              :class="activeWorkIndex === wIdx ? 'text-white/90' : 'text-[#22c55e]'"
+              :class="
+                activeWorkIndex === wIdx
+                  ? 'text-[var(--signal-foreground)] opacity-90'
+                  : 'text-[var(--status-success-ink)]'
+              "
             >
               <CheckCircle2
                 class="w-3.5 h-3.5"
                 :class="
                   activeWorkIndex === wIdx
-                    ? 'fill-white text-[#00a1d6]'
-                    : 'fill-[#22c55e] text-white'
+                    ? 'fill-primary-foreground text-primary'
+                    : 'fill-[var(--status-success)] text-[var(--signal-foreground)]'
                 "
               />
               <span class="text-[11px] font-medium">上传完成</span>
@@ -1276,9 +1280,11 @@ const handlePublish = async () => {
                   }}</span>
                   <div
                     v-if="part.status === 'success'"
-                    class="flex items-center gap-1.5 ml-3 shrink-0 text-[#22c55e]"
+                    class="ml-3 flex shrink-0 items-center gap-1.5 text-[var(--status-success-ink)]"
                   >
-                    <CheckCircle2 class="w-[16px] h-[16px] fill-[#22c55e] text-white" />
+                    <CheckCircle2
+                      class="h-[16px] w-[16px] fill-[var(--status-success)] text-[var(--signal-foreground)]"
+                    />
                     <span class="text-xs font-medium">{{
                       part?.instant ? '秒传完成' : '上传完成'
                     }}</span>
@@ -1291,7 +1297,9 @@ const handlePublish = async () => {
                       :class="{
                         'bg-primary': part.status === 'uploading',
                         'bg-destructive': part.status === 'error',
-                        'bg-orange-400': ['hashing', 'checking', 'merging'].includes(part.status),
+                        'bg-[var(--status-warning)]': ['hashing', 'checking', 'merging'].includes(
+                          part.status
+                        ),
                         'bg-muted-foreground': ['pending', 'canceled', 'paused'].includes(
                           part.status
                         ),
@@ -1303,7 +1311,11 @@ const handlePublish = async () => {
                     class="text-xs w-16 text-right shrink-0"
                     :class="{
                       'text-destructive': part.status === 'error',
-                      'text-orange-500': ['hashing', 'checking', 'merging'].includes(part.status),
+                      'text-[var(--status-warning-ink)]': [
+                        'hashing',
+                        'checking',
+                        'merging',
+                      ].includes(part.status),
                       'text-muted-foreground': [
                         'pending',
                         'uploading',

@@ -19,6 +19,8 @@ import {
 } from '@/api/video'
 import { searchUsers, UserSortType, type UserSortValue, type SearchUserHit } from '@/api/user'
 import { useSearchHistory } from '@/composables/useSearchHistory'
+import { useDebounceFn } from '@vueuse/core'
+import DOMPurify from 'dompurify'
 
 const route = useRoute()
 const router = useRouter()
@@ -82,20 +84,48 @@ const mapSearchVideoHit = (video: SearchVideoHit): FeedItem => ({
   highlight: video.highlight,
 })
 
-// Search input handler – fetch suggestions when typing
-const handleSearchInput = async () => {
-  if (!keyword.value.trim()) {
+// 短防抖 + 序号丢弃过期响应，保证每字输入都能落到最新联想
+let suggestSeq = 0
+const fetchSuggestions = useDebounceFn(async (prefix: string) => {
+  const q = prefix.trim()
+  if (!q) {
     searchSuggestions.value = []
-    showDropdown.value = true
     return
   }
+  const seq = ++suggestSeq
   try {
-    const suggestions = await getSearchSuggest({ prefix: keyword.value })
-    searchSuggestions.value = suggestions
-    showDropdown.value = true
+    const list = await getSearchSuggest({ prefix: q })
+    if (seq !== suggestSeq) return
+    searchSuggestions.value = list.map((item) => ({
+      ...item,
+      highlight: ensureSuggestHighlight(item, q),
+    }))
   } catch (error) {
+    if (seq !== suggestSeq) return
     console.error('Failed to fetch suggestions:', error)
   }
+}, 100)
+
+/** 后端未返回 <em> 时前端兜底高亮字面匹配段 */
+const ensureSuggestHighlight = (item: SearchSuggestItem, query: string) => {
+  if (item.highlight?.includes('<em>')) return item.highlight
+  const value = item.value || ''
+  if (!query || !value) return value
+  const idx = value.toLowerCase().indexOf(query.toLowerCase())
+  if (idx < 0) return value
+  return value.slice(0, idx) + '<em>' + value.slice(idx, idx + query.length) + '</em>' + value.slice(idx + query.length)
+}
+
+// Search input handler – fetch suggestions when typing
+const handleSearchInput = () => {
+  showDropdown.value = true
+  const q = keyword.value.trim()
+  // 单字也实时联想
+  if (!q) {
+    searchSuggestions.value = []
+    return
+  }
+  void fetchSuggestions(keyword.value)
 }
 
 const handleSearch = (query?: string) => {
@@ -235,21 +265,27 @@ onMounted(() => {
     void fetchFullSearch()
   }
 })
+const sanitizeHighlight = (html: string) => {
+  return DOMPurify.sanitize(html, {
+    ALLOWED_TAGS: ['em'],
+    ALLOWED_ATTR: [],
+  })
+}
 </script>
 
 <template>
   <div class="search-page pb-10">
     <!-- Top: Centered Search Bar -->
-    <div class="w-full bg-white border-b border-[#e3e5e7] py-6 mb-4">
+    <div class="w-full bg-card border-b border-border py-6 mb-4">
       <div class="mx-auto flex w-full max-w-[700px] gap-2 px-4">
         <div class="relative flex-1">
           <div class="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-4">
-            <Search class="h-5 w-5 text-[#00a1d6]" />
+            <Search class="h-5 w-5 text-primary" />
           </div>
           <input
             v-model="keyword"
             type="text"
-            class="h-12 w-full rounded-md border-2 border-[#e3e5e7] bg-[#f6f7f8] pl-12 pr-4 text-base focus:border-[#00a1d6] focus:bg-white focus:outline-none transition-colors"
+            class="h-12 w-full rounded-md border-2 border-border bg-secondary pl-12 pr-4 text-base focus:border-primary focus:bg-card focus:outline-none transition-colors"
             placeholder="搜索你感兴趣的视频或 UP 主"
             @input="handleSearchInput"
             @keydown.enter="handleSearch()"
@@ -273,7 +309,7 @@ onMounted(() => {
                 class="search-suggestion-item cursor-pointer px-4 py-2.5 text-sm hover:bg-accent hover:text-accent-foreground flex items-center gap-2"
                 @mousedown.prevent="handleSearch(item.value)"
               >
-                <span class="truncate" v-html="item.highlight"></span>
+                <span class="truncate" v-html="sanitizeHighlight(item.highlight)"></span>
               </div>
             </template>
 
@@ -296,7 +332,7 @@ onMounted(() => {
                   <div
                     v-for="item in history"
                     :key="item"
-                    class="group flex items-center gap-1 rounded-md bg-[#f4f5f7] text-[#61666d] px-2.5 py-1.5 text-xs cursor-pointer hover:bg-[#ecedef] hover:text-[#18191c] transition-colors"
+                    class="group flex items-center gap-1 rounded-md bg-secondary text-muted-foreground px-2.5 py-1.5 text-xs cursor-pointer hover:bg-muted hover:text-foreground transition-colors"
                     @mousedown.prevent="handleSearch(item)"
                   >
                     <span class="max-w-[140px] truncate">{{ item }}</span>
@@ -332,7 +368,7 @@ onMounted(() => {
           </div>
         </div>
         <Button
-          class="h-12 w-28 rounded-md bg-[#00a1d6] text-base font-medium text-white hover:bg-[#00b5e5]"
+          class="h-12 w-28 rounded-md bg-primary text-base font-medium text-primary-foreground hover:bg-primary/80"
           @click="handleSearch()"
         >
           搜索
@@ -346,30 +382,28 @@ onMounted(() => {
           v-for="tab in tabs"
           :key="tab.value"
           class="group relative pb-2 text-[15px] font-medium transition-colors"
-          :class="
-            activeTab === tab.value ? 'text-[#00a1d6]' : 'text-[#18191c] hover:text-[#00a1d6]'
-          "
+          :class="activeTab === tab.value ? 'text-primary' : 'text-foreground hover:text-primary'"
           @click="activeTab = tab.value"
         >
           {{ tab.label }}
           <span
             v-if="tab.value === 'video'"
-            class="ml-1 rounded-sm bg-[#f1f2f3] px-1 py-[1px] text-[11px] font-normal text-[#61666d] group-hover:text-[#00a1d6] group-hover:bg-[#e6f7fc]"
-            :class="activeTab === tab.value ? 'text-[#00a1d6] bg-[#e6f7fc]' : ''"
+            class="ml-1 rounded-sm bg-secondary px-1 py-[1px] text-[11px] font-normal text-muted-foreground group-hover:text-primary group-hover:bg-primary/10"
+            :class="activeTab === tab.value ? 'text-primary bg-primary/10' : ''"
           >
             {{ videoTotal > 99 ? '99+' : videoTotal }}
           </span>
           <span
             v-else-if="tab.value === 'user'"
-            class="ml-1 rounded-sm bg-[#f1f2f3] px-1 py-[1px] text-[11px] font-normal text-[#61666d] group-hover:text-[#00a1d6] group-hover:bg-[#e6f7fc]"
-            :class="activeTab === tab.value ? 'text-[#00a1d6] bg-[#e6f7fc]' : ''"
+            class="ml-1 rounded-sm bg-secondary px-1 py-[1px] text-[11px] font-normal text-muted-foreground group-hover:text-primary group-hover:bg-primary/10"
+            :class="activeTab === tab.value ? 'text-primary bg-primary/10' : ''"
           >
             {{ userTotal > 99 ? '99+' : userTotal }}
           </span>
           <!-- Active Indicator -->
           <div
             v-if="activeTab === tab.value"
-            class="absolute bottom-0 left-1/2 h-[3px] w-full -translate-x-1/2 rounded-t bg-[#00a1d6]"
+            class="absolute bottom-0 left-1/2 h-[3px] w-full -translate-x-1/2 rounded-t bg-primary"
           ></div>
         </button>
       </div>
@@ -383,8 +417,8 @@ onMounted(() => {
             class="rounded-full px-4 py-1.5 text-[13px] transition-colors"
             :class="
               activeSortKey === `${sort.sort}_${sort.order}`
-                ? 'bg-[#e6f7fc] text-[#00a1d6]'
-                : 'text-[#61666d] hover:text-[#00a1d6]'
+                ? 'bg-primary/10 text-primary'
+                : 'text-muted-foreground hover:text-primary'
             "
             @click="activeSort = { sort: sort.sort, order: sort.order }"
           >
@@ -395,7 +429,7 @@ onMounted(() => {
           v-show="activeTab === 'video'"
           variant="outline"
           size="sm"
-          class="h-8 rounded text-[13px] text-[#61666d]"
+          class="h-8 rounded text-[13px] text-muted-foreground"
         >
           更多筛选 <span class="ml-1 text-[10px]">▼</span>
         </Button>
@@ -441,7 +475,10 @@ onMounted(() => {
       </div>
 
       <!-- Empty State -->
-      <div v-else class="flex min-h-[400px] flex-col items-center justify-center text-[#9499a0]">
+      <div
+        v-else
+        class="flex min-h-[400px] flex-col items-center justify-center text-muted-foreground/80"
+      >
         <div class="mb-4 text-6xl">🔍</div>
         <p>没有找到相关结果，换个词试试吧</p>
       </div>
@@ -449,11 +486,14 @@ onMounted(() => {
   </div>
 </template>
 
-<style scoped>
+<style scoped lang="scss">
 /* Search suggestion highlight */
 .search-suggestion-item :deep(em) {
-  color: hsl(var(--primary));
+  color: var(--brand-blue, oklch(var(--primary)));
   font-style: normal;
-  font-weight: 600;
+  font-weight: 700;
+  background: oklch(var(--primary) / 0.12);
+  border-radius: 2px;
+  padding: 0 1px;
 }
 </style>

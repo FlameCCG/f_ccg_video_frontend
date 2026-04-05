@@ -10,17 +10,17 @@ const navItems = [
     name: '综合热门',
     path: '/hot',
     icon: Flame,
-    color: 'text-orange-500',
-    bgColor: 'bg-orange-500/10',
-    activeColor: 'bg-orange-500',
+    color: 'text-[var(--status-warning-ink)]',
+    bgColor: 'bg-[var(--status-warning-soft)]',
+    activeColor: 'bg-[var(--status-warning)]',
   },
   {
     name: '排行榜',
     path: '/rank',
     icon: BarChart2,
-    color: 'text-pink-500',
-    bgColor: 'bg-pink-500/10',
-    activeColor: 'bg-pink-500',
+    color: 'text-primary',
+    bgColor: 'bg-primary/10',
+    activeColor: 'signal-badge-rank',
   },
 ]
 
@@ -42,7 +42,7 @@ const currentPath = computed(() => route.path)
         <component
           :is="item.icon"
           class="h-6 w-6 transition-colors"
-          :class="[currentPath === item.path ? 'text-white' : item.color]"
+          :class="[currentPath === item.path ? 'text-[var(--signal-foreground)]' : item.color]"
         />
       </div>
       <span

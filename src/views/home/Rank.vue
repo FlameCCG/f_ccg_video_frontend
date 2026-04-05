@@ -45,7 +45,7 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="mx-auto mt-6 mb-8 max-w-[1400px] px-4 sm:px-6 lg:px-8">
+  <div class="mx-auto mt-6 pb-8 max-w-[1400px] px-4 sm:px-6 lg:px-8">
     <TrendingNav />
 
     <!-- Page Header text (Image 2: 排行榜根据内容折算，近期的数据综合展示，动态更新) -->

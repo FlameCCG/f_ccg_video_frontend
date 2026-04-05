@@ -615,7 +615,9 @@ onBeforeUnmount(() => {
         <span
           class="rounded-full px-2 py-1 text-[11px]"
           :class="
-            connected ? 'bg-emerald-500/10 text-emerald-600' : 'bg-amber-500/10 text-amber-600'
+            connected
+              ? 'bg-[var(--status-success-soft)] text-[var(--status-success-ink)]'
+              : 'bg-[var(--status-warning-soft)] text-[var(--status-warning-ink)]'
           "
         >
           {{ connectionLabel }}
@@ -666,7 +668,7 @@ onBeforeUnmount(() => {
               />
               <span
                 v-if="conversation.unread > 0"
-                class="absolute -right-0.5 -top-0.5 flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-[#fb7299] px-1 text-[10px] font-medium text-white"
+                class="absolute -right-0.5 -top-0.5 flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-accent px-1 text-[10px] font-medium text-primary-foreground"
               >
                 {{ conversation.unread > 99 ? '99+' : conversation.unread }}
               </span>
@@ -834,7 +836,7 @@ onBeforeUnmount(() => {
                     class="rounded-full px-2.5 py-1 text-[11px] transition-colors"
                     :class="
                       pendingMedia.msgType === 'image'
-                        ? 'bg-[#00aeec] text-white'
+                        ? 'bg-primary text-primary-foreground'
                         : 'bg-muted text-muted-foreground hover:text-foreground'
                     "
                     @click="updatePendingMediaType('image')"
@@ -845,7 +847,7 @@ onBeforeUnmount(() => {
                     class="rounded-full px-2.5 py-1 text-[11px] transition-colors"
                     :class="
                       pendingMedia.msgType === 'sticker'
-                        ? 'bg-[#00aeec] text-white'
+                        ? 'bg-primary text-primary-foreground'
                         : 'bg-muted text-muted-foreground hover:text-foreground'
                     "
                     @click="updatePendingMediaType('sticker')"
@@ -855,7 +857,7 @@ onBeforeUnmount(() => {
                 </div>
 
                 <button
-                  class="inline-flex items-center gap-1.5 rounded-lg bg-[#00aeec] px-3 py-1.5 text-[12px] text-white transition-colors hover:bg-[#00aeec]/90 disabled:cursor-not-allowed disabled:opacity-50"
+                  class="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-[12px] text-primary-foreground transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
                   :disabled="uploadingMedia || !connected"
                   @click="sendPendingMedia"
                 >
@@ -919,7 +921,7 @@ onBeforeUnmount(() => {
                   {{ charCount }}/{{ MAX_TEXT_LENGTH }}
                 </span>
                 <button
-                  class="rounded-lg bg-[#00aeec] px-4 py-1.5 text-[12px] font-medium text-white transition-colors hover:bg-[#00aeec]/90 disabled:cursor-not-allowed disabled:bg-muted disabled:text-muted-foreground"
+                  class="rounded-lg bg-primary px-4 py-1.5 text-[12px] font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:bg-muted disabled:text-muted-foreground"
                   :disabled="composerDisabled || !draftText.trim() || !connected"
                   @click="sendTextMessage"
                 >
@@ -953,8 +955,8 @@ onBeforeUnmount(() => {
 }
 
 .chat-bubble-self {
-  background-color: #00aeec;
-  color: #fff;
+  background-color: var(--color-primary);
+  color: var(--color-primary-foreground);
   border-top-right-radius: 4px;
 }
 

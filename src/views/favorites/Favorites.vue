@@ -36,11 +36,11 @@ onMounted(() => {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: var(--surface-0, #fff);
+  background: var(--color-card);
 }
 
 .fav-redirect-text {
   font-size: 14px;
-  color: var(--text-2, #9499a0);
+  color: var(--color-muted-foreground);
 }
 </style>

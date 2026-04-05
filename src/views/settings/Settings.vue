@@ -762,14 +762,14 @@ watch(activeRecordTab, (tab) => {
 
 <style scoped>
 .center-page {
-  background: #f5f5f5;
+  background: var(--color-secondary);
   min-height: calc(100vh - 56px);
 }
 
 /* Banner */
 .center-banner {
   height: 80px;
-  background: linear-gradient(135deg, #00a1d6, #00d4ff);
+  background: linear-gradient(135deg, var(--color-primary), oklch(var(--primary) / 0.8));
   display: flex;
   align-items: center;
   justify-content: center;
@@ -859,7 +859,7 @@ watch(activeRecordTab, (tab) => {
 .spinner {
   width: 30px;
   height: 30px;
-  border: 3px solid #e3e5e7;
+  border: 3px solid var(--color-border);
   border-top-color: var(--color-primary);
   border-radius: 50%;
   animation: spin 0.6s linear infinite;
@@ -912,8 +912,8 @@ watch(activeRecordTab, (tab) => {
 .ov-avatar {
   width: 60px;
   height: 60px;
-  border: 2px solid #fff;
-  box-shadow: 0 1px 6px rgb(0 0 0 / 0.1);
+  border: 2px solid var(--color-card);
+  box-shadow: var(--shadow-raised);
 }
 
 .ov-avatar-mask {
@@ -926,7 +926,7 @@ watch(activeRecordTab, (tab) => {
   justify-content: center;
   gap: 1px;
   background: rgb(0 0 0 / 0.45);
-  color: #fff;
+  color: var(--color-primary-foreground);
   font-size: 10px;
   cursor: pointer;
   opacity: 0;
@@ -960,7 +960,7 @@ watch(activeRecordTab, (tab) => {
   border-radius: 3px;
   font-size: 10px;
   font-weight: 800;
-  color: #fff;
+  color: var(--color-primary-foreground);
 }
 
 .ov-exp {
@@ -981,7 +981,7 @@ watch(activeRecordTab, (tab) => {
 .exp-fill {
   height: 100%;
   border-radius: 3px;
-  background: linear-gradient(90deg, #00a1d6, #00d4ff);
+  background: linear-gradient(90deg, var(--color-primary), oklch(var(--primary) / 0.8));
   transition: width 0.4s;
 }
 
@@ -1055,7 +1055,7 @@ watch(activeRecordTab, (tab) => {
 .record-panel {
   border: 1px solid var(--color-border);
   border-radius: 10px;
-  background: linear-gradient(180deg, #fbfbfc 0%, #fff 100%);
+  background: linear-gradient(180deg, var(--color-secondary) 0%, var(--color-card) 100%);
   overflow: hidden;
 }
 
@@ -1079,7 +1079,7 @@ watch(activeRecordTab, (tab) => {
   justify-content: space-between;
   gap: 16px;
   padding: 16px 18px;
-  border-bottom: 1px solid #f1f2f3;
+  border-bottom: 1px solid var(--color-border);
 }
 
 .record-item:last-child {
@@ -1141,7 +1141,7 @@ watch(activeRecordTab, (tab) => {
 }
 
 .record-delta.is-negative {
-  color: #f25d8e;
+  color: var(--color-accent);
 }
 
 .record-time {
@@ -1157,8 +1157,8 @@ watch(activeRecordTab, (tab) => {
   justify-content: space-between;
   gap: 12px;
   padding: 14px 18px;
-  background: #fafbfc;
-  border-top: 1px solid #f1f2f3;
+  background: var(--color-secondary);
+  border-top: 1px solid var(--color-border);
 }
 
 .record-summary {
@@ -1298,7 +1298,7 @@ watch(activeRecordTab, (tab) => {
   width: 16px;
   height: 16px;
   border-radius: 50%;
-  border: 2px solid #e3e5e7;
+  border: 2px solid var(--color-border);
   position: relative;
   transition: border-color 0.12s;
 }
@@ -1326,7 +1326,7 @@ watch(activeRecordTab, (tab) => {
   cursor: pointer;
   border: none;
   background-color: var(--color-primary);
-  color: #fff;
+  color: var(--color-primary-foreground);
   transition: all 0.12s;
   margin-top: 8px;
 }
@@ -1341,11 +1341,11 @@ watch(activeRecordTab, (tab) => {
 }
 
 .btn-danger {
-  background: #f25d8e;
+  background: var(--color-accent);
 }
 
 .btn-danger:hover:not(:disabled) {
-  background: #e04676;
+  background: oklch(from var(--color-accent) calc(l - 0.08) c h);
 }
 
 /* Privacy */
@@ -1413,7 +1413,7 @@ watch(activeRecordTab, (tab) => {
 }
 
 .sec-row:not(:last-child) {
-  border-bottom: 1px solid #eee;
+  border-bottom: 1px solid var(--color-border);
 }
 
 .sec-row span:first-child {

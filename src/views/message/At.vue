@@ -118,7 +118,7 @@ const goLink = (item: NotificationItem) => {
               <button
                 v-if="canOpenTarget(item)"
                 type="button"
-                class="-ml-2 inline-flex max-w-full cursor-pointer rounded-md px-2 py-1 text-left text-sm text-foreground/90 transition-colors hover:bg-[#00aeec]/8 hover:text-[#00aeec]"
+                class="-ml-2 inline-flex max-w-full cursor-pointer rounded-md px-2 py-1 text-left text-sm text-foreground/90 transition-colors hover:bg-primary/8 hover:text-primary"
                 @click="goLink(item)"
               >
                 <span class="break-words whitespace-pre-wrap">{{ item.content }}</span>

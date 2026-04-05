@@ -164,7 +164,7 @@ onMounted(() => {
       <textarea
         ref="textareaRef"
         v-model="content"
-        class="min-h-[64px] w-full resize-none rounded-md border border-border bg-secondary px-3 py-2 text-sm transition-colors focus:border-[#00aeec] focus:bg-card focus:outline-none"
+        class="min-h-[64px] w-full resize-none rounded-md border border-border bg-secondary px-3 py-2 text-sm transition-colors focus:border-primary focus:bg-card focus:outline-none"
         :placeholder="
           placeholder || (authStore.isLoggedIn ? '发一条友善的评论' : '请先登录后发表评论')
         "
@@ -208,7 +208,7 @@ onMounted(() => {
         <div class="flex items-center gap-2 relative">
           <div ref="emojiPickerRef">
             <button
-              class="flex items-center gap-1 rounded px-2 py-1 text-sm text-muted-foreground transition-colors hover:text-[#00aeec]"
+              class="flex items-center gap-1 rounded px-2 py-1 text-sm text-muted-foreground transition-colors hover:text-primary"
               :disabled="!authStore.isLoggedIn"
               @click="showEmoji = !showEmoji"
             >
@@ -221,7 +221,7 @@ onMounted(() => {
           </div>
 
           <button
-            class="flex items-center gap-1 rounded px-2 py-1 text-sm text-muted-foreground transition-colors hover:text-[#00aeec]"
+            class="flex items-center gap-1 rounded px-2 py-1 text-sm text-muted-foreground transition-colors hover:text-primary"
             :disabled="!authStore.isLoggedIn"
             @click="handleAtClick"
           >
@@ -230,7 +230,7 @@ onMounted(() => {
         </div>
 
         <button
-          class="rounded-md bg-[#00aeec] px-4 py-1.5 text-sm text-white transition-colors hover:bg-[#00b5e5] disabled:cursor-not-allowed disabled:opacity-50"
+          class="rounded-md bg-primary px-4 py-1.5 text-sm text-primary-foreground transition-colors hover:bg-primary/80 disabled:cursor-not-allowed disabled:opacity-50"
           :disabled="!authStore.isLoggedIn || !content.trim()"
           @click="handleSubmit"
         >

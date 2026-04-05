@@ -200,7 +200,7 @@ onMounted(() => {
 
       <div class="flex items-center gap-3 text-[13px] ml-2">
         <button
-          class="transition-colors hover:text-[#00aeec]"
+          class="transition-colors hover:text-primary"
           :class="sortBy === 'hot' ? 'text-foreground font-medium' : 'text-muted-foreground/80'"
           @click="handleSortChange('hot')"
         >
@@ -208,7 +208,7 @@ onMounted(() => {
         </button>
         <div class="h-3 w-[1px] bg-accent"></div>
         <button
-          class="transition-colors hover:text-[#00aeec]"
+          class="transition-colors hover:text-primary"
           :class="sortBy === 'time' ? 'text-foreground font-medium' : 'text-muted-foreground/80'"
           @click="handleSortChange('time')"
         >

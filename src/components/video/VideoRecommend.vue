@@ -240,7 +240,7 @@ watch(() => props.videoId, fetchRecommend)
   left: 0;
   height: 3px;
   width: 100%;
-  background: linear-gradient(90deg, #00a1d6, #fb7299);
+  background: linear-gradient(90deg, var(--color-primary), var(--color-accent));
   transform-origin: left;
   transform: scaleX(0);
   transition: transform 0.4s cubic-bezier(0.16, 1, 0.3, 1);

@@ -176,7 +176,7 @@ defineExpose({
       <!-- Slider Handle -->
       <div
         class="absolute left-0 top-0 flex h-11 w-11 cursor-grab items-center justify-center rounded-lg bg-primary text-primary-foreground shadow-md transition-colors active:cursor-grabbing"
-        :class="{ 'bg-green-500': isVerified }"
+        :class="{ 'bg-[var(--status-success)]': isVerified }"
         :style="sliderStyle"
         @mousedown="handleMouseDown"
         @touchstart="handleTouchStart"
@@ -214,7 +214,7 @@ defineExpose({
       </span>
       <span
         v-else-if="isVerified"
-        class="absolute inset-0 flex items-center justify-center text-sm text-green-600"
+        class="absolute inset-0 flex items-center justify-center text-sm text-[var(--status-success-ink)]"
       >
         验证成功
       </span>
@@ -226,7 +226,7 @@ defineExpose({
         <RefreshCw class="mr-1 h-4 w-4" />
         刷新
       </Button>
-      <span v-if="isVerified" class="text-xs text-green-600"> 验证已完成 </span>
+      <span v-if="isVerified" class="text-xs text-[var(--status-success-ink)]"> 验证已完成 </span>
     </div>
   </div>
 </template>

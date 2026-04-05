@@ -50,20 +50,44 @@ const resources = computed((): VideoResourceItem[] => {
   return video.resources ?? []
 })
 
+const pickDefaultResource = (list: VideoResourceItem[]): VideoResourceItem | undefined => {
+  if (!list.length) return undefined
+
+  const publicResources = list.filter((resource) => !resource.isVip)
+  const candidates = publicResources.length ? publicResources : list
+
+  const preferredPatterns = [/720p/i, /1080p(?!.*高码率)/i, /480p/i, /360p/i]
+  for (const pattern of preferredPatterns) {
+    const matched = candidates.find((resource) => pattern.test(resource.resolution || ''))
+    if (matched) return matched
+  }
+
+  const bitrateTarget = 2000
+  const bitrateSorted = [...candidates]
+    .filter((resource) => resource.bitrate > 0)
+    .sort((left, right) => {
+      return Math.abs(left.bitrate - bitrateTarget) - Math.abs(right.bitrate - bitrateTarget)
+    })
+
+  return bitrateSorted[0] ?? candidates[0] ?? list[0]
+}
+
+const defaultResource = computed(() => pickDefaultResource(resources.value))
+
 const qualityList = computed(() => {
   const list = resources.value
   if (!list.length) return undefined
+  const preferred = defaultResource.value
 
   return list.map((r, i) => ({
-    default: i === 0,
+    default: preferred ? r.id === preferred.id : i === 0,
     html: r.resolution || `清晰度${i + 1}`,
     url: r.fileUrl,
   }))
 })
 
 const primaryUrl = computed(() => {
-  const list = resources.value
-  return list[0]?.fileUrl ?? ''
+  return defaultResource.value?.fileUrl ?? resources.value[0]?.fileUrl ?? ''
 })
 
 let progressSaveTimer: ReturnType<typeof setInterval> | null = null

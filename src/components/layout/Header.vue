@@ -27,7 +27,7 @@ onMounted(async () => {
         alt="Banner"
         class="h-full w-full object-cover object-center"
       />
-      <div v-else class="h-full w-full bg-gradient-to-r from-sky-400 to-blue-500"></div>
+      <div v-else class="banner-fallback h-full w-full"></div>
       <!-- Gradient Overlay for readability -->
       <div
         class="absolute inset-0 bg-gradient-to-b from-black/30 via-transparent to-transparent"

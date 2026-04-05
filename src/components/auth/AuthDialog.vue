@@ -363,7 +363,7 @@ onUnmounted(() => {
             >
               <foreignObject width="100%" height="100%" style="overflow: visible">
                 <video
-                  src="/output.webm"
+                  src="/lain.webm"
                   autoplay
                   loop
                   muted
@@ -374,9 +374,7 @@ onUnmounted(() => {
                     object-fit: cover;
                     transform: scale(3.5);
                     transform-origin: center center;
-                    -webkit-mask-image: url('data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%221.3%22 height=%221.1%22%3E%3Crect width=%221.3%22 height=%221.1%22 fill=%22black%22 fill-opacity=%220.35%22/%3E%3Ctext x=%22-0.1%22 y=%220.9%22 font-family=%22monospace%22 font-size=%221%22 font-weight=%22900%22 fill=%22black%22%3E01%3C/text%3E%3C/svg%3E');
                     mask-image: url('data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%221.3%22 height=%221.1%22%3E%3Crect width=%221.3%22 height=%221.1%22 fill=%22black%22 fill-opacity=%220.35%22/%3E%3Ctext x=%22-0.1%22 y=%220.9%22 font-family=%22monospace%22 font-size=%221%22 font-weight=%22900%22 fill=%22black%22%3E01%3C/text%3E%3C/svg%3E');
-                    -webkit-mask-size: 1.3px 1.1px;
                     mask-size: 1.3px 1.1px;
                   "
                   @timeupdate="
@@ -494,7 +492,7 @@ onUnmounted(() => {
               @click="handleQQLogin"
             >
               <svg
-                class="h-6 w-6 text-foreground opacity-60 transition-all group-hover:text-[#12B7F5] group-hover:opacity-100 dark:text-muted-foreground"
+                class="h-6 w-6 text-foreground opacity-60 transition-all group-hover:text-primary group-hover:opacity-100 dark:text-muted-foreground"
                 viewBox="0 0 24 24"
                 fill="currentColor"
               >
@@ -675,15 +673,14 @@ onUnmounted(() => {
               variant="outline"
               class="h-12 w-full justify-start rounded-xl border border-border/40 bg-muted/20 px-4 text-muted-foreground transition-all hover:bg-muted/50 active:scale-[0.98]"
               :class="{
-                'border-green-500/50 bg-green-500/10 text-green-600 hover:bg-green-500/20':
-                  slideCaptchaVerified,
+                'status-verified-surface': slideCaptchaVerified,
               }"
               @click="handleSlideCaptchaClick"
             >
               <div class="flex items-center gap-3">
                 <div
                   class="h-2 w-2 rounded-full"
-                  :class="slideCaptchaVerified ? 'bg-green-500' : 'bg-muted-foreground/40'"
+                  :class="slideCaptchaVerified ? 'status-dot-success' : 'bg-muted-foreground/40'"
                 ></div>
                 {{ slideCaptchaVerified ? '验证已完成' : '点击进行安全验证' }}
               </div>
@@ -773,15 +770,14 @@ onUnmounted(() => {
               variant="outline"
               class="h-12 w-full justify-start rounded-xl border border-border/40 bg-muted/20 px-4 text-muted-foreground transition-all hover:bg-muted/50 active:scale-[0.98]"
               :class="{
-                'border-green-500/50 bg-green-500/10 text-green-600 hover:bg-green-500/20':
-                  slideCaptchaVerified,
+                'status-verified-surface': slideCaptchaVerified,
               }"
               @click="handleSlideCaptchaClick"
             >
               <div class="flex items-center gap-3">
                 <div
                   class="h-2 w-2 rounded-full"
-                  :class="slideCaptchaVerified ? 'bg-green-500' : 'bg-muted-foreground/40'"
+                  :class="slideCaptchaVerified ? 'status-dot-success' : 'bg-muted-foreground/40'"
                 ></div>
                 {{ slideCaptchaVerified ? '验证已完成' : '点击进行安全验证' }}
               </div>

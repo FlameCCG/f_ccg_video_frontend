@@ -373,13 +373,13 @@ const navActions = [
                 <!-- Badge -->
                 <span
                   v-if="action.badge === 'message' && totalMessageUnread > 0"
-                  class="absolute -right-1 -top-1 flex h-4 min-w-[16px] items-center justify-center rounded-full bg-red-500 px-1 text-[10px] text-white"
+                  class="absolute -right-1 -top-1 flex h-4 min-w-[16px] items-center justify-center rounded-full bg-destructive shadow-[0_0_10px_rgba(var(--color-destructive)/0.6)] px-1 text-[10px] text-destructive-foreground"
                 >
                   {{ totalMessageUnread > 99 ? '99+' : totalMessageUnread }}
                 </span>
                 <span
                   v-if="action.badge === 'dynamic' && dynamicUnreadCount > 0"
-                  class="absolute -right-1 -top-1 flex h-4 min-w-[16px] items-center justify-center rounded-full bg-red-500 px-1 text-[10px] text-white"
+                  class="absolute -right-1 -top-1 flex h-4 min-w-[16px] items-center justify-center rounded-full bg-destructive shadow-[0_0_10px_rgba(var(--color-destructive)/0.6)] px-1 text-[10px] text-destructive-foreground"
                 >
                   {{ dynamicUnreadCount > 99 ? '99+' : dynamicUnreadCount }}
                 </span>
@@ -475,7 +475,7 @@ const navActions = [
         v-if="authStore.isLoggedIn"
         as-child
         size="sm"
-        class="ml-1 h-8 rounded-lg border-0 bg-pink-500 px-2 text-white hover:bg-pink-600 sm:ml-3 sm:px-4"
+        class="ml-1 h-8 rounded-lg border-0 bg-primary px-2 text-primary-foreground hover:bg-primary/90 shadow-[0_0_15px_rgba(var(--color-primary)/0.3)] sm:ml-3 sm:px-4 transition-all"
       >
         <router-link to="/upload" class="flex items-center gap-1.5">
           <Upload class="h-4 w-4" />
@@ -485,7 +485,7 @@ const navActions = [
       <Button
         v-else
         size="sm"
-        class="ml-1 h-8 cursor-pointer rounded-lg border-0 bg-pink-500 px-2 text-white hover:bg-pink-600 sm:ml-3 sm:px-4"
+        class="ml-1 h-8 cursor-pointer rounded-lg border-0 bg-primary px-2 text-primary-foreground hover:bg-primary/90 shadow-[0_0_15px_rgba(var(--color-primary)/0.3)] sm:ml-3 sm:px-4 transition-all"
         @click="openLoginDialog"
       >
         <Upload class="h-4 w-4" />
@@ -530,11 +530,17 @@ const navActions = [
 
 .avatar-normal {
   transform: scale(1) translateY(0);
-  transition: transform 0.25s cubic-bezier(0.22, 1, 0.36, 1);
+  opacity: 1;
+  transition:
+    transform 0.3s cubic-bezier(0.22, 1, 0.36, 1),
+    opacity 0.2s ease 0.05s;
 }
 
 .avatar-expanded {
   transform: scale(2.5) translateY(0);
-  transition: transform 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+  opacity: 0;
+  transition:
+    transform 0.35s cubic-bezier(0.22, 1, 0.36, 1),
+    opacity 0.2s ease;
 }
 </style>

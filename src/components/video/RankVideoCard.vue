@@ -42,10 +42,10 @@ const handleClick = () => {
 }
 
 const rankBadgeStyle = computed(() => {
-  if (props.rank === 1) return 'bg-[#f36f20] text-white'
-  if (props.rank === 2) return 'bg-[#ff9434] text-white'
-  if (props.rank === 3) return 'bg-[#ffaf4c] text-white'
-  return 'bg-[#b8c0cc] text-white'
+  if (props.rank === 1) return 'rank-badge-1'
+  if (props.rank === 2) return 'rank-badge-2'
+  if (props.rank === 3) return 'rank-badge-3'
+  return 'rank-badge-4'
 })
 </script>
 
@@ -74,9 +74,7 @@ const rankBadgeStyle = computed(() => {
           loading="lazy"
         />
         <!-- Duration Badge -->
-        <div
-          class="absolute bottom-1 right-1 rounded bg-black/70 px-1 py-0.5 text-xs font-medium text-white"
-        >
+        <div class="media-chip absolute bottom-1 right-1 rounded px-1.5 py-0.5 text-xs font-medium">
           {{ formattedDuration }}
         </div>
       </div>

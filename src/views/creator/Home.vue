@@ -75,37 +75,37 @@ const metricCards: MetricCard[] = [
     key: 'fans',
     title: '粉丝',
     icon: Users,
-    color: '#fb7299', // pink
+    color: 'var(--color-brand-pink)',
   },
   {
     key: 'views',
     title: '播放',
     icon: PlaySquare,
-    color: '#00aeec', // blue
+    color: 'var(--color-brand-blue)',
   },
   {
     key: 'comments',
     title: '评论',
     icon: MessageSquare,
-    color: '#00aeec', // blue
+    color: 'var(--color-brand-blue)',
   },
   {
     key: 'danmu',
     title: '弹幕',
     icon: Tv,
-    color: '#00aeec',
+    color: 'var(--color-brand-blue)',
   },
   {
     key: 'favorites',
     title: '收藏',
     icon: Star,
-    color: '#00aeec',
+    color: 'var(--color-brand-blue)',
   },
   {
     key: 'coins',
     title: '投币',
     icon: CircleDollarSign,
-    color: '#00aeec',
+    color: 'var(--color-brand-blue)',
   },
 ]
 
@@ -176,6 +176,7 @@ const renderChart = () => {
   if (!instance) return
 
   const foreground = readCssVariable('--color-foreground', '#333333')
+  const mutedFg = readCssVariable('--color-muted-foreground', '#9ca3af')
   const border = readCssVariable('--color-border', '#f1f2f3')
   const card = readCssVariable('--color-card', '#ffffff')
   const metric = selectedMetricCard.value
@@ -208,7 +209,7 @@ const renderChart = () => {
       right: 20,
       top: 10,
       iconStyle: {
-        borderColor: '#9ca3af',
+        borderColor: mutedFg,
       },
       feature: {
         dataView: { show: true, readOnly: true, title: '数据视图' },
@@ -223,7 +224,7 @@ const renderChart = () => {
       icon: 'emptyCircle',
       itemWidth: 10,
       itemHeight: 10,
-      textStyle: { color: '#666', fontSize: 13 },
+      textStyle: { color: mutedFg, fontSize: 13 },
     },
     grid: {
       left: 10,
@@ -238,14 +239,14 @@ const renderChart = () => {
       data: xAxisData,
       axisLine: {
         lineStyle: {
-          color: '#e5e7eb',
+          color: border,
         },
       },
       axisTick: {
         show: false,
       },
       axisLabel: {
-        color: '#9ca3af',
+        color: mutedFg,
         margin: 12,
         formatter: (value: string) => value,
       },
@@ -254,13 +255,13 @@ const renderChart = () => {
       type: 'value',
       splitLine: {
         lineStyle: {
-          color: '#f3f4f6',
-          type: 'solid',
+          color: border,
+          type: 'dashed',
         },
       },
       axisLine: { show: false },
       axisTick: { show: false },
-      axisLabel: { color: '#9ca3af' },
+      axisLabel: { color: mutedFg },
     },
     series: [
       {
@@ -287,7 +288,7 @@ const renderChart = () => {
             top: 'middle',
             style: {
               text: '暂无趋势数据',
-              fill: '#9ca3af',
+              fill: mutedFg,
               font: '500 14px sans-serif',
             },
           },
@@ -395,9 +396,14 @@ onBeforeUnmount(() => {
       </div>
 
       <div v-if="overviewLoading" class="flat-grid">
-        <div v-for="i in 6" :key="i" class="flat-card is-skeleton">
-          <!-- loading block -->
-          <div class="skeleton-shimmer h-[70px] rounded"></div>
+        <div v-for="i in 6" :key="i" class="flat-card pointer-events-none">
+          <div class="flat-card__top">
+            <div class="skeleton-shimmer w-16 h-[18px] rounded"></div>
+            <div class="skeleton-shimmer w-6 h-[12px] rounded"></div>
+          </div>
+          <div class="flat-card__bottom mt-1">
+            <div class="skeleton-shimmer w-20 h-[24px] rounded"></div>
+          </div>
         </div>
       </div>
 
@@ -455,11 +461,44 @@ onBeforeUnmount(() => {
       </div>
 
       <div class="flat-chart-shell">
-        <div ref="chartRef" class="flat-chart-canvas"></div>
+        <div v-show="!trendLoading" ref="chartRef" class="flat-chart-canvas"></div>
 
-        <div v-if="trendLoading" class="flat-chart-overlay">
-          <span>正在加载趋势...</span>
+        <div v-if="trendLoading" class="chart-skeleton">
+          <!-- Legend row -->
+          <div class="chart-skeleton__legend">
+            <div class="skeleton-shimmer chart-skeleton__dot"></div>
+            <div class="skeleton-shimmer chart-skeleton__label"></div>
+            <div class="chart-skeleton__toolbox">
+              <div v-for="t in 4" :key="t" class="skeleton-shimmer chart-skeleton__tool"></div>
+            </div>
+          </div>
+          <!-- Grid area -->
+          <div class="chart-skeleton__grid">
+            <div class="chart-skeleton__hlines">
+              <div v-for="l in 5" :key="l" class="chart-skeleton__hline"></div>
+            </div>
+            <!-- Animated Premium Fluid Chart Skeleton -->
+            <svg class="chart-skeleton__wave" viewBox="0 0 1000 300" preserveAspectRatio="none">
+              <path
+                d="M0,250 C200,200 300,50 500,120 C700,190 800,80 1000,150 L1000,300 L0,300 Z"
+                class="chart-skeleton__area"
+              />
+              <path
+                d="M0,250 C200,200 300,50 500,120 C700,190 800,80 1000,150"
+                class="chart-skeleton__line-base"
+              />
+              <path
+                d="M0,250 C200,200 300,50 500,120 C700,190 800,80 1000,150"
+                class="chart-skeleton__line-anim"
+              />
+            </svg>
+          </div>
+          <!-- X-axis labels -->
+          <div class="chart-skeleton__xaxis">
+            <div v-for="x in 7" :key="x" class="skeleton-shimmer chart-skeleton__xlabel"></div>
+          </div>
         </div>
+
         <div v-else-if="trendError" class="flat-chart-overlay">
           <p class="text-red-500 mb-2">{{ trendError }}</p>
           <button type="button" class="flat-action" @click="fetchTrend">重试</button>
@@ -475,15 +514,15 @@ onBeforeUnmount(() => {
 }
 
 .flat-panel {
-  background: var(--color-card, #ffffff);
-  border: 1px solid var(--color-border, #f1f2f3);
+  background: var(--color-card);
+  border: 1px solid var(--color-border);
   border-radius: 4px;
   overflow: hidden;
 }
 
 .flat-panel__header {
   padding: 16px 20px;
-  border-bottom: 1px solid var(--color-border, #f1f2f3);
+  border-bottom: 1px solid var(--color-border);
 }
 
 .flat-panel__header.with-controls {
@@ -495,7 +534,7 @@ onBeforeUnmount(() => {
 .flat-panel__title {
   font-size: 16px;
   font-weight: 600;
-  color: var(--color-foreground, #333333);
+  color: var(--color-foreground);
 }
 
 .flat-grid {
@@ -525,9 +564,9 @@ onBeforeUnmount(() => {
 }
 
 .flat-card.is-active {
-  background-color: var(--color-accent);
+  background-color: var(--color-primary);
   transform: translateY(-2px);
-  box-shadow: 0 6px 16px oklch(var(--accent) / 0.25);
+  box-shadow: 0 6px 16px color-mix(in oklch, var(--color-primary) 25%, transparent);
 }
 
 .flat-card__top {
@@ -546,20 +585,20 @@ onBeforeUnmount(() => {
 }
 
 .flat-card.is-active .flat-card__label {
-  color: #ffffff;
+  color: color-mix(in oklch, var(--color-primary-foreground) 80%, transparent);
 }
 
 .flat-card__growth {
   font-size: 12px;
-  color: var(--color-accent);
+  color: var(--color-brand-pink);
 }
 
 .flat-card__growth.is-negative {
-  color: #16a34a;
+  color: var(--color-status-success);
 }
 
 .flat-card.is-active .flat-card__growth {
-  color: #ffffff;
+  color: color-mix(in oklch, var(--color-primary-foreground) 90%, transparent);
 }
 
 .flat-card__bottom {
@@ -569,13 +608,12 @@ onBeforeUnmount(() => {
 .flat-card__value {
   font-size: 24px;
   font-weight: 700;
-  color: var(--color-primary); /* Default blue for values */
+  color: var(--color-foreground);
   line-height: 1;
 }
 
-/* Hardcode specific colors for inactive to match bilibili logic if we want, but flat blue is standard */
 .flat-card.is-active .flat-card__value {
-  color: #ffffff;
+  color: var(--color-primary-foreground);
 }
 
 /* Range Picker */
@@ -619,7 +657,7 @@ onBeforeUnmount(() => {
 .flat-chart-overlay {
   position: absolute;
   inset: 0;
-  background: rgb(255, 255, 255, 0.8);
+  background: color-mix(in oklch, var(--color-card) 88%, transparent);
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -634,28 +672,136 @@ onBeforeUnmount(() => {
   gap: 6px;
   padding: 6px 12px;
   background-color: var(--color-primary);
-  color: #fff;
+  color: var(--color-primary-foreground);
   border: 0;
   border-radius: 4px;
   font-size: 13px;
   cursor: pointer;
 }
 
-/* Skeleton */
-.skeleton-shimmer {
-  background: linear-gradient(90deg, #f1f2f3 25%, #e3e5e7 50%, #f1f2f3 75%);
-  background-size: 200% 100%;
-  animation: shimmer 1.5s infinite;
+/* Chart Skeleton */
+.chart-skeleton {
+  display: flex;
+  flex-direction: column;
+  height: 380px;
+  padding: 12px 20px 16px;
+  gap: 8px;
 }
 
-@keyframes shimmer {
+.chart-skeleton__legend {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-bottom: 8px;
+}
+
+.chart-skeleton__dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.chart-skeleton__label {
+  width: 40px;
+  height: 12px;
+  border-radius: 2px;
+}
+
+.chart-skeleton__toolbox {
+  margin-left: auto;
+  display: flex;
+  gap: 10px;
+}
+
+.chart-skeleton__tool {
+  width: 16px;
+  height: 16px;
+  border-radius: 2px;
+}
+
+.chart-skeleton__grid {
+  flex: 1;
+  position: relative;
+}
+
+.chart-skeleton__hlines {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  z-index: 0;
+}
+
+.chart-skeleton__hline {
+  height: 1px;
+  background: var(--color-border);
+  opacity: 0.3;
+}
+
+.chart-skeleton__wave {
+  position: absolute;
+  inset: 10% 0 20%;
+  width: 100%;
+  height: 60%;
+  z-index: 1;
+}
+
+.chart-skeleton__area {
+  fill: var(--color-muted);
+  opacity: 0.2;
+}
+
+.chart-skeleton__line-base {
+  fill: none;
+  stroke: var(--color-muted);
+  stroke-width: 3;
+  stroke-linecap: round;
+  opacity: 0.5;
+}
+
+.chart-skeleton__line-anim {
+  fill: none;
+  stroke: var(--color-primary);
+  stroke-width: 3;
+  stroke-linecap: round;
+  stroke-dasharray: 400 1500;
+  stroke-dashoffset: 1900;
+  animation: skel-line-flow 2.4s linear infinite;
+  opacity: 0.7;
+}
+
+@keyframes skel-line-flow {
   0% {
-    background-position: 200% 0;
+    stroke-dashoffset: 1900;
+    opacity: 0;
+  }
+
+  10% {
+    opacity: 0.8;
+  }
+
+  90% {
+    opacity: 0.8;
   }
 
   100% {
-    background-position: -200% 0;
+    stroke-dashoffset: -100;
+    opacity: 0;
   }
+}
+
+.chart-skeleton__xaxis {
+  display: flex;
+  justify-content: space-between;
+  padding-top: 4px;
+}
+
+.chart-skeleton__xlabel {
+  width: 40px;
+  height: 10px;
+  border-radius: 2px;
 }
 
 /* Dark mode adjustments (subtle) */
@@ -686,8 +832,8 @@ onBeforeUnmount(() => {
 }
 
 :global(.dark) .flat-chart-overlay {
-  background: rgb(0, 0, 0, 0.6);
-  color: #e5e7eb;
+  background: color-mix(in oklch, var(--color-card) 88%, transparent);
+  color: var(--color-muted-foreground);
 }
 
 /* Responsive constraints */

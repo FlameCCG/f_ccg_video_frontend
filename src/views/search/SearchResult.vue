@@ -249,7 +249,7 @@ onMounted(() => {
           <input
             v-model="keyword"
             type="text"
-            class="h-12 w-full rounded-md border-2 border-border bg-secondary pl-12 pr-4 text-base focus:border-[#00a1d6] focus:bg-card focus:outline-none transition-colors"
+            class="h-12 w-full rounded-md border-2 border-border bg-secondary pl-12 pr-4 text-base focus:border-primary focus:bg-card focus:outline-none transition-colors"
             placeholder="搜索你感兴趣的视频或 UP 主"
             @input="handleSearchInput"
             @keydown.enter="handleSearch()"
@@ -296,7 +296,7 @@ onMounted(() => {
                   <div
                     v-for="item in history"
                     :key="item"
-                    class="group flex items-center gap-1 rounded-md bg-secondary text-muted-foreground px-2.5 py-1.5 text-xs cursor-pointer hover:bg-[#ecedef] hover:text-foreground transition-colors"
+                    class="group flex items-center gap-1 rounded-md bg-secondary text-muted-foreground px-2.5 py-1.5 text-xs cursor-pointer hover:bg-muted hover:text-foreground transition-colors"
                     @mousedown.prevent="handleSearch(item)"
                   >
                     <span class="max-w-[140px] truncate">{{ item }}</span>
@@ -332,7 +332,7 @@ onMounted(() => {
           </div>
         </div>
         <Button
-          class="h-12 w-28 rounded-md bg-primary text-base font-medium text-white hover:bg-[#00b5e5]"
+          class="h-12 w-28 rounded-md bg-primary text-base font-medium text-primary-foreground hover:bg-primary/80"
           @click="handleSearch()"
         >
           搜索
@@ -352,15 +352,15 @@ onMounted(() => {
           {{ tab.label }}
           <span
             v-if="tab.value === 'video'"
-            class="ml-1 rounded-sm bg-secondary px-1 py-[1px] text-[11px] font-normal text-muted-foreground group-hover:text-primary group-hover:bg-[#e6f7fc]"
-            :class="activeTab === tab.value ? 'text-primary bg-[#e6f7fc]' : ''"
+            class="ml-1 rounded-sm bg-secondary px-1 py-[1px] text-[11px] font-normal text-muted-foreground group-hover:text-primary group-hover:bg-primary/10"
+            :class="activeTab === tab.value ? 'text-primary bg-primary/10' : ''"
           >
             {{ videoTotal > 99 ? '99+' : videoTotal }}
           </span>
           <span
             v-else-if="tab.value === 'user'"
-            class="ml-1 rounded-sm bg-secondary px-1 py-[1px] text-[11px] font-normal text-muted-foreground group-hover:text-primary group-hover:bg-[#e6f7fc]"
-            :class="activeTab === tab.value ? 'text-primary bg-[#e6f7fc]' : ''"
+            class="ml-1 rounded-sm bg-secondary px-1 py-[1px] text-[11px] font-normal text-muted-foreground group-hover:text-primary group-hover:bg-primary/10"
+            :class="activeTab === tab.value ? 'text-primary bg-primary/10' : ''"
           >
             {{ userTotal > 99 ? '99+' : userTotal }}
           </span>
@@ -381,7 +381,7 @@ onMounted(() => {
             class="rounded-full px-4 py-1.5 text-[13px] transition-colors"
             :class="
               activeSortKey === `${sort.sort}_${sort.order}`
-                ? 'bg-[#e6f7fc] text-primary'
+                ? 'bg-primary/10 text-primary'
                 : 'text-muted-foreground hover:text-primary'
             "
             @click="activeSort = { sort: sort.sort, order: sort.order }"

@@ -336,6 +336,18 @@ const loadVideo = async (id: number) => {
     } catch {
       // Ignore view count errors
     }
+
+    if (authStore.isLoggedIn && video.value) {
+      try {
+        videoStore.updatePlayerState({
+          currentTime: video.value.watchProgress ?? 0,
+          duration: video.value.duration,
+        })
+        await videoStore.saveProgress()
+      } catch {
+        // Ignore initial history save errors
+      }
+    }
   }
 }
 
@@ -461,19 +473,18 @@ onBeforeUnmount(() => {
               </p>
               <button
                 v-if="video.description.length > 120"
-                class="mt-1 flex items-center gap-0.5 text-sm text-muted-foreground hover:text-primary transition-colors"
+                class="mt-1 flex items-center gap-0.5 text-sm text-muted-foreground hover:text-primary transition-colors cursor-pointer active-scale"
                 @click="descExpanded = !descExpanded"
               >
                 {{ descExpanded ? '收起' : '展开更多' }}
               </button>
             </div>
 
-            <!-- Tags -->
             <div v-if="video.tags?.length" class="mt-4 flex flex-wrap items-center gap-2">
               <span
                 v-for="tag in video.tags"
                 :key="tag.id"
-                class="cursor-pointer rounded-full bg-secondary px-3 py-1.5 text-[13px] text-muted-foreground transition-colors hover:bg-accent"
+                class="cursor-pointer active-scale rounded-full bg-secondary px-3 py-1.5 text-[13px] text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
               >
                 {{ tag.name }}
               </span>
@@ -577,8 +588,8 @@ onBeforeUnmount(() => {
                   class="rounded-full border px-3 py-1 text-xs transition-colors"
                   :class="
                     reportReason === reason
-                      ? 'border-[#00a1d6] bg-[#e6f7fc] text-primary'
-                      : 'border-border bg-card text-muted-foreground hover:border-[#c9ccd0] hover:text-foreground'
+                      ? 'border-primary bg-primary/10 text-primary'
+                      : 'border-border bg-card text-muted-foreground hover:border-muted-foreground hover:text-foreground'
                   "
                   @click="reportReason = reason"
                 >
@@ -593,7 +604,7 @@ onBeforeUnmount(() => {
                 v-model="reportDetail"
                 rows="4"
                 maxlength="200"
-                class="w-full resize-none rounded-xl border border-border bg-[#fafafa] px-3 py-2 text-sm text-foreground outline-none transition-colors focus:border-[#00a1d6] focus:bg-card"
+                class="w-full resize-none rounded-xl border border-border bg-muted px-3 py-2 text-sm text-foreground outline-none transition-colors focus:border-primary focus:bg-card"
                 placeholder="选填，补充举报说明"
               />
             </div>
@@ -602,14 +613,14 @@ onBeforeUnmount(() => {
           <div class="flex items-center justify-end gap-3 border-t border-border/50 px-5 py-4">
             <button
               type="button"
-              class="rounded-full border border-border px-4 py-2 text-sm text-muted-foreground transition-colors hover:border-[#c9ccd0] hover:text-foreground"
+              class="rounded-full border border-border px-4 py-2 text-sm text-muted-foreground transition-colors hover:border-muted-foreground hover:text-foreground"
               @click="reportDialogOpen = false"
             >
               取消
             </button>
             <button
               type="submit"
-              class="rounded-full bg-accent px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-[#fc8bab] disabled:cursor-not-allowed disabled:opacity-60"
+              class="rounded-full bg-accent px-4 py-2 text-sm font-medium text-accent-foreground transition-colors hover:bg-accent/80 disabled:cursor-not-allowed disabled:opacity-60"
               :disabled="submittingReport"
             >
               {{ submittingReport ? '提交中...' : '提交举报' }}
@@ -689,7 +700,7 @@ onBeforeUnmount(() => {
 }
 
 .danmu-hover-btn:hover {
-  color: #fff;
+  color: var(--color-primary-foreground);
   background: rgb(255 255 255 / 15%);
 }
 

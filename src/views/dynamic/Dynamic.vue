@@ -888,7 +888,7 @@ watch(
           </div>
 
           <div v-if="feedItems.length === 0 && !feedLoading && feedInitLoaded" class="dyn-empty">
-            <Eye :size="48" class="text-[#c9ccd0]" />
+            <Eye :size="48" class="text-muted-foreground" />
             <p>还没有动态，关注更多UP主吧</p>
           </div>
 
@@ -995,7 +995,7 @@ watch(
   background-color: var(--color-card);
   border-radius: 8px;
   padding: 18px 14px;
-  box-shadow: 0 1px 3px rgb(0 0 0 / 0.05);
+  box-shadow: var(--shadow-surface);
 }
 
 .dyn-profile-top {
@@ -1032,7 +1032,7 @@ watch(
   border-radius: 3px;
   font-size: 10px;
   font-weight: 700;
-  color: #fff;
+  color: var(--color-primary-foreground);
   width: fit-content;
 }
 
@@ -1069,7 +1069,7 @@ watch(
   border-radius: 8px;
   margin-top: 10px;
   padding: 12px 0;
-  box-shadow: 0 1px 3px rgb(0 0 0 / 0.05);
+  box-shadow: var(--shadow-surface);
 }
 
 .dyn-left-follow-header {
@@ -1131,7 +1131,7 @@ watch(
   height: 7px;
   border-radius: 50%;
   background-color: var(--color-accent);
-  border: 1.5px solid #fff;
+  border: 1.5px solid var(--color-card);
 }
 
 .dyn-left-follow-info {
@@ -1164,7 +1164,7 @@ watch(
   border-radius: 8px;
   padding: 16px 18px;
   margin-bottom: 10px;
-  box-shadow: 0 1px 3px rgb(0 0 0 / 0.05);
+  box-shadow: var(--shadow-surface);
 }
 
 .dyn-editor-inner {
@@ -1349,7 +1349,7 @@ watch(
   border-radius: 8px;
   padding: 14px 12px;
   margin-bottom: 10px;
-  box-shadow: 0 1px 3px rgb(0 0 0 / 0.05);
+  box-shadow: var(--shadow-surface);
 }
 
 .dyn-swiper {
@@ -1500,7 +1500,7 @@ watch(
   border-radius: 8px;
   padding: 0 4px;
   margin-bottom: 10px;
-  box-shadow: 0 1px 3px rgb(0 0 0 / 0.05);
+  box-shadow: var(--shadow-surface);
 }
 
 .dyn-tab {
@@ -1549,7 +1549,7 @@ watch(
   padding: 16px 18px;
   background-color: var(--color-card);
   border-radius: 8px;
-  box-shadow: 0 1px 3px rgb(0 0 0 / 0.05);
+  box-shadow: var(--shadow-surface);
   transition:
     box-shadow 0.18s,
     background-color 0.18s;
@@ -1637,10 +1637,11 @@ watch(
   margin-top: 4px;
   margin-bottom: 4px;
   padding: 1px 6px;
-  background: oklch(var(--destructive) / 0.08);
-  color: var(--color-accent);
+  border: 1px solid var(--status-warning-border);
+  background: var(--status-warning-soft);
+  color: var(--status-warning-ink);
   font-size: 11px;
-  border-radius: 3px;
+  border-radius: 999px;
   font-weight: 500;
 }
 
@@ -1869,7 +1870,7 @@ watch(
   background-color: var(--color-card);
   border-radius: 8px;
   padding: 14px;
-  box-shadow: 0 1px 3px rgb(0 0 0 / 0.05);
+  box-shadow: var(--shadow-surface);
 }
 
 .dyn-tips-card {

@@ -23,12 +23,19 @@ import {
   type RelationInfo,
   type SocialUserInfo,
 } from '@/api/social'
-import { getFolderList, getFolderVideos, type FolderItem, type FolderVideoItem } from '@/api/video'
+import {
+  getFolderList,
+  getFolderVideos,
+  toggleVideoLike,
+  type FolderItem,
+  type FolderVideoItem,
+} from '@/api/video'
 import {
   getDynamicList,
   createDynamic,
   deleteDynamic,
   pinDynamic,
+  toggleDynamicLike,
   getWorkId,
   type WorkFeedItem,
 } from '@/api/dynamic'
@@ -37,6 +44,7 @@ import { uploadImage } from '@/api/upload'
 import { toast } from 'vue-sonner'
 import Navbar from '@/components/layout/Navbar.vue'
 import AppAvatar from '@/components/common/AppAvatar.vue'
+import CommentSection from '@/components/comment/CommentSection.vue'
 import {
   Home,
   Zap,
@@ -54,6 +62,7 @@ import {
   ImagePlus,
   Search,
   UserCheck,
+  ThumbsUp,
 } from 'lucide-vue-next'
 import {
   DropdownMenu,
@@ -97,6 +106,7 @@ const dynamicFilter = ref<'all' | 'video' | 'image'>('all')
 const newDynamicContent = ref('')
 const newDynamicImageUrl = ref('')
 const dynamicPublishing = ref(false)
+const expandedComments = ref<Set<string>>(new Set())
 
 // Videos Tab Data
 const videos = ref<UserVideoItem[]>([])
@@ -555,6 +565,49 @@ const handlePinDynamic = async (item: WorkFeedItem) => {
   }
 }
 
+const getDynamicFeedKey = (item: WorkFeedItem) => `${item.workType}-${getWorkId(item)}`
+
+const toggleComments = (item: WorkFeedItem) => {
+  const key = getDynamicFeedKey(item)
+  if (expandedComments.value.has(key)) {
+    expandedComments.value.delete(key)
+    return
+  }
+  expandedComments.value.add(key)
+}
+
+const isCommentExpanded = (item: WorkFeedItem) =>
+  expandedComments.value.has(getDynamicFeedKey(item))
+
+const getVideoId = (item: WorkFeedItem) => {
+  return item.workType === 1 && item.video ? item.video.id : undefined
+}
+
+const getDynamicId = (item: WorkFeedItem) => {
+  return item.workType === 2 && item.dynamic ? item.dynamic.id : undefined
+}
+
+const handleLike = async (item: WorkFeedItem) => {
+  if (!authStore.isLoggedIn) {
+    toast.error('请先登录')
+    return
+  }
+
+  try {
+    if (item.workType === 1 && item.video) {
+      const res = await toggleVideoLike(item.video.id)
+      item.video.isLiked = res.isLiked
+      item.video.likeCount = res.likes
+    } else if (item.workType === 2 && item.dynamic) {
+      const res = await toggleDynamicLike(item.dynamic.id)
+      item.dynamic.isLiked = res.isLiked
+      item.dynamic.likeCount = res.likeCount
+    }
+  } catch {
+    toast.error('操作失败')
+  }
+}
+
 const handleDynamicImageUpload = async (e: Event) => {
   const target = e.target as HTMLInputElement
   const file = target.files?.[0]
@@ -583,8 +636,26 @@ const toggleConf = async (key: keyof UpdateUserConfigParams) => {
   }
 }
 
-const switchTab = (tab: TabKey) => {
+const getTabQueryValue = (tab: TabKey): string | undefined => {
+  return tab === 'home' ? undefined : tab
+}
+
+const syncTabQuery = (tab: TabKey) => {
+  const currentTab = Array.isArray(route.query.tab) ? route.query.tab[0] : route.query.tab
+  const nextTab = getTabQueryValue(tab)
+
+  if ((currentTab ?? undefined) === nextTab) return
+
+  const nextQuery = { ...route.query }
+  if (nextTab) nextQuery.tab = nextTab
+  else delete nextQuery.tab
+
+  void router.replace({ path: route.path, query: nextQuery })
+}
+
+const switchTab = (tab: TabKey, syncQuery = true) => {
   activeTab.value = tab
+  if (syncQuery) syncTabQuery(tab)
   if (tab === 'home') {
     if (!homeVideos.value.length) void fetchHomeVideos()
     if (!likedVideos.value.length) void fetchLiked()
@@ -654,29 +725,26 @@ const switchDynamicFilter = (filter: 'all' | 'video' | 'image') => {
   dynamicFilter.value = filter
   dynamics.value = []
   dynamicPage.value = 1
+  expandedComments.value.clear()
   void fetchDynamics(1)
 }
 
 const applyTabFromQuery = () => {
   const tab = route.query.tab as string | undefined
   if (tab === 'favorites' && tabs.value.some((t) => t.key === 'favorites')) {
-    activeTab.value = 'favorites'
-    switchTab('favorites')
+    switchTab('favorites', false)
   } else if (tab === 'dynamic') {
-    activeTab.value = 'dynamic'
-    switchTab('dynamic')
+    switchTab('dynamic', false)
   } else if (tab === 'videos') {
-    activeTab.value = 'videos'
-    switchTab('videos')
+    switchTab('videos', false)
   } else if (tab === 'following') {
-    activeTab.value = 'following'
-    switchTab('following')
+    switchTab('following', false)
   } else if (tab === 'fans') {
-    activeTab.value = 'fans'
-    switchTab('fans')
+    switchTab('fans', false)
   } else if (tab === 'settings' && isSelf.value) {
-    activeTab.value = 'settings'
-    switchTab('settings')
+    switchTab('settings', false)
+  } else if (activeTab.value !== 'home') {
+    switchTab('home', false)
   }
 }
 
@@ -710,6 +778,9 @@ watch(userId, () => {
   folderVideos.value = []
   dynamics.value = []
   dynamicTotal.value = 0
+  dynamicPage.value = 1
+  dynamicFilter.value = 'all'
+  expandedComments.value.clear()
   userConf.value = null
   followingList.value = []
   followingTotal.value = 0
@@ -725,6 +796,7 @@ watch(userId, () => {
   void fetchLiked()
   void fetchCoined()
   void fetchFolders()
+  applyTabFromQuery()
 })
 
 const tabs = computed(() => {
@@ -782,7 +854,7 @@ const privacySettings = [
       <div class="h-header relative h-[220px]">
         <div class="absolute inset-0 z-0">
           <img v-if="user.bannerUrl" :src="user.bannerUrl" class="w-full h-full object-cover" />
-          <div v-else class="w-full h-full bg-gradient-to-r from-[#00a1d6] to-[#fb7299]"></div>
+          <div v-else class="w-full h-full bg-gradient-to-r from-primary to-accent"></div>
         </div>
         <div class="absolute top-0 left-0 right-0 z-50">
           <Navbar class="text-white" />
@@ -825,7 +897,7 @@ const privacySettings = [
                   :class="
                     isFollowed
                       ? 'bg-card/20 hover:bg-card/30 border border-white/50'
-                      : 'bg-primary hover:bg-[#00b5e5] border border-transparent'
+                      : 'bg-primary hover:bg-primary/80 border border-transparent'
                   "
                   @click="handleFollow"
                 >
@@ -1170,7 +1242,7 @@ const privacySettings = [
                 <div class="flex-1">
                   <textarea
                     v-model="newDynamicContent"
-                    class="w-full border border-border rounded-lg p-3 text-[13px] resize-none focus:outline-none focus:border-[#00a1d6] transition-colors"
+                    class="w-full border border-border rounded-lg p-3 text-[13px] resize-none focus:outline-none focus:border-primary transition-colors"
                     rows="3"
                     placeholder="有什么想和大家分享的？"
                   ></textarea>
@@ -1196,7 +1268,7 @@ const privacySettings = [
                       />
                     </label>
                     <button
-                      class="px-5 py-1.5 rounded bg-primary hover:bg-[#00b5e5] text-white text-[13px] transition-colors disabled:opacity-50"
+                      class="px-5 py-1.5 rounded bg-primary hover:bg-primary/80 text-primary-foreground text-[13px] transition-colors disabled:opacity-50"
                       :disabled="dynamicPublishing || !newDynamicContent.trim()"
                       @click="publishDynamic"
                     >
@@ -1229,7 +1301,7 @@ const privacySettings = [
                   <div class="flex items-center justify-between">
                     <div>
                       <span
-                        class="text-[14px] font-medium text-primary cursor-pointer hover:text-[#00b5e5]"
+                        class="text-[14px] font-medium text-primary cursor-pointer hover:text-primary/80"
                         @click="router.push(`/user/${item.author.id}`)"
                         >{{ item.author.username }}</span
                       >
@@ -1273,7 +1345,7 @@ const privacySettings = [
                   <!-- Pinned badge -->
                   <div
                     v-if="item.dynamic?.isPinned || item.video?.isPinned"
-                    class="inline-flex items-center gap-1 mt-1 px-1.5 py-0.5 bg-[#fff0f0] text-accent text-[11px] rounded"
+                    class="mt-1 inline-flex items-center gap-1 rounded-full border border-[var(--status-warning-border)] bg-[var(--status-warning-soft)] px-2 py-0.5 text-[11px] font-medium text-[var(--status-warning-ink)]"
                   >
                     <Pin :size="10" /> 已置顶
                   </div>
@@ -1293,7 +1365,7 @@ const privacySettings = [
                   <!-- Video card in dynamic -->
                   <div
                     v-if="item.workType === 1 && item.video"
-                    class="mt-3 flex gap-3 p-3 bg-secondary rounded-lg cursor-pointer hover:bg-[#eef0f2] transition-colors"
+                    class="mt-3 flex gap-3 p-3 bg-secondary rounded-lg cursor-pointer hover:bg-muted transition-colors"
                     @click="goVideo(item.video!.id)"
                   >
                     <div
@@ -1312,6 +1384,65 @@ const privacySettings = [
                       </h4>
                     </div>
                   </div>
+
+                  <div
+                    class="mt-4 flex flex-wrap items-center gap-2 border-t border-border/60 pt-3"
+                  >
+                    <button
+                      class="inline-flex min-w-[78px] items-center gap-1.5 rounded-full px-3 py-1.5 text-[13px] transition-colors"
+                      :class="
+                        isCommentExpanded(item)
+                          ? 'bg-primary/8 text-primary'
+                          : 'text-muted-foreground/80 hover:bg-secondary hover:text-foreground'
+                      "
+                      @click="toggleComments(item)"
+                    >
+                      <MessageSquare :size="14" />
+                      <span v-if="item.workType === 1 && item.video?.commentCount">{{
+                        item.video.commentCount
+                      }}</span>
+                      <span v-else-if="item.workType === 2 && item.dynamic?.commentCount">{{
+                        item.dynamic.commentCount
+                      }}</span>
+                      <span v-else>评论</span>
+                    </button>
+                    <button
+                      class="inline-flex min-w-[78px] items-center gap-1.5 rounded-full px-3 py-1.5 text-[13px] transition-colors hover:bg-secondary"
+                      :class="
+                        item.workType === 1
+                          ? item.video?.isLiked
+                            ? 'text-primary'
+                            : 'text-muted-foreground/80 hover:text-foreground'
+                          : item.dynamic?.isLiked
+                            ? 'text-primary'
+                            : 'text-muted-foreground/80 hover:text-foreground'
+                      "
+                      @click="handleLike(item)"
+                    >
+                      <ThumbsUp
+                        :size="14"
+                        :class="{
+                          'fill-current':
+                            item.workType === 1 ? item.video?.isLiked : item.dynamic?.isLiked,
+                        }"
+                      />
+                      <span v-if="item.workType === 1 && item.video?.likeCount">{{
+                        item.video.likeCount
+                      }}</span>
+                      <span v-else-if="item.workType === 2 && item.dynamic?.likeCount">{{
+                        item.dynamic.likeCount
+                      }}</span>
+                      <span v-else>点赞</span>
+                    </button>
+                  </div>
+
+                  <div v-if="isCommentExpanded(item)" class="mt-4 border-t border-border/50 pt-4">
+                    <CommentSection
+                      :video-id="getVideoId(item)"
+                      :dynamic-id="getDynamicId(item)"
+                      :author-id="item.author.id"
+                    />
+                  </div>
                 </div>
               </div>
             </div>
@@ -1325,7 +1456,7 @@ const privacySettings = [
 
             <div v-if="dynamics.length < dynamicTotal" class="text-center pt-2">
               <button
-                class="px-6 py-1.5 rounded border border-border text-muted-foreground text-[12px] hover:text-primary hover:border-[#00a1d6] transition-colors"
+                class="px-6 py-1.5 rounded border border-border text-muted-foreground text-[12px] hover:text-primary hover:border-primary transition-colors"
                 :disabled="dynamicsLoading"
                 @click="loadMoreDynamics"
               >
@@ -1402,7 +1533,12 @@ const privacySettings = [
             </div>
 
             <div v-if="videos.length > 0" class="grid grid-cols-6 gap-5">
-              <div v-for="v in videos" :key="v.id" class="u-video-card" @click="goVideo(v.id)">
+              <div
+                v-for="v in videos"
+                :key="v.id"
+                class="u-video-card cursor-pointer hover-lift"
+                @click="goVideo(v.id)"
+              >
                 <div class="uvc-cover">
                   <img :src="v.cover" />
                   <div class="uvc-stats">
@@ -1424,7 +1560,7 @@ const privacySettings = [
 
             <div v-if="videos.length < videoTotal" class="text-center mt-6">
               <button
-                class="px-6 py-1.5 rounded border border-border text-muted-foreground text-[12px] hover:text-primary hover:border-[#00a1d6] transition-colors"
+                class="px-6 py-1.5 rounded border border-border text-muted-foreground text-[12px] hover:text-primary hover:border-primary transition-colors"
                 :disabled="videosLoading"
                 @click="loadMoreVideos"
               >
@@ -1491,7 +1627,7 @@ const privacySettings = [
                   </button>
                 </div>
                 <button
-                  class="flex items-center gap-1 px-4 py-1.5 rounded bg-primary hover:bg-[#00b5e5] text-white text-[12px] transition-colors"
+                  class="flex items-center gap-1 px-4 py-1.5 rounded bg-primary hover:bg-primary/80 text-primary-foreground text-[12px] transition-colors"
                 >
                   <Play :size="12" fill="currentColor" /> 播放全部
                 </button>
@@ -1529,7 +1665,7 @@ const privacySettings = [
 
             <div v-if="folderVideos.length < folderVideoTotal" class="text-center mt-6">
               <button
-                class="px-6 py-1.5 rounded border border-border text-muted-foreground text-[12px] hover:text-primary hover:border-[#00a1d6] transition-colors"
+                class="px-6 py-1.5 rounded border border-border text-muted-foreground text-[12px] hover:text-primary hover:border-primary transition-colors"
                 :disabled="folderVideosLoading"
                 @click="loadMoreFolderVideos"
               >
@@ -1640,7 +1776,7 @@ const privacySettings = [
               <div v-if="activeTab === 'following'" class="relative">
                 <input
                   v-model="followingKeyword"
-                  class="w-[200px] h-[32px] pl-3 pr-8 rounded border border-border text-[13px] focus:outline-none focus:border-[#00a1d6] transition-colors"
+                  class="w-[200px] h-[32px] pl-3 pr-8 rounded border border-border text-[13px] focus:outline-none focus:border-primary transition-colors"
                   placeholder="搜索关注"
                   @keyup.enter="searchFollowing"
                 />
@@ -1653,7 +1789,7 @@ const privacySettings = [
               <div v-else class="relative">
                 <input
                   v-model="fansKeyword"
-                  class="w-[200px] h-[32px] pl-3 pr-8 rounded border border-border text-[13px] focus:outline-none focus:border-[#00a1d6] transition-colors"
+                  class="w-[200px] h-[32px] pl-3 pr-8 rounded border border-border text-[13px] focus:outline-none focus:border-primary transition-colors"
                   placeholder="搜索粉丝"
                   @keyup.enter="searchFans"
                 />
@@ -1712,7 +1848,7 @@ const privacySettings = [
                 class="text-center mt-6"
               >
                 <button
-                  class="px-6 py-1.5 rounded border border-border text-muted-foreground text-[12px] hover:text-primary hover:border-[#00a1d6] transition-colors"
+                  class="px-6 py-1.5 rounded border border-border text-muted-foreground text-[12px] hover:text-primary hover:border-primary transition-colors"
                   :disabled="followingLoading"
                   @click="loadMoreFollowing"
                 >
@@ -1768,7 +1904,7 @@ const privacySettings = [
                 class="text-center mt-6"
               >
                 <button
-                  class="px-6 py-1.5 rounded border border-border text-muted-foreground text-[12px] hover:text-primary hover:border-[#00a1d6] transition-colors"
+                  class="px-6 py-1.5 rounded border border-border text-muted-foreground text-[12px] hover:text-primary hover:border-primary transition-colors"
                   :disabled="fansLoading"
                   @click="loadMoreFans"
                 >

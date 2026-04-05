@@ -152,7 +152,7 @@ const getLikeTitleParts = (item: NotificationItem) => {
               <button
                 v-if="getLikeTitleParts(item).target && canOpenTarget(item)"
                 type="button"
-                class="cursor-pointer font-medium text-[#00aeec] transition-opacity hover:opacity-80"
+                class="cursor-pointer font-medium text-primary transition-opacity hover:opacity-80"
                 @click="goLink(item)"
               >
                 {{ getLikeTitleParts(item).target }}

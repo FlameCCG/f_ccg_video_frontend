@@ -233,7 +233,7 @@ watch(searchKeyword, (val) => {
                     @click.stop="toggleSelect(item.videoId)"
                   >
                     <CheckSquare v-if="isSelected(item.videoId)" :size="18" class="text-primary" />
-                    <Square v-else :size="18" class="text-[#c9ccd0]" />
+                    <Square v-else :size="18" class="text-muted-foreground" />
                   </button>
                   <div class="hist-item-cover" @click="goVideo(item.videoId)">
                     <img :src="item.cover" />
@@ -280,7 +280,7 @@ watch(searchKeyword, (val) => {
           v-if="historyItems.length === 0 && !historyLoading && historyInitLoaded"
           class="hist-empty"
         >
-          <Clock :size="48" class="text-[#c9ccd0]" />
+          <Clock :size="48" class="text-muted-foreground" />
           <p>暂无历史记录</p>
         </div>
 
@@ -375,7 +375,7 @@ watch(searchKeyword, (val) => {
 }
 
 .hist-search-input::placeholder {
-  color: #c0c0c0;
+  color: var(--color-muted-foreground);
 }
 
 .hist-search-clear {
@@ -423,9 +423,9 @@ watch(searchKeyword, (val) => {
   gap: 16px;
   padding: 10px 16px;
   margin-bottom: 12px;
-  background: #f0f8ff;
+  background: oklch(var(--primary) / 0.08);
   border-radius: 8px;
-  border: 1px solid #d3ecff;
+  border: 1px solid oklch(var(--primary) / 0.15);
 }
 
 .hist-batch-count {
@@ -441,7 +441,7 @@ watch(searchKeyword, (val) => {
   padding: 5px 14px;
   border-radius: 6px;
   font-size: 13px;
-  color: #fff;
+  color: var(--color-primary-foreground);
   background-color: var(--color-accent);
   border: none;
   cursor: pointer;
@@ -449,7 +449,7 @@ watch(searchKeyword, (val) => {
 }
 
 .hist-batch-delete:hover:not(:disabled) {
-  background: #fc8bab;
+  background: var(--color-accent);
 }
 
 .hist-batch-delete:disabled {
@@ -480,8 +480,9 @@ watch(searchKeyword, (val) => {
   width: 10px;
   height: 10px;
   border-radius: 50%;
-  background-color: var(--color-primary);
-  border: 2px solid #d3ecff;
+  background: oklch(var(--primary) / 0.06);
+  color: var(--color-primary);
+  border: 1px solid oklch(var(--primary) / 0.15);
   flex-shrink: 0;
 }
 
@@ -495,7 +496,7 @@ watch(searchKeyword, (val) => {
   position: relative;
   padding-left: 22px;
   margin-left: 4px;
-  border-left: 2px solid #e3e5e7;
+  border-left: 2px solid var(--color-border);
 }
 
 /* ===================== History Items ===================== */
@@ -516,16 +517,16 @@ watch(searchKeyword, (val) => {
   transition:
     box-shadow 0.18s,
     transform 0.18s;
-  box-shadow: 0 1px 3px rgb(0 0 0 / 0.04);
+  box-shadow: var(--shadow-surface);
 }
 
 .hist-item:hover {
-  box-shadow: 0 4px 12px rgb(0 0 0 / 0.08);
+  box-shadow: var(--shadow-raised);
   transform: translateY(-2px);
 }
 
 .hist-item-selected {
-  outline: 2px solid #00a1d6;
+  outline: 2px solid var(--color-primary);
   outline-offset: -2px;
 }
 
@@ -539,7 +540,7 @@ watch(searchKeyword, (val) => {
   border: none;
   cursor: pointer;
   padding: 2px;
-  box-shadow: 0 1px 3px rgb(0 0 0 / 0.15);
+  box-shadow: var(--shadow-raised);
 }
 
 .hist-item-cover {
@@ -566,7 +567,7 @@ watch(searchKeyword, (val) => {
   bottom: 14px;
   right: 6px;
   background: rgb(0 0 0 / 0.7);
-  color: #fff;
+  color: var(--color-primary-foreground);
   font-size: 11px;
   padding: 1px 5px;
   border-radius: 3px;
@@ -621,6 +622,7 @@ watch(searchKeyword, (val) => {
   color: var(--color-foreground);
   display: -webkit-box;
   -webkit-line-clamp: 2;
+  line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
   line-height: 1.4;
@@ -664,7 +666,7 @@ watch(searchKeyword, (val) => {
   height: 26px;
   border-radius: 50%;
   background: rgb(0 0 0 / 0.5);
-  color: #fff;
+  color: var(--color-primary-foreground);
   border: none;
   cursor: pointer;
   display: flex;

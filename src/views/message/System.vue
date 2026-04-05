@@ -85,7 +85,7 @@ const openLink = (url: string) => window.open(url, '_blank')
           <!-- Left Avatar (System Icon) -->
           <div class="shrink-0 pt-1">
             <div
-              class="flex h-[46px] w-[46px] items-center justify-center rounded-full bg-blue-500/10 text-blue-500"
+              class="flex h-[46px] w-[46px] items-center justify-center rounded-full bg-[var(--status-info-soft)] text-[var(--status-info-ink)]"
             >
               <svg
                 xmlns="http://www.w3.org/2000/svg"

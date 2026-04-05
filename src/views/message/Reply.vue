@@ -118,7 +118,7 @@ const goReply = (item: NotificationItem) => {
               <button
                 v-if="canOpenTarget(item)"
                 type="button"
-                class="-ml-2 inline-flex max-w-full cursor-pointer rounded-md px-2 py-1 text-left text-sm text-foreground transition-colors hover:bg-[#00aeec]/8 hover:text-[#00aeec]"
+                class="-ml-2 inline-flex max-w-full cursor-pointer rounded-md px-2 py-1 text-left text-sm text-foreground transition-colors hover:bg-primary/8 hover:text-primary"
                 @click="goReply(item)"
               >
                 <span class="break-words whitespace-pre-wrap">{{ item.content }}</span>
@@ -145,7 +145,7 @@ const goReply = (item: NotificationItem) => {
             @click="goReply(item)"
           >
             <div
-              class="h-[60px] overflow-hidden rounded bg-muted p-2 text-xs text-muted-foreground line-clamp-2 transition-colors hover:text-[#00aeec]"
+              class="h-[60px] overflow-hidden rounded bg-muted p-2 text-xs text-muted-foreground line-clamp-2 transition-colors hover:text-primary"
             >
               {{ item.videoTitle }}
             </div>

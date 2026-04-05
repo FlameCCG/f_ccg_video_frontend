@@ -19,9 +19,9 @@ const fixedLinks = [
     name: '动态',
     path: '/dynamic',
     icon: Activity,
-    color: 'bg-gradient-to-br from-orange-400 to-orange-500',
+    color: 'signal-badge-dynamic',
   },
-  { name: '热门', path: '/hot', icon: Flame, color: 'bg-gradient-to-br from-red-400 to-red-500' },
+  { name: '热门', path: '/hot', icon: Flame, color: 'signal-badge-hot' },
 ]
 </script>
 
@@ -37,14 +37,16 @@ const fixedLinks = [
           class="group flex flex-col items-center gap-1.5 cursor-pointer"
         >
           <div
-            class="flex h-[46px] w-[46px] items-center justify-center rounded-full text-white shadow-sm transition-transform group-hover:scale-105"
+            class="flex h-[46px] w-[46px] items-center justify-center rounded-full text-[var(--signal-foreground)] shadow-sm transition-transform group-hover:scale-105"
             :class="link.color"
           >
             <component :is="link.icon" class="h-[22px] w-[22px]" />
           </div>
-          <span class="text-[14px] text-foreground/80 group-hover:text-primary transition-colors">{{
-            link.name
-          }}</span>
+          <span
+            class="text-[14px] text-foreground/80 group-hover:text-foreground transition-colors"
+          >
+            {{ link.name }}
+          </span>
         </router-link>
       </div>
 
@@ -56,7 +58,7 @@ const fixedLinks = [
           v-for="partition in partitions"
           :key="partition.id"
           :to="`/partition/${partition.id}`"
-          class="flex h-[26px] items-center justify-center rounded-md bg-[#F6F7F8] px-2 text-[13px] tracking-wide text-[#61666D] transition-colors hover:bg-[#E3E5E7] hover:text-[#18191C] cursor-pointer"
+          class="flex h-[26px] items-center justify-center rounded-md bg-secondary px-2 text-[13px] tracking-wide text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground cursor-pointer"
         >
           {{ partition.name }}
         </router-link>

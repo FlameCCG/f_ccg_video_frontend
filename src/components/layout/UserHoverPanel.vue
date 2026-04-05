@@ -1,10 +1,11 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRouter, type RouteLocationRaw } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { useThemeStore } from '@/stores/theme'
 import { User, LogOut, FileVideo, Sun, Moon } from 'lucide-vue-next'
 import AppAvatar from '@/components/common/AppAvatar.vue'
+import { levelColor, formatCount } from '@/utils/format'
 
 const emit = defineEmits<{
   (e: 'close'): void
@@ -16,21 +17,16 @@ const themeStore = useThemeStore()
 
 const isDark = computed(() => themeStore.theme === 'dark')
 
-const levelColor = (level: number): string => {
-  if (level >= 6) return '#ff6699'
-  if (level >= 4) return '#ffb636'
-  if (level >= 2) return '#7bcfa6'
-  return '#c0c0c0'
-}
-
-const formatCount = (n: number): string => {
-  if (n >= 10000) return `${(n / 10000).toFixed(1)}万`
-  return n.toString()
-}
-
-const navigate = (path: string) => {
+const navigate = (target: RouteLocationRaw) => {
   emit('close')
-  void router.push(path)
+  void router.push(target)
+}
+
+const navigateToUserTab = (tab: 'following' | 'fans' | 'dynamic') => {
+  navigate({
+    path: `/user/${authStore.userId}`,
+    query: { tab },
+  })
 }
 
 const handleLogout = () => {
@@ -45,7 +41,7 @@ const toggleTheme = () => {
 </script>
 
 <template>
-  <div class="user-hover-panel">
+  <div class="user-hover-panel text-popover-foreground bg-popover">
     <!-- Big Avatar -->
     <div class="panel-avatar-wrap" @click="navigate(`/user/${authStore.userId}`)">
       <AppAvatar
@@ -79,28 +75,17 @@ const toggleTheme = () => {
 
     <!-- Stats -->
     <div class="panel-stats">
-      <div class="stat-item" @click="navigate(`/user/${authStore.userId}`)">
+      <div class="stat-item" @click="navigateToUserTab('following')">
         <span class="stat-value">{{ formatCount(authStore.user?.followCount ?? 0) }}</span>
         <span class="stat-label">关注</span>
       </div>
-      <div class="stat-item" @click="navigate(`/user/${authStore.userId}`)">
+      <div class="stat-item" @click="navigateToUserTab('fans')">
         <span class="stat-value">{{ formatCount(authStore.user?.fansCount ?? 0) }}</span>
         <span class="stat-label">粉丝</span>
       </div>
-      <div class="stat-item" @click="navigate(`/user/${authStore.userId}`)">
+      <div class="stat-item" @click="navigateToUserTab('dynamic')">
         <span class="stat-value">{{ formatCount(authStore.user?.dynamicCount ?? 0) }}</span>
         <span class="stat-label">动态</span>
-      </div>
-    </div>
-
-    <!-- VIP Banner -->
-    <div class="vip-wrap px-4 pb-3">
-      <div class="vip-banner">
-        <div class="vip-text text-left">
-          <div class="text-xs font-medium text-[#ff6699]">悄悄成为大会员</div>
-          <div class="text-[10px] text-[#ff6699]/80 mt-0.5">然后惊艳所有人</div>
-        </div>
-        <div class="vip-btn">会员中心</div>
       </div>
     </div>
 
@@ -136,28 +121,16 @@ const toggleTheme = () => {
   </div>
 </template>
 
-<style scoped>
+<style scoped lang="scss">
 .user-hover-panel {
   width: 300px;
   position: relative;
-  background: hsl(var(--card));
-  border-radius: 12px;
-  color: hsl(var(--card-foreground));
-  box-shadow: 0 4px 24px -6px rgb(0 0 0 / 0.15);
-  border: 1px solid hsl(var(--border) / 0.6);
+  background-color: var(--color-popover);
+  border-radius: var(--radius-xl);
+  color: var(--color-popover-foreground);
+  box-shadow: var(--shadow-overlay);
+  border: 1px solid var(--color-border);
   animation: panel-enter 0.25s cubic-bezier(0.22, 1, 0.36, 1);
-}
-
-@keyframes panel-enter {
-  0% {
-    opacity: 0;
-    transform: translateY(-8px);
-  }
-
-  100% {
-    opacity: 1;
-    transform: translateY(0);
-  }
 }
 
 .panel-avatar-wrap {
@@ -170,32 +143,21 @@ const toggleTheme = () => {
   animation: avatar-enter 0.4s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
 }
 
-@keyframes avatar-enter {
-  0% {
-    transform: translate(0, -24px) scale(0.4);
-  }
-
-  100% {
-    transform: translate(0, 0) scale(1);
-  }
-}
-
 :deep(.panel-avatar) {
   width: 80px !important;
   height: 80px !important;
   border-radius: 50% !important;
-  border: 2px solid hsl(var(--card)) !important;
-  background-color: hsl(var(--card)) !important;
+  border: 2px solid var(--color-popover) !important;
+  background-color: var(--color-popover) !important;
   transition:
-    transform 0.2s,
-    box-shadow 0.2s;
+    transform var(--duration-normal) var(--ease-out-expo),
+    box-shadow var(--duration-normal) var(--ease-out-expo);
 }
 
 :deep(.panel-avatar:hover) {
   transform: scale(1.05);
 }
 
-/* User Info Section */
 .user-info {
   display: flex;
   flex-direction: column;
@@ -204,22 +166,22 @@ const toggleTheme = () => {
   padding-bottom: 12px;
 }
 
-.username-row {
-  display: flex;
-  justify-content: center;
-  align-items: center;
-}
-
 .username {
   font-size: 18px;
   font-weight: 700;
   cursor: pointer;
-  color: hsl(var(--foreground));
+  color: var(--color-foreground);
   transition: color 0.15s;
-}
 
-.username:hover {
-  color: hsl(var(--primary));
+  &-row {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+  }
+
+  &:hover {
+    color: var(--color-primary);
+  }
 }
 
 .level-row {
@@ -244,10 +206,9 @@ const toggleTheme = () => {
 .coin-row {
   margin-top: 8px;
   font-size: 12px;
-  color: hsl(var(--muted-foreground));
+  color: var(--color-muted-foreground);
 }
 
-/* Stats Section */
 .panel-stats {
   display: flex;
   padding: 0 20px 16px;
@@ -262,59 +223,65 @@ const toggleTheme = () => {
   padding: 6px 0;
   border-radius: 6px;
   transition: background 0.15s;
-}
 
-.stat-item:hover {
-  background: hsl(var(--muted));
+  &:hover {
+    background-color: var(--color-muted);
+  }
 }
 
 .stat-value {
   font-size: 16px;
   font-weight: 700;
-  color: hsl(var(--foreground));
+  color: var(--color-foreground);
 }
 
 .stat-label {
   font-size: 12px;
-  color: hsl(var(--muted-foreground));
+  color: var(--color-muted-foreground);
   margin-top: 2px;
 }
 
-/* VIP Banner Section */
 .vip-banner {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  background: linear-gradient(90deg, #fff0f5 0%, #fff 100%);
-  border: 1px solid #ffe4e1;
+  background: linear-gradient(
+    90deg,
+    oklch(from var(--color-accent) l c h / 0.08) 0%,
+    var(--color-card) 100%
+  );
+  border: 1px solid oklch(from var(--color-accent) l c h / 0.2);
   border-radius: 6px;
   padding: 10px 14px;
 }
 
 :global(.dark) .vip-banner {
-  background: linear-gradient(90deg, rgb(255, 102, 153, 0.1) 0%, rgb(255, 102, 153, 0) 100%);
-  border-color: rgb(255, 102, 153, 0.2);
+  background: linear-gradient(
+    90deg,
+    oklch(from var(--color-brand-pink) l c h / 0.14) 0%,
+    oklch(from var(--color-brand-pink) l c h / 0) 100%
+  );
+  border-color: oklch(from var(--color-brand-pink) l c h / 0.22);
 }
 
 .vip-btn {
-  background: #ff6699;
-  color: white;
+  background: var(--color-accent);
+  color: var(--signal-foreground);
   font-size: 12px;
   padding: 4px 10px;
   border-radius: 4px;
   font-weight: 500;
   cursor: pointer;
   transition: opacity 0.2s;
+
+  &:hover {
+    opacity: 0.9;
+  }
 }
 
-.vip-btn:hover {
-  opacity: 0.9;
-}
-
-/* Menu Section */
 .panel-menu {
   padding: 6px 12px;
-  border-top: 1px solid hsl(var(--border) / 0.4);
+  border-top: 1px solid var(--color-border);
 }
 
 .menu-item {
@@ -328,14 +295,44 @@ const toggleTheme = () => {
   transition:
     background 0.15s,
     color 0.15s;
-  color: hsl(var(--foreground));
-}
+  color: var(--color-foreground);
 
-.menu-item:hover {
-  background: hsl(var(--muted) / 0.6);
+  &:hover {
+    background-color: var(--color-muted);
+  }
 }
 
 .logout-item:hover {
-  background: hsl(var(--muted) / 0.4);
+  background-color: var(--color-muted);
 }
+
+@keyframes panel-enter {
+  0% {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes avatar-enter {
+  0% {
+    transform: translate(0, -24px) scale(0.4);
+  }
+
+  100% {
+    transform: translate(0, 0) scale(1);
+  }
+}
+
+/* User Info Section */
+
+/* Stats Section */
+
+/* VIP Banner Section */
+
+/* Menu Section */
 </style>

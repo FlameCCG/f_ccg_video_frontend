@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, computed, onBeforeUnmount } from 'vue'
+import { ref, onMounted, computed, onBeforeUnmount, defineAsyncComponent } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useRouter, useRoute } from 'vue-router'
 import {
@@ -25,29 +25,29 @@ import { getDynamicCounts } from '@/api/dynamic'
 import { useAuthStore } from '@/stores/auth'
 import { useNotificationStore } from '@/stores/notification'
 import { useSearchHistory } from '@/composables/useSearchHistory'
-import AuthDialog from '@/components/auth/AuthDialog.vue'
+import { useDebounceFn } from '@vueuse/core'
 import UserHoverPanel from '@/components/layout/UserHoverPanel.vue'
 import AppAvatar from '@/components/common/AppAvatar.vue'
+import DOMPurify from 'dompurify'
+
+/** 登录 Dialog 按需加载，避免首屏同步打包 Lain/验证码等重依赖 */
+const AuthDialog = defineAsyncComponent(() => import('@/components/auth/AuthDialog.vue'))
 
 const props = withDefaults(defineProps<{ light?: boolean }>(), { light: false })
 
 const navActionTextClass = computed(() =>
   props.light
-    ? 'text-[#61666d] transition-colors hover:text-[#18191c]'
+    ? 'text-muted-foreground transition-colors hover:text-foreground'
     : 'text-white/90 transition-colors hover:text-white'
 )
 
 const avatarBorderClass = computed(() =>
   props.light
-    ? 'border-[#e3e5e7] group-hover:border-[#00a1d6]'
+    ? 'border-border group-hover:border-primary'
     : 'border-white/50 group-hover:border-white'
 )
 
-const searchBgClass = computed(() =>
-  props.light
-    ? 'bg-[#f4f5f7] text-foreground ring-1 ring-[#e3e5e7] focus-visible:ring-primary/50'
-    : 'bg-white/95 text-foreground focus-visible:ring-primary/50'
-)
+const searchContainerClass = computed(() => (props.light ? 'search-bar-solid' : 'search-bar-glass'))
 
 const router = useRouter()
 const route = useRoute()
@@ -57,12 +57,14 @@ const notificationStore = useNotificationStore()
 const { counts } = storeToRefs(notificationStore)
 const { history, addHistory, removeHistoryItem, clearHistory } = useSearchHistory()
 
-// Auth dialog state
+// Auth dialog state — 首次打开后再挂载，关闭保留实例以便二次打开即时
 const authDialogOpen = ref(false)
 const authDialogMode = ref<'login' | 'register'>('login')
+const authDialogMounted = ref(false)
 
 const openAuthDialog = (mode: 'login' | 'register' = 'login') => {
   authDialogMode.value = mode
+  authDialogMounted.value = true
   authDialogOpen.value = true
 }
 
@@ -123,19 +125,47 @@ onMounted(async () => {
 })
 
 // Search Logic
-const handleSearchInput = async () => {
-  if (!searchQuery.value.trim()) {
+// 短防抖：输入即联想，同时合并连打请求；用序号丢弃过期响应
+let suggestSeq = 0
+const fetchSuggestions = useDebounceFn(async (prefix: string) => {
+  const q = prefix.trim()
+  if (!q) {
     searchSuggestions.value = []
-    showSuggestions.value = true
     return
   }
+  const seq = ++suggestSeq
   try {
-    const suggestions = await getSearchSuggest({ prefix: searchQuery.value })
-    searchSuggestions.value = suggestions
-    showSuggestions.value = true
+    const list = await getSearchSuggest({ prefix: q })
+    if (seq !== suggestSeq) return
+    searchSuggestions.value = list.map((item) => ({
+      ...item,
+      highlight: ensureSuggestHighlight(item, q),
+    }))
   } catch (error) {
+    if (seq !== suggestSeq) return
     console.error('Failed to fetch suggestions:', error)
   }
+}, 100)
+
+/** 后端未返回 <em> 时前端兜底高亮字面匹配段 */
+const ensureSuggestHighlight = (item: SearchSuggestItem, query: string) => {
+  if (item.highlight?.includes('<em>')) return item.highlight
+  const value = item.value || ''
+  if (!query || !value) return value
+  const idx = value.toLowerCase().indexOf(query.toLowerCase())
+  if (idx < 0) return value
+  return value.slice(0, idx) + '<em>' + value.slice(idx, idx + query.length) + '</em>' + value.slice(idx + query.length)
+}
+
+const handleSearchInput = () => {
+  showSuggestions.value = true
+  const q = searchQuery.value.trim()
+  // 单字也实时联想（中文「毛」、英/数「c」）
+  if (!q) {
+    searchSuggestions.value = []
+    return
+  }
+  void fetchSuggestions(searchQuery.value)
 }
 
 const handleSearch = (query: string) => {
@@ -187,6 +217,13 @@ onBeforeUnmount(() => {
   if (hoverTimer) clearTimeout(hoverTimer)
 })
 
+const sanitizeHighlight = (html: string) => {
+  return DOMPurify.sanitize(html, {
+    ALLOWED_TAGS: ['em'],
+    ALLOWED_ATTR: [],
+  })
+}
+
 // Nav action items
 const navActions = [
   { name: '大会员', icon: Crown, path: '/vip', mobileHidden: true },
@@ -214,15 +251,26 @@ const navActions = [
       v-if="!isSearchPage"
       class="absolute left-1/2 top-1/2 z-10 w-full max-w-[500px] -translate-x-1/2 -translate-y-1/2 px-4"
     >
-      <div class="relative w-full">
-        <div class="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-4">
-          <Search class="h-4 w-4 text-muted-foreground" />
+      <div class="relative w-full group">
+        <div
+          class="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-4 z-10 transition-colors duration-300"
+        >
+          <Search
+            class="h-4 w-4"
+            :class="[
+              searchQuery
+                ? 'text-primary'
+                : props.light
+                  ? 'text-muted-foreground/80'
+                  : 'text-white/80 group-focus-within:text-muted-foreground/80',
+            ]"
+          />
         </div>
         <input
           v-model="searchQuery"
           type="text"
-          class="flex h-10 w-full rounded-full border-0 px-4 py-2 pl-10 pr-4 text-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 transition-all"
-          :class="searchBgClass"
+          class="flex h-10 w-full rounded-full px-4 py-2 pl-10 pr-4 text-sm focus-visible:outline-none search-input-base"
+          :class="searchContainerClass"
           placeholder="搜索视频、UP主..."
           @input="handleSearchInput"
           @keydown.enter="handleSearch(searchQuery)"
@@ -246,7 +294,7 @@ const navActions = [
               class="search-suggestion-item cursor-pointer px-4 py-2.5 text-sm hover:bg-accent hover:text-accent-foreground flex items-center gap-2"
               @mousedown.prevent="handleSearch(item.value)"
             >
-              <span class="truncate" v-html="item.highlight"></span>
+              <span class="truncate" v-html="sanitizeHighlight(item.highlight)"></span>
             </div>
           </template>
 
@@ -269,7 +317,7 @@ const navActions = [
                 <div
                   v-for="item in history"
                   :key="item"
-                  class="group flex items-center gap-1 rounded-md bg-[#f4f5f7] text-[#61666d] px-2.5 py-1.5 text-xs cursor-pointer hover:bg-[#ecedef] hover:text-[#18191c] transition-colors"
+                  class="group flex items-center gap-1 rounded-md bg-secondary text-secondary-foreground px-2.5 py-1.5 text-xs cursor-pointer hover:bg-accent hover:text-accent-foreground transition-colors"
                   @mousedown.prevent="handleSearch(item)"
                 >
                   <span class="truncate max-w-[140px]">{{ item }}</span>
@@ -373,13 +421,13 @@ const navActions = [
                 <!-- Badge -->
                 <span
                   v-if="action.badge === 'message' && totalMessageUnread > 0"
-                  class="absolute -right-1 -top-1 flex h-4 min-w-[16px] items-center justify-center rounded-full bg-red-500 px-1 text-[10px] text-white"
+                  class="absolute -right-1 -top-1 flex h-4 min-w-[16px] items-center justify-center rounded-full bg-destructive shadow-[0_0_10px_rgba(var(--color-destructive)/0.6)] px-1 text-[10px] text-destructive-foreground"
                 >
                   {{ totalMessageUnread > 99 ? '99+' : totalMessageUnread }}
                 </span>
                 <span
                   v-if="action.badge === 'dynamic' && dynamicUnreadCount > 0"
-                  class="absolute -right-1 -top-1 flex h-4 min-w-[16px] items-center justify-center rounded-full bg-red-500 px-1 text-[10px] text-white"
+                  class="absolute -right-1 -top-1 flex h-4 min-w-[16px] items-center justify-center rounded-full bg-destructive shadow-[0_0_10px_rgba(var(--color-destructive)/0.6)] px-1 text-[10px] text-destructive-foreground"
                 >
                   {{ dynamicUnreadCount > 99 ? '99+' : dynamicUnreadCount }}
                 </span>
@@ -470,12 +518,14 @@ const navActions = [
         </template>
       </div>
 
+      <slot name="after-actions" :action-text-class="navActionTextClass" />
+
       <!-- Upload Button -->
       <Button
         v-if="authStore.isLoggedIn"
         as-child
         size="sm"
-        class="ml-1 h-8 rounded-lg border-0 bg-pink-500 px-2 text-white hover:bg-pink-600 sm:ml-3 sm:px-4"
+        class="ml-1 h-8 rounded-lg border-0 bg-primary px-2 text-primary-foreground hover:bg-primary/90 shadow-[0_0_15px_rgba(var(--color-primary)/0.3)] sm:ml-3 sm:px-4 transition-all"
       >
         <router-link to="/upload" class="flex items-center gap-1.5">
           <Upload class="h-4 w-4" />
@@ -485,7 +535,7 @@ const navActions = [
       <Button
         v-else
         size="sm"
-        class="ml-1 h-8 cursor-pointer rounded-lg border-0 bg-pink-500 px-2 text-white hover:bg-pink-600 sm:ml-3 sm:px-4"
+        class="ml-1 h-8 cursor-pointer rounded-lg border-0 bg-primary px-2 text-primary-foreground hover:bg-primary/90 shadow-[0_0_15px_rgba(var(--color-primary)/0.3)] sm:ml-3 sm:px-4 transition-all"
         @click="openLoginDialog"
       >
         <Upload class="h-4 w-4" />
@@ -494,16 +544,23 @@ const navActions = [
     </div>
   </nav>
 
-  <!-- Auth Dialog -->
-  <AuthDialog v-model:open="authDialogOpen" :initial-mode="authDialogMode" />
+  <!-- Auth Dialog：仅用户触发登录后挂载 -->
+  <AuthDialog
+    v-if="authDialogMounted"
+    v-model:open="authDialogOpen"
+    :initial-mode="authDialogMode"
+  />
 </template>
 
-<style scoped>
+<style scoped lang="scss">
 /* Search suggestion highlight */
 .search-suggestion-item :deep(em) {
-  color: hsl(var(--primary));
+  color: var(--brand-blue, oklch(var(--primary)));
   font-style: normal;
-  font-weight: 600;
+  font-weight: 700;
+  background: oklch(var(--primary) / 0.12);
+  border-radius: 2px;
+  padding: 0 1px;
 }
 
 .panel-fade-enter-active {
@@ -530,11 +587,85 @@ const navActions = [
 
 .avatar-normal {
   transform: scale(1) translateY(0);
-  transition: transform 0.25s cubic-bezier(0.22, 1, 0.36, 1);
+  opacity: 1;
+  transition:
+    transform 0.3s cubic-bezier(0.22, 1, 0.36, 1),
+    opacity 0.2s ease 0.05s;
 }
 
 .avatar-expanded {
   transform: scale(2.5) translateY(0);
-  transition: transform 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+  opacity: 0;
+  transition:
+    transform 0.35s cubic-bezier(0.22, 1, 0.36, 1),
+    opacity 0.2s ease;
 }
+
+.search-input-base {
+  border: 1px solid transparent;
+  transition: all 0.3s ease;
+  backdrop-filter: blur(8px);
+
+  &:focus-visible {
+    background-color: var(--color-background);
+    color: var(--color-foreground);
+    border-color: color-mix(in oklch, var(--color-primary) 40%, transparent);
+    box-shadow: 0 0 0 3px color-mix(in oklch, var(--color-primary) 20%, transparent);
+
+    &::placeholder {
+      color: color-mix(in oklch, var(--color-muted-foreground) 70%, transparent);
+    }
+  }
+}
+
+.search-bar-solid {
+  background-color: color-mix(in oklch, var(--color-secondary) 60%, transparent);
+  color: var(--color-foreground);
+  box-shadow: inset 0 1px 2px rgb(0, 0, 0, 0.05);
+
+  &:hover:not(:focus-visible) {
+    background-color: color-mix(in oklch, var(--color-secondary) 90%, transparent);
+  }
+
+  &::placeholder {
+    color: color-mix(in oklch, var(--color-muted-foreground) 70%, transparent);
+  }
+}
+
+:global(.dark) .search-bar-solid {
+  box-shadow: none;
+}
+
+.search-bar-glass {
+  background-color: rgb(255, 255, 255, 0.2);
+  border-color: rgb(255, 255, 255, 0.2);
+  color: #ffffff;
+  box-shadow: 0 1px 2px rgb(0, 0, 0, 0.05);
+  backdrop-filter: blur(12px);
+
+  &:hover:not(:focus-visible) {
+    background-color: rgb(255, 255, 255, 0.3);
+  }
+
+  &::placeholder {
+    color: rgb(255, 255, 255, 0.7);
+  }
+}
+
+:global(.dark) .search-bar-glass {
+  background-color: rgb(0, 0, 0, 0.4);
+  border-color: rgb(255, 255, 255, 0.1);
+
+  &:hover:not(:focus-visible) {
+    background-color: rgb(0, 0, 0, 0.6);
+  }
+}
+
+/* Bulletproof CSS for search bar to evade Tailwind JIT cache bugs */
+
+/* 1. Solid variant (for video detail page / solid headers) */
+
+/* 2. Glass variant (for homepage / banner overlay headers) */
+
+/* Dark mode overrides for glass variant */
 </style>

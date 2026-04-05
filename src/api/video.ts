@@ -1,16 +1,13 @@
+import type { AuthorBrief, PaginatedResult, PaginationParams, SearchHighlight, Tag } from './types'
 import request from './request'
+
+export type { AuthorBrief, PaginatedResult, PaginationParams, SearchHighlight, Tag } from './types'
 
 // ============================================================================
 // Type Definitions
 // ============================================================================
 
 // Common Types
-export interface AuthorBrief {
-  id: number
-  username: string
-  avatar: string
-}
-
 export interface VideoAuthorBrief extends AuthorBrief {
   level: number
   description: string
@@ -23,11 +20,6 @@ export interface Partition {
   sortOrder: number
   isActive: boolean
   isSubmittable: boolean
-}
-
-export interface Tag {
-  id: number
-  name: string
 }
 
 export interface VideoResourceItem {
@@ -52,15 +44,8 @@ export interface VideoPartItem {
   resources: VideoResourceItem[]
 }
 
-export interface PaginationParams {
-  page?: number
-  pageSize?: number
+export interface VideoListPaginationParams extends PaginationParams {
   partitionId?: number
-}
-
-export interface PaginatedResult<T> {
-  list: T[]
-  total: number
 }
 
 // ============================================================================
@@ -77,10 +62,6 @@ export interface FeedItem {
   author: AuthorBrief
   createdAt: string
   highlight?: SearchHighlight
-}
-
-export interface SearchHighlight {
-  [key: string]: string[]
 }
 
 export interface SearchVideoHit {
@@ -122,7 +103,7 @@ export interface SearchVideoParams {
 export interface SearchSuggestItem {
   value: string
   highlight: string
-  docType: 'videos' | 'tags'
+  docType: 'videos' | 'users' | 'tags'
 }
 
 export interface SearchSuggestParams {
@@ -162,10 +143,11 @@ export interface VideoDetail {
   storageType: string
   status: number
   createdAt: string
+  publishTime?: string
   partition: Partition
   tags: Tag[]
   resources: VideoResourceItem[]
-  parts: VideoPartItem[]
+  parts?: VideoPartItem[]
   isLiked: boolean
   isFavorited: boolean
   isCoined: boolean
@@ -231,21 +213,37 @@ export interface ReportVideoParams {
 
 export interface VideoPartPayload {
   title?: string
-  filePath: string
+  filePath?: string
   fileName: string
   fileHash: string
 }
 
-export interface PublishVideoParams {
+interface PublishVideoBaseParams {
   title: string
   description?: string
   partitionId: number
   tags?: number[] // 文档限制：最多 10 个
   isOriginal?: boolean
+  isPrivate?: boolean
   coverUrl: string
-  parts: VideoPartPayload[]
   publishTime?: string
 }
+
+export interface PublishSingleVideoParams extends PublishVideoBaseParams {
+  filePath?: string
+  fileName: string
+  fileHash: string
+  parts?: never
+}
+
+export interface PublishMultipartVideoParams extends PublishVideoBaseParams {
+  parts: VideoPartPayload[]
+  filePath?: never
+  fileName?: never
+  fileHash?: never
+}
+
+export type PublishVideoParams = PublishSingleVideoParams | PublishMultipartVideoParams
 
 export interface PublishVideoResult {
   videoId: number
@@ -261,6 +259,7 @@ export interface UpdateVideoParams {
   partitionId?: number
   tags?: number[]
   isOriginal?: boolean
+  isPrivate?: boolean
   coverUrl?: string
   publishTime?: string
 }
@@ -277,7 +276,7 @@ export interface SaveHistoryParams {
   duration: number
 }
 
-export interface HistoryListParams extends PaginationParams {
+export interface HistoryListParams extends VideoListPaginationParams {
   keyword?: string
 }
 
@@ -347,7 +346,9 @@ export interface FolderVideoItem {
  * 依赖接口: 无
  * 接口说明: 获取首页视频推荐流，登录用户优先按历史偏好推荐
  */
-export const getHomeVideos = (params?: PaginationParams): Promise<PaginatedResult<FeedItem>> => {
+export const getHomeVideos = (
+  params?: VideoListPaginationParams
+): Promise<PaginatedResult<FeedItem>> => {
   return request.get('/common/video/home', { params })
 }
 
@@ -358,7 +359,9 @@ export const getHomeVideos = (params?: PaginationParams): Promise<PaginatedResul
  * 依赖接口: 无
  * 接口说明: 获取综合热门视频列表（时间衰减热度，最多保留 Top200）
  */
-export const getHotVideos = (params?: PaginationParams): Promise<PaginatedResult<FeedItem>> => {
+export const getHotVideos = (
+  params?: VideoListPaginationParams
+): Promise<PaginatedResult<FeedItem>> => {
   return request.get('/common/video/hot', { params })
 }
 
@@ -369,7 +372,9 @@ export const getHotVideos = (params?: PaginationParams): Promise<PaginatedResult
  * 依赖接口: 无
  * 接口说明: 获取综合排行榜视频列表（仅 Top100）
  */
-export const getRankVideos = (params?: PaginationParams): Promise<PaginatedResult<FeedItem>> => {
+export const getRankVideos = (
+  params?: VideoListPaginationParams
+): Promise<PaginatedResult<FeedItem>> => {
   return request.get('/common/video/rank', { params })
 }
 

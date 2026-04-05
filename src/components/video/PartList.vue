@@ -2,6 +2,7 @@
 import { computed } from 'vue'
 import type { VideoPartItem } from '@/api/video'
 import { Play } from 'lucide-vue-next'
+import { formatDuration } from '@/utils/format'
 
 const props = defineProps<{
   parts: VideoPartItem[]
@@ -11,12 +12,6 @@ const props = defineProps<{
 const emit = defineEmits<{
   select: [partId: number]
 }>()
-
-const formatDuration = (seconds: number): string => {
-  const mins = Math.floor(seconds / 60)
-  const secs = seconds % 60
-  return `${mins}:${secs.toString().padStart(2, '0')}`
-}
 
 const hasParts = computed(() => props.parts.length > 1)
 </script>
@@ -37,7 +32,7 @@ const hasParts = computed(() => props.parts.length > 1)
 
     <div class="part-scroll-area max-h-[380px] space-y-1.5 overflow-y-auto pr-2">
       <button
-        v-for="(part, index) in parts"
+        v-for="part in parts"
         :key="part.id"
         class="part-item group w-full relative overflow-hidden"
         :class="{ 'is-active': part.id === currentPartId }"
@@ -56,7 +51,7 @@ const hasParts = computed(() => props.parts.length > 1)
               class="text-primary playing-icon"
               stroke-width="3"
             />
-            <span v-else>P{{ index + 1 }}</span>
+            <span v-else>P{{ part.sortOrder + 1 }}</span>
           </span>
           <span
             class="flex-1 truncate text-left text-[13px] font-medium transition-colors group-hover:text-primary"
@@ -74,13 +69,13 @@ const hasParts = computed(() => props.parts.length > 1)
   </div>
 </template>
 
-<style scoped>
+<style scoped lang="scss">
 .part-list-container {
   transition: box-shadow 0.3s ease;
-}
 
-.part-list-container:hover {
-  box-shadow: 0 8px 24px rgb(0 0 0 / 0.04);
+  &:hover {
+    box-shadow: 0 8px 24px rgb(0 0 0 / 0.04);
+  }
 }
 
 :global(.dark) .part-list-container:hover {
@@ -89,24 +84,24 @@ const hasParts = computed(() => props.parts.length > 1)
 
 .part-scroll-area {
   scrollbar-width: thin;
-  scrollbar-color: hsl(var(--muted-foreground) / 0.3) transparent;
-}
+  scrollbar-color: oklch(var(--muted-foreground) / 0.3) transparent;
 
-.part-scroll-area::-webkit-scrollbar {
-  width: 4px;
-}
+  &::-webkit-scrollbar {
+    width: 4px;
 
-.part-scroll-area::-webkit-scrollbar-track {
-  background: transparent;
-}
+    &-track {
+      background: transparent;
+    }
 
-.part-scroll-area::-webkit-scrollbar-thumb {
-  background: hsl(var(--muted-foreground) / 0.3);
-  border-radius: 4px;
-}
+    &-thumb {
+      background: oklch(var(--muted-foreground) / 0.3);
+      border-radius: 4px;
 
-.part-scroll-area::-webkit-scrollbar-thumb:hover {
-  background: hsl(var(--muted-foreground) / 0.5);
+      &:hover {
+        background: oklch(var(--muted-foreground) / 0.5);
+      }
+    }
+  }
 }
 
 .part-item {
@@ -117,30 +112,30 @@ const hasParts = computed(() => props.parts.length > 1)
   cursor: pointer;
   border: 1px solid transparent;
   background: transparent;
-  color: hsl(var(--foreground));
+  color: oklch(var(--foreground));
   transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
   text-align: left;
-}
 
-.part-item:hover {
-  transform: translateX(2px);
-  border-color: hsl(var(--border) / 0.5);
-}
+  &:hover {
+    transform: translateX(2px);
+    border-color: oklch(var(--border) / 0.5);
+  }
 
-.part-item:active {
-  transform: translateX(0) scale(0.99);
-  transition-duration: 0.1s;
-}
+  &:active {
+    transform: translateX(0) scale(0.99);
+    transition-duration: 0.1s;
+  }
 
-.part-item.is-active {
-  background: rgb(0 161 214 / 0.08);
-  border-color: rgb(0 161 214 / 0.2);
-  color: #00a1d6;
-  box-shadow: 0 2px 8px rgb(0 161 214 / 0.1);
-}
+  &.is-active {
+    background: oklch(var(--primary) / 0.08);
+    border-color: oklch(var(--primary) / 0.2);
+    color: var(--color-primary);
+    box-shadow: 0 2px 8px oklch(var(--primary) / 0.1);
 
-.part-item.is-active span {
-  color: #00a1d6 !important;
+    span {
+      color: var(--color-primary) !important;
+    }
+  }
 }
 
 .playing-icon {

@@ -2,6 +2,7 @@
 import { computed } from 'vue'
 import { useRouter } from 'vue-router'
 import type { FeedItem } from '@/api/video'
+import { formatCount, formatDuration } from '@/utils/format'
 
 interface Props {
   video: FeedItem
@@ -12,40 +13,23 @@ const props = defineProps<Props>()
 const router = useRouter()
 
 // Format duration from seconds to mm:ss
-const formattedDuration = computed(() => {
-  const seconds = props.video.duration
-  const mins = Math.floor(seconds / 60)
-  const secs = seconds % 60
-  return `${mins}:${secs.toString().padStart(2, '0')}`
-})
+const formattedDuration = computed(() => formatDuration(props.video.duration))
 
 // Format view count
-const formattedViews = computed(() => {
-  const views = props.video.views
-  if (views >= 10000) {
-    return `${(views / 10000).toFixed(1)}万`
-  }
-  return views.toString()
-})
+const formattedViews = computed(() => formatCount(props.video.views))
 
 // Format danmu count
-const formattedDanmu = computed(() => {
-  const count = props.video.danmuCount
-  if (count >= 10000) {
-    return `${(count / 10000).toFixed(1)}万`
-  }
-  return count.toString()
-})
+const formattedDanmu = computed(() => formatCount(props.video.danmuCount))
 
 const handleClick = () => {
   void router.push(`/video/${props.video.id}`)
 }
 
 const rankBadgeStyle = computed(() => {
-  if (props.rank === 1) return 'bg-[#f36f20] text-white'
-  if (props.rank === 2) return 'bg-[#ff9434] text-white'
-  if (props.rank === 3) return 'bg-[#ffaf4c] text-white'
-  return 'bg-[#b8c0cc] text-white'
+  if (props.rank === 1) return 'rank-badge-1'
+  if (props.rank === 2) return 'rank-badge-2'
+  if (props.rank === 3) return 'rank-badge-3'
+  return 'rank-badge-4'
 })
 </script>
 
@@ -74,9 +58,7 @@ const rankBadgeStyle = computed(() => {
           loading="lazy"
         />
         <!-- Duration Badge -->
-        <div
-          class="absolute bottom-1 right-1 rounded bg-black/70 px-1 py-0.5 text-xs font-medium text-white"
-        >
+        <div class="media-chip absolute bottom-1 right-1 rounded px-1.5 py-0.5 text-xs font-medium">
           {{ formattedDuration }}
         </div>
       </div>

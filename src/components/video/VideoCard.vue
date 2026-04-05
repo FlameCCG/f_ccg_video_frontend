@@ -2,6 +2,8 @@
 import { computed } from 'vue'
 import { useRouter } from 'vue-router'
 import type { FeedItem } from '@/api/video'
+import { formatCount, formatDuration } from '@/utils/format'
+import DOMPurify from 'dompurify'
 
 interface Props {
   video: FeedItem
@@ -27,34 +29,20 @@ const sanitizedTitleHtml = computed(() => {
     return escapeHtml(props.video.title)
   }
 
-  return highlightedTitle.replace(/<(?!\/?em\b)[^>]*>/g, '')
+  return DOMPurify.sanitize(highlightedTitle, {
+    ALLOWED_TAGS: ['em'],
+    ALLOWED_ATTR: [],
+  })
 })
 
 // Format duration from seconds to mm:ss
-const formattedDuration = computed(() => {
-  const seconds = props.video.duration
-  const mins = Math.floor(seconds / 60)
-  const secs = seconds % 60
-  return `${mins}:${secs.toString().padStart(2, '0')}`
-})
+const formattedDuration = computed(() => formatDuration(props.video.duration))
 
 // Format view count (e.g., 1.2万)
-const formattedViews = computed(() => {
-  const views = props.video.views
-  if (views >= 10000) {
-    return `${(views / 10000).toFixed(1)}万`
-  }
-  return views.toString()
-})
+const formattedViews = computed(() => formatCount(props.video.views))
 
 // Format danmu count
-const formattedDanmu = computed(() => {
-  const count = props.video.danmuCount
-  if (count >= 10000) {
-    return `${(count / 10000).toFixed(1)}万`
-  }
-  return count.toString()
-})
+const formattedDanmu = computed(() => formatCount(props.video.danmuCount))
 
 // Format publish time (relative time)
 const formattedTime = computed(() => {
@@ -80,7 +68,7 @@ const handleClick = () => {
 
 <template>
   <div
-    class="group cursor-pointer overflow-hidden rounded-lg bg-card transition-all duration-200 hover:-translate-y-1 hover:shadow-lg"
+    class="hover-lift group cursor-pointer overflow-hidden rounded-[var(--radius-xl)] bg-card border border-border/50"
     :class="[variant === 'compact' ? 'flex h-full flex-col' : '']"
     @click="handleClick"
   >
@@ -145,14 +133,14 @@ const handleClick = () => {
     </div>
 
     <!-- Video Info -->
-    <div :class="[variant === 'compact' ? 'px-1 py-1' : 'px-0 py-2']">
+    <div :class="[variant === 'compact' ? 'px-1 py-1' : 'px-0 py-2 h-[78px]']">
       <!-- Title -->
       <h3
         class="font-medium text-foreground transition-colors group-hover:text-primary"
         :class="[
           variant === 'compact'
             ? 'line-clamp-1 text-[11px] leading-tight'
-            : 'mb-1.5 line-clamp-2 text-sm leading-5',
+            : 'mb-1.5 line-clamp-2 text-sm leading-5 h-[40px]',
         ]"
         v-html="sanitizedTitleHtml"
       ></h3>
@@ -160,7 +148,7 @@ const handleClick = () => {
       <!-- Author & Time Info (default mode only) -->
       <div
         v-if="variant === 'default'"
-        class="flex items-center gap-2 text-xs text-muted-foreground"
+        class="flex items-center gap-2 text-xs text-muted-foreground h-[16px] leading-[16px]"
       >
         <div class="flex items-center gap-1 min-w-0">
           <!-- UP Icon -->
@@ -194,7 +182,7 @@ const handleClick = () => {
   </div>
 </template>
 
-<style scoped>
+<style scoped lang="scss">
 :deep(em) {
   font-style: normal;
   color: var(--color-primary);

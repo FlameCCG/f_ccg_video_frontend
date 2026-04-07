@@ -10,6 +10,8 @@ declare module '*.vue' {
 interface ImportMetaEnv {
   readonly VITE_API_BASE?: string
   readonly VITE_DEV_PROXY_TARGET?: string
+  /** 媒体资源 host；留空 = 同源（走网关/代理）。 */
+  readonly VITE_MEDIA_BASE?: string
 }
 
 interface ImportMeta {

@@ -22,6 +22,7 @@ export const useSiteStore = defineStore('site', () => {
     () => config.value?.login.textGraphicCaptcha ?? false
   )
   const isLoginClickCaptchaEnabled = computed(() => config.value?.login.textClickCaptcha ?? false)
+  const isLoginSlideCaptchaEnabled = computed(() => config.value?.login.slideCaptcha ?? false)
 
   // Getters - Register
   const isRegisterEmailCaptchaEnabled = computed(() => config.value?.register.emailCaptcha ?? false)
@@ -29,6 +30,9 @@ export const useSiteStore = defineStore('site', () => {
     () => config.value?.register.textGraphicCaptcha ?? false
   )
   const isRegisterSlideCaptchaEnabled = computed(() => config.value?.register.slideCaptcha ?? false)
+  const isRegisterClickCaptchaEnabled = computed(
+    () => config.value?.register.textClickCaptcha ?? false
+  )
 
   // Getters - Storage
   const normalizedStorage = computed(() => normalizeStorageConfig(config.value?.storage))
@@ -36,6 +40,8 @@ export const useSiteStore = defineStore('site', () => {
   const chunkSize = computed(() => normalizedStorage.value.chunkSize)
   const maxFileSize = computed(() => normalizedStorage.value.maxFileSize)
   const maxUploadNum = computed(() => normalizedStorage.value.maxUploadNum)
+
+  const isUserSubmissionDisabled = computed(() => config.value?.disableUserSubmission === true)
 
   // Getters - Content Review
   const isContentReviewEnabled = computed(() => config.value?.contentReview.enable ?? false)
@@ -61,7 +67,7 @@ export const useSiteStore = defineStore('site', () => {
    * 强制重新拉取站点配置。
    * 保留旧 config / isLoaded，避免 UI（如 OAuth 按钮区）在刷新瞬间被拆掉导致闪烁。
    */
-  const refreshConfig = async (): Promise<boolean> => {
+  const refreshConfig = async (requireFresh = false): Promise<boolean> => {
     isLoading.value = true
     try {
       const result = await getSiteConfig()
@@ -70,7 +76,7 @@ export const useSiteStore = defineStore('site', () => {
       return true
     } catch {
       // 失败时保留旧配置，不把 isLoaded 打回 false
-      return isLoaded.value
+      return requireFresh ? false : isLoaded.value
     } finally {
       isLoading.value = false
     }
@@ -91,11 +97,13 @@ export const useSiteStore = defineStore('site', () => {
     isPasswordLoginEnabled,
     isLoginGraphicsCaptchaEnabled,
     isLoginClickCaptchaEnabled,
+    isLoginSlideCaptchaEnabled,
 
     // Getters - Register
     isRegisterEmailCaptchaEnabled,
     isRegisterGraphicsCaptchaEnabled,
     isRegisterSlideCaptchaEnabled,
+    isRegisterClickCaptchaEnabled,
 
     // Getters - Storage
     maxChunkSize,
@@ -105,6 +113,7 @@ export const useSiteStore = defineStore('site', () => {
 
     // Getters - Content Review
     isContentReviewEnabled,
+    isUserSubmissionDisabled,
 
     // Actions
     fetchConfig,

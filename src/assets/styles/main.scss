@@ -3,6 +3,14 @@
 // Tailwind 入口见同目录 tailwind.css（纯 CSS，保证 utility 生成）
 // 暗色：html.dark 换变量，禁止 dark: 工具类
 
+// 「减少动态效果」与「主题切换窗口」都必须绕开的区域。
+// - .artplayer-app 内部：弹幕位移就是内容本身，压平 = 把核心功能删掉；
+//   且 artplayer-plugin-danmuku 靠 inline `transition: transform Xs linear` 驱动，
+//   样式表里的 !important 优先级高于内联非 !important，会直接把弹幕钉死在终点。
+// - [data-is-danmu-clone]：VideoPlayer hover 暂停时克隆出来的弹幕节点，松手后靠 inline transition 复飘。
+// - .motion-keep：业务侧显式声明「这是功能性动效，不是装饰」的逃生舱。
+$motion-exempt: '.artplayer-app, .artplayer-app *, [data-is-danmu-clone], .motion-keep, .motion-keep *';
+
 @layer base {
   :root {
     color-scheme: light;
@@ -17,14 +25,37 @@
     --text-1: oklch(25% 0.02 240deg);
     --text-2: oklch(51% 0.018 238deg);
     --border-color: oklch(89% 0.014 232deg);
+    --partition-art-blend: normal;
+
+    // 输入区域统一使用实体底色；深浅主题通过基础变量自动换色。
+    --field-bg: color-mix(in oklch, var(--bg-surface-1) 70%, var(--bg-surface-0));
+    --field-border: color-mix(in oklch, var(--text-2) 20%, var(--border-color));
+    --field-border-hover: color-mix(in oklch, var(--text-2) 40%, var(--border-color));
+    --field-border-focus: color-mix(in oklch, var(--brand-blue) 75%, var(--text-2));
+    --field-focus-ring: color-mix(in oklch, var(--brand-blue) 14%, transparent);
 
     --glass-bg: oklch(98.5% 0.008 228deg / 0.78);
     --glass-border: oklch(87% 0.015 232deg / 0.55);
     --glass-blur: 22px;
 
     --signal-foreground: oklch(98.5% 0.004 230deg);
+    /* 未读信号是跨主题的固定语义色，不跟随品牌色或状态色切换。 */
+    --signal-unread-message: oklch(63% 0.225 25deg);
+    --signal-unread-message-foreground: oklch(98.5% 0.006 25deg);
+    --signal-unread-dynamic: oklch(66% 0.165 238deg);
+    --signal-unread-dynamic-foreground: oklch(98.5% 0.006 238deg);
     --media-overlay: oklch(29% 0.02 242deg / 0.72);
     --media-overlay-text: oklch(97.8% 0.004 230deg);
+
+    /* 弹层遮罩：替代 dialog 里硬编码的 bg-black/80，随主题走 */
+    --scrim-overlay: oklch(24% 0.02 242deg / 0.64);
+
+    /* 骨架屏：sheen 必须比 base 更亮，否则浅色主题下扫过去的是暗影不是高光（极性反了） */
+    --skeleton-base: var(--bg-surface-2);
+    --skeleton-sheen: color-mix(in oklch, var(--bg-surface-0) 88%, transparent);
+    /* 循环型 loading 动效专用；不属于交互时长三档，勿用于 transition */
+    --duration-shimmer: 1600ms;
+    --skeleton-step: 80ms;
 
     --page-wash-1: oklch(82% 0.04 236deg / 0.22);
     --page-wash-2: oklch(87% 0.03 34deg / 0.18);
@@ -104,6 +135,7 @@
     --text-1: oklch(95% 0.008 225deg);
     --text-2: oklch(73% 0.014 230deg);
     --border-color: oklch(31% 0.015 240deg);
+    --partition-art-blend: screen;
 
     --glass-bg: oklch(19% 0.012 240deg / 0.74);
     --glass-border: oklch(34% 0.015 234deg / 0.5);
@@ -111,6 +143,10 @@
     --signal-foreground: oklch(97.2% 0.006 225deg);
     --media-overlay: oklch(18% 0.01 240deg / 0.76);
     --media-overlay-text: oklch(96.5% 0.006 225deg);
+
+    --scrim-overlay: oklch(10% 0.012 242deg / 0.72);
+    /* 暗色下 base 本来就深，sheen 用 foreground 的低透明度叠色才是「亮起来」 */
+    --skeleton-sheen: color-mix(in oklch, var(--text-1) 9%, transparent);
 
     --page-wash-1: oklch(40% 0.04 236deg / 0.18);
     --page-wash-2: oklch(42% 0.04 28deg / 0.14);
@@ -174,10 +210,10 @@
     --ring: 0.74 0.11 236;
   }
 
-  * {
+  *,
+  *::before,
+  *::after {
     border-color: var(--color-border);
-    -webkit-font-smoothing: antialiased;
-    -moz-osx-font-smoothing: grayscale;
   }
 
   button,
@@ -190,8 +226,11 @@
     cursor: pointer;
   }
 
+  /*
+   * 全站焦点颜色使用 Tailwind @theme 映射的 --color-ring，明暗主题自动跟随同一套颜色 token。
+   */
   *:focus-visible {
-    outline: 2px solid oklch(var(--ring));
+    outline: 2px solid var(--color-ring, var(--brand-blue));
     outline-offset: 2px;
   }
 
@@ -213,20 +252,25 @@
       radial-gradient(circle at top right, var(--page-wash-2), transparent 26%),
       linear-gradient(180deg, var(--page-wash-3), transparent 26%);
     color: var(--color-foreground);
-    font-family:
-      Inter,
-      system-ui,
-      -apple-system,
-      BlinkMacSystemFont,
-      'Segoe UI',
-      Roboto,
-      Helvetica,
-      Arial,
-      sans-serif;
+    /* 真值在 tailwind.css @theme --font-sans（拉丁段 + 显式 CJK 段） */
+    font-family: var(--font-sans);
+    font-optical-sizing: auto;
+    /* 中文字族普遍只有 Regular/Bold 两档，font-semibold(600) 若被合成假粗会明显发糊 */
+    font-synthesis-weight: none;
+    /*
+     * 灰度抗锯齿适用于深色背景以消除彩边；浅色背景避免对小字号中文强制应用，以保持字重清晰。
+     */
+    -webkit-font-smoothing: auto;
+    -moz-osx-font-smoothing: auto;
     overscroll-behavior-y: none;
-    transition:
-      background-color var(--duration-slow) var(--ease-out-quart),
-      color var(--duration-slow) var(--ease-out-quart);
+    /*
+     * 主题切换由 html.theme-switching 短窗口统一驱动，保持纯色与 page-wash 渐变同步交接。
+     */
+  }
+
+  .dark body {
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
   }
 
   /*
@@ -241,29 +285,285 @@
 }
 
 @layer components {
+  // 单行输入与复合输入共用状态配色，聚焦时保持底色不变。
+  .field-control,
+  .field-surface {
+    color: var(--text-1);
+    background: var(--field-bg);
+    border: 1px solid var(--field-border);
+    caret-color: var(--brand-blue);
+  }
+
+  .field-control::placeholder {
+    color: var(--text-2);
+    opacity: 1;
+  }
+
+  @media (hover: hover) {
+    .field-control:not(:disabled, [readonly], :focus, [aria-invalid='true']):hover,
+    .field-surface:not(:focus-within):hover {
+      border-color: var(--field-border-hover);
+    }
+  }
+
+  .field-control:focus,
+  .field-surface:focus-within {
+    border-color: var(--field-border-focus);
+    outline: none;
+    box-shadow: 0 0 0 3px var(--field-focus-ring);
+  }
+
+  .field-control[aria-invalid='true'] {
+    border-color: var(--status-danger);
+    --field-border-focus: var(--status-danger);
+    --field-focus-ring: color-mix(in oklch, var(--status-danger) 14%, transparent);
+  }
+
+  .field-control:disabled {
+    color: var(--text-2);
+    background: var(--bg-surface-2);
+    cursor: not-allowed;
+  }
+
+  /* ============================================================
+   * 弹层动效通道（reka-ui 的 data-state 驱动）
+   *
+   * 项目没有装 tailwindcss-animate / tw-animate-css，也没有 @plugin 注册，
+   * 所以 `data-[state=open]:animate-in` `zoom-in-95` `fade-out-0` `slide-in-from-*`
+   * 这一串 utility 一个字节的 CSS 都不生成 —— 全站每一个 Dialog / DropdownMenu
+   * 都是瞬间 pop 出现、瞬间消失。这里用真实 keyframes 补齐。
+   *
+   * 两个必须遵守的实现约束：
+   * 1) enter / exit 的 @keyframes 名字必须不同。reka-ui 的 usePresence 通过比较
+   *    animationName 是否变化来判断「是否有退场动画」，同名会被判定为无动画、
+   *    直接卸载，退场就被截断了。
+   * 2) 出场必须比入场快（fast 140ms vs normal 240ms）。关闭要「利落」。
+   *
+   * Tailwind v4 的 -translate-x-1/2 写的是独立的 `translate` 属性而不是 `transform`，
+   * 所以 Dialog 居中不会被这里的 transform 关键帧冲掉，无需把 -50% 烘进关键帧。
+   * ============================================================ */
+
+  @keyframes overlay-in {
+    from {
+      opacity: 0;
+    }
+
+    to {
+      opacity: 1;
+    }
+  }
+
+  @keyframes overlay-out {
+    from {
+      opacity: 1;
+    }
+
+    to {
+      opacity: 0;
+    }
+  }
+
+  @keyframes surface-in {
+    from {
+      opacity: 0;
+      transform: translate3d(0, 8px, 0) scale(0.97);
+    }
+
+    to {
+      opacity: 1;
+      transform: translate3d(0, 0, 0) scale(1);
+    }
+  }
+
+  @keyframes surface-out {
+    from {
+      opacity: 1;
+      transform: translate3d(0, 0, 0) scale(1);
+    }
+
+    to {
+      opacity: 0;
+      transform: translate3d(0, 4px, 0) scale(0.985);
+    }
+  }
+
+  @keyframes pop-in {
+    from {
+      opacity: 0;
+      transform: translate3d(var(--pop-x, 0), var(--pop-y, -6px), 0) scale(0.97);
+    }
+
+    to {
+      opacity: 1;
+      transform: translate3d(0, 0, 0) scale(1);
+    }
+  }
+
+  @keyframes pop-out {
+    from {
+      opacity: 1;
+      transform: scale(1);
+    }
+
+    to {
+      opacity: 0;
+      transform: scale(0.985);
+    }
+  }
+
+  @keyframes motion-spin {
+    to {
+      transform: rotate(360deg);
+    }
+  }
+
+  /* 遮罩：纯 opacity，不做位移也不做模糊（全屏 backdrop-filter 太贵） */
+  .motion-overlay {
+    &[data-state='open'] {
+      animation: overlay-in var(--duration-normal) var(--ease-out-quart) both;
+    }
+
+    &[data-state='closed'] {
+      animation: overlay-out var(--duration-fast) var(--ease-out-quart) both;
+    }
+  }
+
+  /* 居中弹层（Dialog / AlertDialog）：opacity + 轻微 scale + 4~8px 位移 */
+  .motion-surface {
+    transform-origin: center;
+
+    &[data-state='open'] {
+      animation: surface-in var(--duration-normal) var(--ease-out-expo) both;
+    }
+
+    &[data-state='closed'] {
+      animation: surface-out var(--duration-fast) var(--ease-out-quart) both;
+    }
+  }
+
+  /* 贴着触发器的浮层（DropdownMenu / Popover / Select / Tooltip）：
+     位移方向跟随 data-side，缩放原点跟随 reka-ui 算出来的 transform-origin，
+     视觉上是「从按钮长出来」而不是凭空出现。 */
+  .motion-pop {
+    --pop-x: 0;
+    --pop-y: -6px;
+
+    transform-origin: var(
+      --reka-dropdown-menu-content-transform-origin,
+      var(--reka-popper-transform-origin, center)
+    );
+
+    &[data-side='top'] {
+      --pop-y: 6px;
+    }
+
+    &[data-side='left'] {
+      --pop-x: 6px;
+      --pop-y: 0;
+    }
+
+    &[data-side='right'] {
+      --pop-x: -6px;
+      --pop-y: 0;
+    }
+
+    &[data-state='open'] {
+      animation: pop-in var(--duration-fast) var(--ease-out-expo) both;
+    }
+
+    &[data-state='closed'] {
+      animation: pop-out var(--duration-fast) var(--ease-out-quart) both;
+    }
+  }
+
+  /* ============================================================
+   * 内容区路由转场
+   * .route-* 挂在各 layout 内层 RouterView：导航栏/侧栏不动，只换内容区。
+   * 离场 140ms、入场 240ms；入场的 8px 上浮用于提供新内容到来的方向感。
+   *
+   * 注意：位移的前提是内容脚下的空间稳定。MainLayout 的顶部 chrome 会随路由换形态，
+   * 若让它跟着 route.path 立即切换，离场期间会凭空少掉约 300px，卡片就会「飞上去」——
+   * 那不是这里的曲线问题。解法见 MainLayout.vue 的 chromePath 注释。
+   * ============================================================ */
+  .route-enter-active {
+    transition:
+      opacity var(--duration-normal) linear,
+      transform var(--duration-normal) var(--ease-out-expo);
+  }
+
+  .route-leave-active {
+    transition: opacity var(--duration-fast) linear;
+  }
+
+  .route-enter-from {
+    opacity: 0;
+    transform: translate3d(0, 8px, 0);
+  }
+
+  .route-leave-to {
+    opacity: 0;
+  }
+
+  /*
+   * 骨架屏使用随主题变化的高光。
+   * 通过 --skeleton-index 计算错峰延迟，与 SkeletonGroup 和 VideoCardSkeleton 的相位约定一致。
+   */
   .skeleton-shimmer {
     position: relative;
     overflow: hidden;
-    background-color: var(--color-muted);
+    background-color: var(--skeleton-base);
 
     &::after {
       content: '';
       position: absolute;
       inset: 0;
-      transform: translateX(-100%);
+      transform: translate3d(-100%, 0, 0);
       background-image: linear-gradient(
         90deg,
-        transparent,
-        color-mix(in srgb, var(--color-foreground) 8%, transparent),
-        transparent
+        transparent 0%,
+        var(--skeleton-sheen) 50%,
+        transparent 100%
       );
-      animation: shimmer 1.5s infinite ease-out;
+      animation: skeleton-sheen var(--duration-shimmer) linear infinite;
+      animation-delay: calc(var(--skeleton-index, 0) * var(--skeleton-step));
     }
   }
 
-  @keyframes shimmer {
-    100% {
-      transform: translateX(100%);
+  /* 无 SkeletonGroup 时的兜底错峰：直接给容器加 .skeleton-stagger，
+     子项按 nth-child 拿到相位（9 项以后封顶，避免长列表末尾等太久）。 */
+  .skeleton-stagger > * {
+    &:nth-child(2) {
+      --skeleton-index: 1;
+    }
+
+    &:nth-child(3) {
+      --skeleton-index: 2;
+    }
+
+    &:nth-child(4) {
+      --skeleton-index: 3;
+    }
+
+    &:nth-child(5) {
+      --skeleton-index: 4;
+    }
+
+    &:nth-child(6) {
+      --skeleton-index: 5;
+    }
+
+    &:nth-child(7) {
+      --skeleton-index: 6;
+    }
+
+    &:nth-child(n + 8) {
+      --skeleton-index: 7;
+    }
+  }
+
+  @keyframes skeleton-sheen {
+    to {
+      transform: translate3d(100%, 0, 0);
     }
   }
 
@@ -271,20 +571,130 @@
     .skeleton-shimmer::after {
       animation: none;
       transform: none;
-      opacity: 0.35;
+      opacity: 0.4;
     }
   }
 
-  .hover-lift {
+  /*
+   * 骨架与内容统一交接：骨架先快速淡出，内容随后淡入并轻微上移。
+   * 此过渡用于会重排的列表或网格；固定画幅媒体使用上层骨架淡出的 veil 方式，避免 out-in 等待时高度塌陷。
+   */
+  .skeleton-swap-enter-active {
+    transition:
+      opacity var(--duration-normal) var(--ease-out-quart),
+      transform var(--duration-normal) var(--ease-out-quart);
+  }
+
+  .skeleton-swap-leave-active {
+    transition: opacity var(--duration-fast) linear;
+  }
+
+  .skeleton-swap-enter-from {
+    opacity: 0;
+    transform: translate3d(0, 6px, 0);
+  }
+
+  .skeleton-swap-leave-to {
+    opacity: 0;
+  }
+
+  /* ============================================================
+   * 交互原语
+   * ============================================================ */
+
+  /* 使用 outline-none 的元素必须同时挂载此类，以提供可见的焦点指示。 */
+  .focus-ring:focus-visible {
+    outline: 2px solid var(--color-ring, var(--brand-blue));
+    outline-offset: 2px;
+  }
+
+  /*
+   * 通用反馈过渡使用显式属性表与动效 token。
+   * box-shadow 不参与过渡；阴影变化通过伪元素 opacity 完成，避免大范围逐帧重绘。
+   */
+  .t-tint {
+    transition:
+      background-color var(--duration-fast) var(--ease-out-quart),
+      border-color var(--duration-fast) var(--ease-out-quart),
+      color var(--duration-fast) linear;
+  }
+
+  .t-motion {
     transition:
       transform var(--duration-normal) var(--ease-out-expo),
-      box-shadow var(--duration-normal) var(--ease-out-expo),
       opacity var(--duration-fast) linear;
+  }
 
-    &:hover {
-      transform: translateY(-4px) scale(1.01);
-      box-shadow: var(--shadow-overlay);
+  /* 按钮：全站唯一的按压反馈。按下缩到 97%，是「点到了」的即时确认，
+     移动端没有 hover 补偿时尤其关键。刻意不做 hover 位移 ——
+     所有按钮一起抬起会把主按钮的层级信号稀释掉。 */
+  .ui-button {
+    transition:
+      color var(--duration-fast) var(--ease-out-quart),
+      background-color var(--duration-fast) var(--ease-out-quart),
+      border-color var(--duration-fast) var(--ease-out-quart),
+      opacity var(--duration-fast) linear,
+      transform var(--duration-fast) var(--ease-out-quint);
+
+    &:focus-visible {
+      outline: 2px solid var(--color-ring, var(--brand-blue));
+      outline-offset: 2px;
     }
+
+    &:active:not(:disabled, [data-disabled]) {
+      transform: scale(0.97);
+    }
+
+    &:disabled {
+      transform: none;
+    }
+  }
+
+  /*
+   * 卡片悬停通过位移表达抬起，不缩放封面与文字。
+   * 仅在 hover:hover 设备启用，避免触屏 hover 状态粘住。
+   * box-shadow 的动画用于带 overflow-hidden 的宿主，需注意大模糊阴影的重绘成本。
+   */
+  /*
+   * 抬起效果使用 transform，阴影预先铺在 ::after 并仅改变 opacity，避免逐帧重绘大模糊阴影。
+   */
+  .hover-lift {
+    position: relative;
+    transition: transform var(--duration-normal) var(--ease-out-expo);
+
+    &::after {
+      content: '';
+      position: absolute;
+      inset: 0;
+      z-index: -1;
+      border-radius: inherit;
+      box-shadow: var(--shadow-overlay);
+      opacity: 0;
+      transition: opacity var(--duration-normal) var(--ease-out-expo);
+      pointer-events: none;
+    }
+  }
+
+  @media (hover: hover) and (pointer: fine) {
+    .hover-lift:hover {
+      transform: translate3d(0, -4px, 0);
+    }
+
+    .hover-lift:hover::after {
+      opacity: 1;
+    }
+  }
+
+  /* 弹层遮罩底色：替代各处硬编码的 bg-black/80 */
+  .overlay-scrim {
+    background-color: var(--scrim-overlay);
+  }
+
+  /* 数字等宽：播放量 / 弹幕数 / 时长 / 时间戳这类会跳变的数字必须挂上，
+     否则比例数字下宽度跳变会让整行左右抖动。 */
+  .tabular {
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: 'tnum' 1;
   }
 
   .glass-panel {
@@ -330,6 +740,27 @@
 
   .signal-badge-rank {
     background-image: linear-gradient(135deg, var(--signal-rank-start), var(--signal-rank-end));
+  }
+
+  .signal-unread-message,
+  .signal-unread-dynamic {
+    box-shadow: 0 0 0 2px var(--color-card);
+  }
+
+  .signal-unread-message {
+    background: var(--signal-unread-message);
+    color: var(--signal-unread-message-foreground);
+    box-shadow:
+      0 0 0 2px var(--color-card),
+      0 4px 10px -4px color-mix(in oklch, var(--signal-unread-message) 58%, transparent);
+  }
+
+  .signal-unread-dynamic {
+    background: var(--signal-unread-dynamic);
+    color: var(--signal-unread-dynamic-foreground);
+    box-shadow:
+      0 0 0 2px var(--color-card),
+      0 4px 10px -4px color-mix(in oklch, var(--signal-unread-dynamic) 58%, transparent);
   }
 
   .status-verified-surface {
@@ -381,8 +812,11 @@
     );
   }
 
+  /*
+   * 非 Button 的可点击元素使用此规则提供按压反馈，语义与 .ui-button:active 一致，时长取自动效 token。
+   */
   .active-scale {
-    transition: transform 100ms var(--ease-out-quint);
+    transition: transform var(--duration-fast) var(--ease-out-quint);
 
     &:active {
       transform: scale(0.97);
@@ -436,15 +870,105 @@
   }
 }
 
-/* Global accessibility guard: respect the user's reduced-motion preference.
-   Un-layered so it overrides component/utility transitions and animations. */
+/*
+ * 主题切换窗口。
+ * App.vue 在切换瞬间给 html 挂载 theme-switching，使页面颜色同步交接。
+ * 手机端优先使用快照扩散，不支持快照的浏览器使用 560ms 渐变。
+ * 窗口仅短时存在，避免常驻通配过渡影响 hover 和滚动。
+ * 播放器整体豁免，保护弹幕的内联 transition。
+ * 声明不置于 layer 中，使其优先于普通分层样式。
+ */
+html.theme-switching:not(.theme-revealing) :not(:where(#{$motion-exempt})),
+html.theme-switching:not(.theme-revealing) :not(:where(#{$motion-exempt}))::before,
+html.theme-switching:not(.theme-revealing) :not(:where(#{$motion-exempt}))::after {
+  transition-property:
+    color, background-color, border-color, outline-color, box-shadow, fill, stroke !important;
+  transition-duration: var(--theme-fade-duration, var(--duration-normal)) !important;
+  transition-timing-function: var(--ease-out-quart) !important;
+}
+
+@media (width <= 767px), (pointer: coarse) {
+  html.theme-switching {
+    --theme-fade-duration: 560ms;
+  }
+}
+
+/* 手机端圆形揭幕：只动画快照的裁剪边界，文字与布局保持原始比例和清晰度。 */
+html.theme-revealing :not(:where(#{$motion-exempt})),
+html.theme-revealing :not(:where(#{$motion-exempt}))::before,
+html.theme-revealing :not(:where(#{$motion-exempt}))::after {
+  transition: none !important;
+}
+
+/* 已关闭的菜单不应被旧快照留住，直到整个揭幕结束才突然消失。 */
+html.theme-revealing .motion-pop[data-state='closed'] {
+  display: none;
+}
+
+html.theme-revealing::view-transition,
+html.theme-revealing::view-transition-group(root) {
+  pointer-events: none;
+}
+
+html.theme-revealing::view-transition-group(root) {
+  animation: none;
+}
+
+html.theme-revealing::view-transition-image-pair(root) {
+  isolation: isolate;
+  pointer-events: none;
+}
+
+html.theme-revealing::view-transition-old(root),
+html.theme-revealing::view-transition-new(root) {
+  animation: none;
+  mix-blend-mode: normal;
+  pointer-events: none;
+}
+
+html.theme-revealing::view-transition-old(root) {
+  z-index: 1;
+}
+
+html.theme-revealing::view-transition-new(root) {
+  z-index: 2;
+  will-change: clip-path;
+}
+
+/*
+ * 可访问性：prefers-reduced-motion。
+ * 取消装饰性运动，保留内容与状态动画的必要反馈。
+ * 弹幕的内联 transform transition 必须豁免，避免弹幕瞬间到达终点。
+ * 加载指示器保留或降低旋转速度，使上传、发送与加载状态可辨认。
+ * :not(:where(...)) 将豁免列表的特异度保持为 0。
+ */
 @media (prefers-reduced-motion: reduce) {
-  *,
-  *::before,
-  *::after {
+  *:not(:where(#{$motion-exempt})),
+  *:not(:where(#{$motion-exempt}))::before,
+  *:not(:where(#{$motion-exempt}))::after {
+    animation-delay: 0ms !important;
     animation-duration: 0.001ms !important;
     animation-iteration-count: 1 !important;
+    transition-delay: 0ms !important;
     transition-duration: 0.001ms !important;
     scroll-behavior: auto !important;
+  }
+
+  /* 状态反馈保留，但放慢到不眩晕的速度：转圈是「正在进行」的唯一提示，不是装饰 */
+  .animate-spin,
+  .motion-spin {
+    animation: motion-spin 1.8s linear infinite !important;
+  }
+
+  /* 位移类 hover 直接取消：全局 guard 只压时长，位移仍会瞬移，对前庭敏感用户不友好 */
+  .hover-lift:hover {
+    transform: none !important;
+  }
+
+  /* 主题切换窗口的特异度高于上面的通配 guard，必须显式压掉 */
+  html.theme-switching:not(.theme-revealing) :not(:where(#{$motion-exempt})),
+  html.theme-switching:not(.theme-revealing) :not(:where(#{$motion-exempt}))::before,
+  html.theme-switching:not(.theme-revealing) :not(:where(#{$motion-exempt}))::after {
+    transition-duration: 0.001ms !important;
   }
 }

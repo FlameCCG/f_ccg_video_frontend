@@ -8,29 +8,50 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { useThemeStore } from '@/stores/theme'
+import { getThemeTransitionOrigin, type ThemeTransitionOrigin } from '@/utils/theme-transition'
 
 const themeStore = useThemeStore()
+let transitionOrigin: ThemeTransitionOrigin | undefined
+
+const rememberOrigin = (event: MouseEvent) => {
+  transitionOrigin = getThemeTransitionOrigin(event)
+}
 </script>
 
 <template>
   <DropdownMenu>
     <DropdownMenuTrigger as-child>
-      <Button variant="ghost" size="icon" class="h-9 w-9">
-        <Sun class="theme-toggle-sun h-5 w-5 transition-all" aria-hidden="true" />
-        <Moon class="theme-toggle-moon absolute h-5 w-5 transition-all" aria-hidden="true" />
+      <Button variant="ghost" size="icon" class="h-9 w-9" @click="rememberOrigin">
+        <Sun class="theme-toggle-sun h-5 w-5" aria-hidden="true" />
+        <Moon class="theme-toggle-moon absolute h-5 w-5" aria-hidden="true" />
         <span class="sr-only">切换主题</span>
       </Button>
     </DropdownMenuTrigger>
     <DropdownMenuContent align="end">
-      <DropdownMenuItem @select="themeStore.setTheme('light')"> 亮色 </DropdownMenuItem>
-      <DropdownMenuItem @select="themeStore.setTheme('dark')"> 暗色 </DropdownMenuItem>
-      <DropdownMenuItem @select="themeStore.setTheme('system')"> 跟随系统 </DropdownMenuItem>
+      <DropdownMenuItem @select="themeStore.setTheme('light', transitionOrigin)">
+        亮色
+      </DropdownMenuItem>
+      <DropdownMenuItem @select="themeStore.setTheme('dark', transitionOrigin)">
+        暗色
+      </DropdownMenuItem>
+      <DropdownMenuItem @select="themeStore.setTheme('system', transitionOrigin)">
+        跟随系统
+      </DropdownMenuItem>
     </DropdownMenuContent>
   </DropdownMenu>
 </template>
 
 <style scoped lang="scss">
 /* 依赖 html.dark 换图标，不用 dark: 工具类 */
+
+/*
+ * 日夜图标仅过渡 transform，通过 rotate 与 scale 交接，避免颜色和透明度插值干扰。
+ */
+.theme-toggle-sun,
+.theme-toggle-moon {
+  transition: transform var(--duration-normal) var(--ease-out-expo);
+}
+
 .theme-toggle-sun {
   transform: rotate(0) scale(1);
 }

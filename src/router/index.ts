@@ -8,9 +8,9 @@ const UserLayout = () => import('@/layouts/UserLayout.vue')
 const MessageLayout = () => import('@/layouts/MessageLayout.vue')
 
 const routes: RouteRecordRaw[] = [
-  // Routes with VideoLayout (white header, no banner, no channel nav)
+  // Routes with VideoLayout (compact header, no banner, no channel nav)
   {
-    path: '/video/:id',
+    path: '/video/:id/:p?',
     component: VideoLayout,
     children: [
       {
@@ -18,8 +18,14 @@ const routes: RouteRecordRaw[] = [
         name: 'video-detail',
         component: () => import('@/views/video/VideoDetail.vue'),
       },
+    ],
+  },
+  {
+    path: '/search',
+    component: VideoLayout,
+    children: [
       {
-        path: '/search',
+        path: '',
         name: 'search',
         component: () => import('@/views/search/SearchResult.vue'),
       },
@@ -83,12 +89,6 @@ const routes: RouteRecordRaw[] = [
         path: 'history',
         name: 'history',
         component: () => import('@/views/history/History.vue'),
-        meta: { requiresAuth: true },
-      },
-      {
-        path: 'favorites',
-        name: 'favorites',
-        component: () => import('@/views/favorites/Favorites.vue'),
         meta: { requiresAuth: true },
       },
       {
@@ -167,6 +167,11 @@ const routes: RouteRecordRaw[] = [
         component: () => import('@/views/creator/Content.vue'),
       },
       {
+        path: 'content/:id/edit',
+        name: 'creator-content-edit',
+        component: () => import('@/views/creator/EditVideo.vue'),
+      },
+      {
         path: 'interaction',
         name: 'creator-interaction',
         component: () => import('@/views/creator/Interaction.vue'),
@@ -189,6 +194,46 @@ const routes: RouteRecordRaw[] = [
     name: 'qq-callback',
     component: () => import('@/views/auth/QQCallback.vue'),
     meta: { guest: true },
+  },
+  {
+    path: '/oauth/google',
+    name: 'google-callback',
+    component: () => import('@/views/auth/GoogleCallback.vue'),
+    meta: { guest: true },
+  },
+  {
+    path: '/oauth/github',
+    name: 'github-callback',
+    component: () => import('@/views/auth/GithubCallback.vue'),
+    meta: { guest: true },
+  },
+  {
+    path: '/oauth/linuxdo',
+    name: 'linuxdo-callback',
+    component: () => import('@/views/auth/LinuxDoCallback.vue'),
+    meta: { guest: true },
+  },
+  {
+    path: '/oauth/x',
+    name: 'x-callback',
+    component: () => import('@/views/auth/XCallback.vue'),
+    meta: { guest: true },
+  },
+  {
+    path: '/auth/google/callback',
+    redirect: '/oauth/google',
+  },
+  {
+    path: '/auth/github/callback',
+    redirect: '/oauth/github',
+  },
+  {
+    path: '/auth/linuxdo/callback',
+    redirect: '/oauth/linuxdo',
+  },
+  {
+    path: '/auth/x/callback',
+    redirect: '/oauth/x',
   },
 ]
 

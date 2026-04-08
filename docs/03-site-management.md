@@ -14,6 +14,7 @@ Base URL：/v1
 - 响应结构: code=0 成功，code=1 失败；msg 为提示信息
 
 请求参数:
+
 - 无
 
 响应字段:
@@ -22,6 +23,7 @@ Base URL：/v1
 | data | string | QQ登录跳转URL |
 
 响应示例:
+
 ```json
 {
   "code": 0,
@@ -40,6 +42,7 @@ Base URL：/v1
 - 响应结构: code=0 成功，code=1 失败；msg 为提示信息
 
 请求参数:
+
 - 无
 
 响应字段:
@@ -48,6 +51,69 @@ Base URL：/v1
 | data | string | Google登录跳转URL |
 
 响应示例:
+
+```json
+{
+  "code": 0,
+  "data": "https://example.com/page",
+  "msg": "获取成功"
+}
+```
+
+## [GET] 获取GitHub登录URL
+
+- 接口路径: GET /common/site/github-url
+- 认证: 无需登录
+- 依赖接口: 无
+- 接口说明: 获取GitHub OAuth登录跳转URL；支持可选 state 与 PKCE codeChallenge
+- HTTP 状态码: 200（业务码 code 判断成功/失败）
+- 响应结构: code=0 成功，code=1 失败；msg 为提示信息
+
+请求参数:
+| 名称 | 位置 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- | --- |
+| state | query | string | 否 | CSRF 防护状态值 |
+| codeChallenge | query | string | 否 | PKCE codeChallenge；传入后会拼接到 GitHub 授权URL |
+| codeChallengeMethod | query | string | 否 | PKCE challenge 计算方式，默认 S256 可选: S256 |
+
+响应字段:
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| data | string | GitHub登录跳转URL |
+
+响应示例:
+
+```json
+{
+  "code": 0,
+  "data": "https://example.com/page",
+  "msg": "获取成功"
+}
+```
+
+## [GET] 获取X登录URL
+
+- 接口路径: GET /common/site/x-url
+- 认证: 无需登录
+- 依赖接口: 无
+- 接口说明: 获取X OAuth登录跳转URL；需传入 PKCE codeChallenge
+- HTTP 状态码: 200（业务码 code 判断成功/失败）
+- 响应结构: code=0 成功，code=1 失败；msg 为提示信息
+
+请求参数:
+| 名称 | 位置 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- | --- |
+| state | query | string | 否 | CSRF 防护状态值 |
+| codeChallenge | query | string | 是 | X PKCE codeChallenge |
+| codeChallengeMethod | query | string | 否 | PKCE challenge 计算方式，默认 S256 可选: S256/plain |
+
+响应字段:
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| data | string | X登录跳转URL |
+
+响应示例:
+
 ```json
 {
   "code": 0,
@@ -61,11 +127,12 @@ Base URL：/v1
 - 接口路径: GET /common/site/config
 - 认证: 无需登录
 - 依赖接口: 无
-- 接口说明: 获取站点公开配置（普通用户接口，不返回 storage）
+- 接口说明: 获取站点公开配置
 - HTTP 状态码: 200（业务码 code 判断成功/失败）
 - 响应结构: code=0 成功，code=1 失败；msg 为提示信息
 
 请求参数:
+
 - 无
 
 响应字段:
@@ -89,8 +156,14 @@ Base URL：/v1
 | data.site.register.slideCaptcha | boolean | 是否开启滑块验证码注册 |
 | data.site.register.slideCaptchaTTL | integer | 滑块验证码有效期(秒) |
 | data.site.register.slideCaptchaPadding | integer | 滑块验证码容错像素 |
+| data.site.storage | Storage | - |
+| data.site.storage.maxChunkSize | integer(int64) | 最大分块大小(MB) |
+| data.site.storage.chunkSize | integer(int64) | 分块大小(MB) |
+| data.site.storage.maxFileSize | integer(int64) | 最大文件大小(MB) |
+| data.site.storage.maxUploadNum | integer(int64) | 最大上传文件数量 |
 
 响应示例:
+
 ```json
 {
   "code": 0,
@@ -107,6 +180,12 @@ Base URL：/v1
         "textClickCaptcha": true,
         "textClickCaptchaTTL": 1,
         "textClickCaptchaPadding": 1
+      },
+      "storage": {
+        "maxChunkSize": 100,
+        "chunkSize": 10,
+        "maxFileSize": 1901,
+        "maxUploadNum": 10
       },
       "register": {
         "emailCaptcha": true,
@@ -131,6 +210,7 @@ Base URL：/v1
 - 响应结构: code=0 成功，code=1 失败；msg 为提示信息
 
 请求参数:
+
 - 无
 
 响应字段:
@@ -142,6 +222,7 @@ Base URL：/v1
 | data.online | integer(int64) | 在线人数（5分钟窗口） |
 
 响应示例:
+
 ```json
 {
   "code": 0,
@@ -164,6 +245,7 @@ Base URL：/v1
 - 响应结构: code=0 成功，code=1 失败；msg 为提示信息
 
 请求参数:
+
 - 无
 
 响应字段:
@@ -174,6 +256,7 @@ Base URL：/v1
 | data.online | integer(int64) | 在线人数（5分钟窗口） |
 
 响应示例:
+
 ```json
 {
   "code": 0,

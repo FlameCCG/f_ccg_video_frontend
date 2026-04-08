@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
-import { getSiteConfig, type SiteConfig } from '@/api/site'
+import { getSiteConfig, normalizeStorageConfig, type SiteConfig } from '@/api/site'
 
 export const useSiteStore = defineStore('site', () => {
   // State
@@ -25,10 +25,11 @@ export const useSiteStore = defineStore('site', () => {
   const isRegisterSlideCaptchaEnabled = computed(() => config.value?.register.slideCaptcha ?? false)
 
   // Getters - Storage
-  const maxChunkSize = computed(() => config.value?.storage.maxChunkSize ?? 20)
-  const chunkSize = computed(() => config.value?.storage.chunkSize ?? 10)
-  const maxFileSize = computed(() => config.value?.storage.maxFileSize ?? 100)
-  const maxUploadNum = computed(() => config.value?.storage.maxUploadNum ?? 10)
+  const normalizedStorage = computed(() => normalizeStorageConfig(config.value?.storage))
+  const maxChunkSize = computed(() => normalizedStorage.value.maxChunkSize)
+  const chunkSize = computed(() => normalizedStorage.value.chunkSize)
+  const maxFileSize = computed(() => normalizedStorage.value.maxFileSize)
+  const maxUploadNum = computed(() => normalizedStorage.value.maxUploadNum)
 
   // Getters - Content Review
   const isContentReviewEnabled = computed(() => config.value?.contentReview.enable ?? false)

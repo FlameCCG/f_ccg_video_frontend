@@ -75,7 +75,7 @@
     --glass-blur: 22px;
 
     --signal-foreground: oklch(98.5% 0.004 230deg);
-    --media-overlay: oklch(29.% 0.02 242deg / 0.72);
+    --media-overlay: oklch(29% 0.02 242deg / 0.72);
     --media-overlay-text: oklch(97.8% 0.004 230deg);
 
     --page-wash-1: oklch(82% 0.04 236deg / 0.22);
@@ -116,7 +116,8 @@
     --shadow-raised-value:
       0 1px 2px oklch(25% 0.02 240deg / 0.05), 0 14px 36px -20px oklch(26% 0.03 240deg / 0.16);
     --shadow-overlay-value:
-      0 18px 48px -24px oklch(22% 0.03 240deg / 0.24), 0 6px 18px -12px oklch(22% 0.02 240deg / 0.12);
+      0 18px 48px -24px oklch(22% 0.03 240deg / 0.24),
+      0 6px 18px -12px oklch(22% 0.02 240deg / 0.12);
     --shadow-cinematic-value: 0 28px 84px -30px oklch(18% 0.02 240deg / 0.28);
 
     --background: 0.985 0.006 230;
@@ -198,7 +199,8 @@
     --status-info-ink: oklch(84% 0.06 232deg);
 
     --shadow-surface-value: 0 1px 2px oklch(0% 0 0deg / 0.2);
-    --shadow-raised-value: 0 1px 2px oklch(0% 0 0deg / 0.22), 0 16px 38px -22px oklch(0% 0 0deg / 0.42);
+    --shadow-raised-value:
+      0 1px 2px oklch(0% 0 0deg / 0.22), 0 16px 38px -22px oklch(0% 0 0deg / 0.42);
     --shadow-overlay-value:
       0 20px 56px -28px oklch(0% 0 0deg / 0.52), 0 8px 20px -14px oklch(0% 0 0deg / 0.26);
     --shadow-cinematic-value: 0 30px 96px -34px oklch(0% 0 0deg / 0.58);

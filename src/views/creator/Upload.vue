@@ -3,6 +3,7 @@ import { ref, onMounted, onBeforeUnmount, computed, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import {
   UploadCloud,
+  AlertTriangle,
   Image as ImageIcon,
   X,
   Loader2,
@@ -36,7 +37,13 @@ import {
   type UploadStatusResult,
 } from '@/api/upload'
 import { publishVideo, getPartitions, type Partition } from '@/api/video'
-import { getSiteConfig, type StorageConfig } from '@/api/site'
+import {
+  DEFAULT_STORAGE_CONFIG,
+  getSiteConfig,
+  hasStorageConfig,
+  normalizeStorageConfig,
+  type StorageConfig,
+} from '@/api/site'
 
 const router = useRouter()
 const { toast } = useToast()
@@ -82,6 +89,11 @@ interface VideoWork {
   coverPreview: string
 }
 
+interface UploadFeedback {
+  description: string
+  title: string
+}
+
 const createWorkForm = (): VideoWorkForm => ({
   title: '',
   description: '',
@@ -113,16 +125,16 @@ const addWorkFileInputRef = ref<HTMLInputElement | null>(null)
 const partitions = ref<Partition[]>([])
 const isPublishing = ref(false)
 const showBatchDialog = ref(false)
+const hasExplicitStorageConfig = ref(false)
+const uploadFeedback = ref<UploadFeedback | null>(null)
 
-const storageConfig = ref<StorageConfig>({
-  maxChunkSize: 10,
-  chunkSize: 10,
-  maxFileSize: 100,
-  maxUploadNum: 10,
-})
+const storageConfig = ref<StorageConfig>({ ...DEFAULT_STORAGE_CONFIG })
 
 const chunkSizeBytes = computed(() => storageConfig.value.chunkSize * 1024 * 1024)
 const maxFileSizeBytes = computed(() => storageConfig.value.maxFileSize * 1024 * 1024)
+const effectiveMaxFileSizeBytes = computed(() =>
+  hasExplicitStorageConfig.value ? maxFileSizeBytes.value : Number.POSITIVE_INFINITY
+)
 const VIDEO_FILE_EXTENSIONS = [
   'mp4',
   'm4v',
@@ -139,8 +151,18 @@ const VIDEO_FILE_EXTENSIONS = [
 ] as const
 const VIDEO_INPUT_ACCEPT = `video/*,${VIDEO_FILE_EXTENSIONS.map((ext) => `.${ext}`).join(',')}`
 const COMMON_VIDEO_FORMAT_TEXT = `${VIDEO_FILE_EXTENSIONS.slice(0, 6).join(' / ')} 等常见格式`
+const DEFAULT_PART_LIMIT_TEXT = `最多 ${DEFAULT_STORAGE_CONFIG.maxUploadNum} 个分P`
+const FILE_HASH_CACHE_KEY = 'creator-upload-file-hash-cache'
+const FILE_HASH_CACHE_LIMIT = 24
 const SCHEDULE_MIN_DELAY_MS = 5 * 60 * 1000
 const SCHEDULE_MAX_DELAY_MS = 14 * 24 * 60 * 60 * 1000
+const uploadConstraintsText = computed(() => {
+  if (hasExplicitStorageConfig.value) {
+    return `支持 ${COMMON_VIDEO_FORMAT_TEXT}，单文件不超过 ${storageConfig.value.maxFileSize}MB，最多 ${storageConfig.value.maxUploadNum} 个分P，按 ${storageConfig.value.chunkSize}MB 分片上传。若文件未进入列表，会直接提示具体原因。`
+  }
+
+  return `支持 ${COMMON_VIDEO_FORMAT_TEXT}，当前站点未公开单文件大小限制，前端不会提前拦截；若服务端拒绝，会在列表中显示具体失败原因。${DEFAULT_PART_LIMIT_TEXT}。`
+})
 
 // Active work computed
 const activeWork = computed(() => works.value[activeWorkIndex.value])
@@ -276,6 +298,104 @@ const formatRejectedSummary = (values: string[], fallback: string) => {
   return values.length > 2 ? `${visible} 等 ${values.length} 个` : visible
 }
 
+const formatMegabytes = (value: number) => {
+  if (!Number.isFinite(value)) return '0MB'
+  return `${value >= 100 ? Math.round(value) : value.toFixed(1)}MB`
+}
+
+const formatFileSizeInMegabytes = (file: File) => {
+  return formatMegabytes(file.size / (1024 * 1024))
+}
+
+const getFileHashCacheKey = (file: File) => {
+  return `${file.name}::${file.size}::${file.lastModified}`
+}
+
+const readFileHashCache = () => {
+  try {
+    const raw = window.localStorage.getItem(FILE_HASH_CACHE_KEY)
+    if (!raw) return {} as Record<string, { hash: string; updatedAt: number }>
+
+    const parsed = JSON.parse(raw) as Record<string, { hash: string; updatedAt: number }>
+    return typeof parsed === 'object' && parsed ? parsed : {}
+  } catch {
+    return {} as Record<string, { hash: string; updatedAt: number }>
+  }
+}
+
+const writeFileHashCache = (cache: Record<string, { hash: string; updatedAt: number }>) => {
+  try {
+    const entries = Object.entries(cache)
+      .sort(([, left], [, right]) => right.updatedAt - left.updatedAt)
+      .slice(0, FILE_HASH_CACHE_LIMIT)
+
+    window.localStorage.setItem(FILE_HASH_CACHE_KEY, JSON.stringify(Object.fromEntries(entries)))
+  } catch {
+    // Ignore local cache failures and continue hashing normally.
+  }
+}
+
+const getCachedFileHash = (file: File) => {
+  return readFileHashCache()[getFileHashCacheKey(file)]?.hash ?? ''
+}
+
+const setCachedFileHash = (file: File, hash: string) => {
+  if (!hash) return
+
+  const cache = readFileHashCache()
+  cache[getFileHashCacheKey(file)] = {
+    hash,
+    updatedAt: Date.now(),
+  }
+  writeFileHashCache(cache)
+}
+
+const showFileSizeLimitToast = (files: File[]) => {
+  if (files.length === 0) return
+
+  const firstFile = files[0]
+  if (!firstFile) return
+  const title = files.length === 1 ? '文件超过大小上限' : '部分文件超过大小上限'
+  const description =
+    files.length === 1
+      ? `${firstFile.name} 当前约 ${formatFileSizeInMegabytes(firstFile)}，单文件最大只支持 ${storageConfig.value.maxFileSize}MB。`
+      : `${formatRejectedSummary(
+          files.map((file) => file.name),
+          '部分文件'
+        )} 超过单文件 ${storageConfig.value.maxFileSize}MB 上限，请压缩后重试。`
+
+  uploadFeedback.value = { title, description }
+}
+
+const getOversizeIssueText = (files: File[]) => {
+  const [firstFile] = files
+  if (!firstFile) {
+    return `超过 ${storageConfig.value.maxFileSize}MB`
+  }
+
+  if (files.length === 1) {
+    return `${firstFile.name} 当前约 ${formatFileSizeInMegabytes(firstFile)}，单文件最大只能上传 ${storageConfig.value.maxFileSize}MB`
+  }
+
+  return `${formatRejectedSummary(
+    files.map((file) => file.name),
+    '部分文件'
+  )} 超过单文件 ${storageConfig.value.maxFileSize}MB 上限`
+}
+
+const showPartCountLimitToast = (maxNum: number, currentCount: number) => {
+  const remaining = Math.max(maxNum - currentCount, 0)
+  const description =
+    remaining > 0
+      ? `当前作品已经有 ${currentCount} 个分P，这次还能再添加 ${remaining} 个。`
+      : `当前作品已经达到 ${currentCount} 个分P 上限，请先删除部分分P后再继续上传。`
+
+  uploadFeedback.value = {
+    title: `单个作品最多只能上传 ${maxNum} 个分P`,
+    description,
+  }
+}
+
 const revokeLocalPreviewObjectUrl = () => {
   if (localPreviewObjectUrl) {
     URL.revokeObjectURL(localPreviewObjectUrl)
@@ -366,7 +486,9 @@ onMounted(async () => {
     partitions.value = partitionRes.value
   }
   if (configRes.status === 'fulfilled') {
-    storageConfig.value = configRes.value.site.storage
+    const siteStorage = configRes.value.site?.storage
+    hasExplicitStorageConfig.value = hasStorageConfig(siteStorage)
+    storageConfig.value = normalizeStorageConfig(siteStorage)
   }
 
   refreshScheduleBoundary()
@@ -419,67 +541,47 @@ const calculateFullSHA256 = (
   onProgress?: (pct: number) => void
 ): Promise<string> => {
   return new Promise((resolve, reject) => {
-    const workerCode = `
-      self.onmessage = async (e) => {
-        try {
-          const file = e.data;
-          const chunkSize = 2 * 1024 * 1024;
-          const total = file.size;
-          const chunks = [];
-          let offset = 0;
-          while (offset < total) {
-            const end = Math.min(offset + chunkSize, total);
-            const buf = await file.slice(offset, end).arrayBuffer();
-            chunks.push(new Uint8Array(buf));
-            offset = end;
-            self.postMessage({ type: 'progress', pct: Math.round((offset / total) * 100) });
-          }
-          let totalLen = 0;
-          for (const c of chunks) totalLen += c.length;
-          const merged = new Uint8Array(totalLen);
-          let pos = 0;
-          for (const c of chunks) { merged.set(c, pos); pos += c.length; }
-          const hashBuf = await crypto.subtle.digest('SHA-256', merged);
-          const arr = Array.from(new Uint8Array(hashBuf));
-          const hex = arr.map(b => b.toString(16).padStart(2, '0')).join('');
-          self.postMessage({ type: 'done', hash: hex });
-        } catch (err) {
-          self.postMessage({ type: 'error', error: err.message });
-        }
-      };
-    `
-    const blob = new Blob([workerCode], { type: 'application/javascript' })
-    const url = URL.createObjectURL(blob)
-    const worker = new Worker(url)
+    const worker = new Worker(new URL('../../workers/upload-hash.worker.ts', import.meta.url), {
+      type: 'module',
+    })
 
     const cleanup = () => {
       worker.terminate()
-      URL.revokeObjectURL(url)
+      signal?.removeEventListener('abort', handleAbort)
     }
 
-    if (signal) {
-      signal.addEventListener('abort', () => {
-        cleanup()
-        reject(new Error('canceled'))
-      })
+    const handleAbort = () => {
+      cleanup()
+      reject(new Error('canceled'))
     }
 
-    worker.onmessage = (e: MessageEvent) => {
+    signal?.addEventListener('abort', handleAbort, { once: true })
+
+    worker.onmessage = (
+      e: MessageEvent<
+        | { type: 'done'; hash: string }
+        | { type: 'error'; error: string }
+        | { type: 'progress'; pct: number }
+      >
+    ) => {
       if (e.data.type === 'progress') {
-        onProgress?.(e.data.pct as number)
+        onProgress?.(e.data.pct)
       } else if (e.data.type === 'done') {
-        resolve(e.data.hash as string)
+        resolve(e.data.hash)
         cleanup()
       } else if (e.data.type === 'error') {
-        reject(new Error(e.data.error as string))
+        reject(new Error(e.data.error))
         cleanup()
       }
     }
     worker.onerror = (err) => {
-      reject(err)
+      reject(new Error(err.message || '文件哈希计算失败'))
       cleanup()
     }
-    worker.postMessage(file)
+    worker.postMessage({
+      file,
+      chunkSize: chunkSizeBytes.value,
+    })
   })
 }
 
@@ -623,6 +725,10 @@ const isLikelyVideoFile = (file: File) => {
   return !getVideoFileRejectionReason(file)
 }
 
+const exceedsConfiguredFileSizeLimit = (file: File) => {
+  return file.size > effectiveMaxFileSizeBytes.value
+}
+
 const processUploadQueue = () => {
   while (activeUploads.value < storageConfig.value.maxUploadNum) {
     let next: VideoPart | undefined
@@ -648,7 +754,7 @@ const handleFilesSelect = (files: FileList | File[]) => {
 
   const videoFiles = allFiles.filter(isLikelyVideoFile)
   if (videoFiles.length === 0) {
-    toast({
+    uploadFeedback.value = {
       title: '没有可上传的视频文件',
       description:
         unsupportedFiles.length > 0
@@ -657,8 +763,7 @@ const handleFilesSelect = (files: FileList | File[]) => {
               '所选文件'
             )} 未被识别为常见视频格式，请检查扩展名或重新导出。`
           : `请上传 ${COMMON_VIDEO_FORMAT_TEXT}。`,
-      variant: 'destructive',
-    })
+    }
     return
   }
 
@@ -666,15 +771,17 @@ const handleFilesSelect = (files: FileList | File[]) => {
   const currentParts = activeWork.value?.parts ?? []
   const remaining = maxNum - currentParts.length
   if (remaining <= 0) {
-    toast({ title: `当前作品最多 ${maxNum} 个分P`, variant: 'destructive' })
+    showPartCountLimitToast(maxNum, currentParts.length)
     return
   }
 
   const filesToAdd = videoFiles.slice(0, remaining)
   const ignoredByLimit = videoFiles.slice(remaining)
 
-  const oversized = filesToAdd.filter((f) => f.size > maxFileSizeBytes.value)
-  const validFiles = filesToAdd.filter((f) => f.size <= maxFileSizeBytes.value)
+  const oversized = hasExplicitStorageConfig.value
+    ? filesToAdd.filter((file) => exceedsConfiguredFileSizeLimit(file))
+    : []
+  const validFiles = filesToAdd.filter((file) => !exceedsConfiguredFileSizeLimit(file))
 
   const uploadIssues: string[] = []
   if (unsupportedFiles.length > 0) {
@@ -693,23 +800,18 @@ const handleFilesSelect = (files: FileList | File[]) => {
       )}`
     )
   }
-  if (oversized.length > 0) {
-    uploadIssues.push(
-      `超过 ${storageConfig.value.maxFileSize}MB：${formatRejectedSummary(
-        oversized.map((file) => file.name),
-        '部分文件'
-      )}`
-    )
+  if (hasExplicitStorageConfig.value && oversized.length > 0) {
+    uploadIssues.push(getOversizeIssueText(oversized))
   }
   if (uploadIssues.length > 0) {
-    toast({
+    uploadFeedback.value = {
       title: validFiles.length > 0 ? '部分文件未加入上传队列' : '所选文件未通过上传校验',
       description: uploadIssues.join('；'),
-      variant: validFiles.length > 0 ? undefined : 'destructive',
-    })
+    }
   }
 
   if (validFiles.length === 0) return
+  uploadFeedback.value = null
 
   const newParts: VideoPart[] = validFiles.map((file) => ({
     id: Math.random().toString(36).substring(2, 9),
@@ -752,9 +854,16 @@ const uploadPart = async (part: VideoPart, isResume = false) => {
     }
 
     if (!isResume || !part.hash) {
-      part.hash = await calculateFullSHA256(part.file, signal, (pct) => {
-        part.progress = pct
-      })
+      const cachedHash = getCachedFileHash(part.file)
+      if (cachedHash) {
+        part.hash = cachedHash
+        part.progress = 100
+      } else {
+        part.hash = await calculateFullSHA256(part.file, signal, (pct) => {
+          part.progress = pct
+        })
+        setCachedFileHash(part.file, part.hash)
+      }
     }
 
     // Phase 2: check status (秒传 / 断点续传)
@@ -890,16 +999,27 @@ const onAddWorkFileChange = (e: Event) => {
   const allFiles = Array.from(target.files)
   const videoFiles = allFiles.filter(isLikelyVideoFile)
   if (videoFiles.length === 0) {
-    toast({ title: '没有可上传的视频文件', variant: 'destructive' })
+    uploadFeedback.value = {
+      title: '没有可上传的视频文件',
+      description: `请上传 ${COMMON_VIDEO_FORMAT_TEXT}。`,
+    }
     target.value = ''
     return
   }
-  const validFiles = videoFiles.filter((f) => f.size <= maxFileSizeBytes.value)
+  const validFiles = videoFiles.filter((file) => !exceedsConfiguredFileSizeLimit(file))
   if (validFiles.length === 0) {
-    toast({ title: '所选文件未通过校验', variant: 'destructive' })
+    if (hasExplicitStorageConfig.value) {
+      showFileSizeLimitToast(videoFiles)
+    } else {
+      uploadFeedback.value = {
+        title: '没有可加入上传队列的视频',
+        description: '当前选择的文件未通过上传校验，请检查后重试。',
+      }
+    }
     target.value = ''
     return
   }
+  uploadFeedback.value = null
   validFiles.forEach((file) => {
     const part: VideoPart = {
       id: Math.random().toString(36).substring(2, 9),
@@ -940,12 +1060,8 @@ const onReplaceFileChange = (e: Event) => {
     target.value = ''
     return
   }
-  if (file.size > storageConfig.value.maxFileSize * 1024 * 1024) {
-    toast({
-      title: '无法更换',
-      description: `文件大于 ${storageConfig.value.maxFileSize}MB`,
-      variant: 'destructive',
-    })
+  if (exceedsConfiguredFileSizeLimit(file)) {
+    showFileSizeLimitToast([file])
     target.value = ''
     return
   }
@@ -1128,6 +1244,25 @@ const handlePublish = async () => {
       @change="onReplaceFileChange"
     />
 
+    <div
+      v-if="uploadFeedback"
+      class="upload-feedback-alert mb-6 flex items-start gap-3 rounded-2xl px-4 py-4"
+    >
+      <div
+        class="upload-feedback-alert__icon mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-full"
+      >
+        <AlertTriangle class="h-4.5 w-4.5" />
+      </div>
+      <div class="min-w-0 space-y-1">
+        <p class="upload-feedback-alert__title text-sm font-semibold tracking-[0.01em]">
+          {{ uploadFeedback.title }}
+        </p>
+        <p class="upload-feedback-alert__description text-sm leading-6">
+          {{ uploadFeedback.description }}
+        </p>
+      </div>
+    </div>
+
     <!-- Step 1: Upload Area -->
     <div
       v-if="works.length === 0"
@@ -1141,8 +1276,7 @@ const handlePublish = async () => {
       </div>
       <h3 class="text-3xl font-bold tracking-tight mb-4">拖拽视频到此处，或点击上传</h3>
       <p class="text-muted-foreground mb-10 text-center max-w-lg leading-relaxed">
-        支持 {{ COMMON_VIDEO_FORMAT_TEXT }}，单文件不超过 {{ storageConfig.maxFileSize }}MB，最多
-        {{ storageConfig.maxUploadNum }} 个分P。若文件未进入列表，会直接提示具体原因。
+        {{ uploadConstraintsText }}
       </p>
       <Button
         size="lg"
@@ -1719,6 +1853,41 @@ const handlePublish = async () => {
 </template>
 
 <style>
+.upload-feedback-alert {
+  position: relative;
+  overflow: hidden;
+  border: 1px solid var(--status-warning-border);
+  background: linear-gradient(
+    135deg,
+    color-mix(in oklch, var(--status-warning-soft) 88%, var(--bg-surface-1)),
+    color-mix(in oklch, var(--status-warning-soft) 74%, var(--bg-surface-2))
+  );
+  box-shadow:
+    inset 0 1px 0 color-mix(in oklch, var(--bg-surface-0) 88%, transparent),
+    0 22px 56px -40px color-mix(in oklch, var(--status-warning) 34%, transparent);
+  backdrop-filter: blur(14px);
+}
+
+.upload-feedback-alert__icon {
+  background: color-mix(in oklch, var(--status-warning) 16%, var(--bg-surface-0));
+  color: color-mix(in oklch, var(--status-warning-ink) 74%, var(--text-1));
+  box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--status-warning-border) 82%, transparent);
+}
+
+.upload-feedback-alert__title {
+  color: color-mix(in oklch, var(--status-warning-ink) 78%, var(--text-1));
+}
+
+.upload-feedback-alert__description {
+  color: color-mix(in oklch, var(--status-warning-ink) 64%, var(--text-2));
+}
+
+.dark .upload-feedback-alert {
+  box-shadow:
+    inset 0 1px 0 color-mix(in oklch, white 10%, transparent),
+    0 24px 60px -38px color-mix(in oklch, var(--status-warning) 46%, transparent);
+}
+
 .cover-dialog-scroll {
   scrollbar-width: thin;
   scrollbar-color: oklch(var(--foreground) / 0.15) transparent;

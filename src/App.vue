@@ -2,6 +2,7 @@
 import { ref, onMounted, onUnmounted } from 'vue'
 import { RouterView } from 'vue-router'
 import { Toaster } from '@/components/ui/sonner'
+import { Toaster as ToastToaster } from '@/components/ui/toast'
 import { useAuthStore } from '@/stores/auth'
 import { useThemeStore } from '@/stores/theme'
 import AuthDialog from '@/components/auth/AuthDialog.vue'
@@ -28,4 +29,5 @@ onUnmounted(() => {
   <RouterView />
   <AuthDialog :open="showAuthDialog" @update:open="showAuthDialog = $event" />
   <Toaster position="top-center" :duration="3000" rich-colors style="--normal-z: 999999" />
+  <ToastToaster />
 </template>

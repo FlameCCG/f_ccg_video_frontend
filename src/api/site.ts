@@ -32,6 +32,13 @@ export interface StorageConfig {
   maxUploadNum: number
 }
 
+export const DEFAULT_STORAGE_CONFIG: StorageConfig = {
+  maxChunkSize: 10,
+  chunkSize: 10,
+  maxFileSize: 100,
+  maxUploadNum: 10,
+}
+
 // Content Review Config
 export interface ContentReviewConfig {
   enable: boolean
@@ -41,7 +48,7 @@ export interface ContentReviewConfig {
 export interface SiteConfig {
   login: LoginConfig
   register: RegisterConfig
-  storage: StorageConfig
+  storage: Partial<StorageConfig> | null
   contentReview: ContentReviewConfig
 }
 
@@ -61,6 +68,42 @@ export interface SiteTouchResult {
 export interface SiteHeartbeatResult {
   uv: number
   online: number
+}
+
+const normalizePositiveNumber = (value: unknown, fallback: number): number => {
+  if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) {
+    return fallback
+  }
+
+  return value
+}
+
+export const normalizeStorageConfig = (
+  storage: Partial<StorageConfig> | null | undefined
+): StorageConfig => {
+  const chunkSize = normalizePositiveNumber(storage?.chunkSize, DEFAULT_STORAGE_CONFIG.chunkSize)
+  const maxChunkSize = Math.max(
+    chunkSize,
+    normalizePositiveNumber(storage?.maxChunkSize, DEFAULT_STORAGE_CONFIG.maxChunkSize)
+  )
+
+  return {
+    chunkSize,
+    maxChunkSize,
+    maxFileSize: normalizePositiveNumber(storage?.maxFileSize, DEFAULT_STORAGE_CONFIG.maxFileSize),
+    maxUploadNum: Math.max(
+      1,
+      Math.floor(
+        normalizePositiveNumber(storage?.maxUploadNum, DEFAULT_STORAGE_CONFIG.maxUploadNum)
+      )
+    ),
+  }
+}
+
+export const hasStorageConfig = (
+  storage: Partial<StorageConfig> | null | undefined
+): storage is Partial<StorageConfig> => {
+  return Boolean(storage && Object.keys(storage).length > 0)
 }
 
 // ============================================================================

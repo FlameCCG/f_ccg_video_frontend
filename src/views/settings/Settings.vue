@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
+import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { useSiteStore } from '@/stores/site'
@@ -21,11 +21,16 @@ import {
   type UserExpRecordItem,
   type UserCoinRecordItem,
 } from '@/api/user'
-import { sendEmailCaptcha } from '@/api/captcha'
+import {
+  sendEmailCaptcha,
+  type InteractiveCaptchaPayload,
+  type SendEmailCaptchaParams,
+} from '@/api/captcha'
 import { uploadImage, type ImageUploadResult } from '@/api/upload'
 import AppAvatar from '@/components/common/AppAvatar.vue'
 import GraphicsCaptcha from '@/components/captcha/GraphicsCaptcha.vue'
-import SlideCaptchaDialog from '@/components/captcha/SlideCaptchaDialog.vue'
+import InteractiveCaptchaDialog from '@/components/captcha/InteractiveCaptchaDialog.vue'
+import { useCaptchaTypeQueue } from '@/composables/useCaptchaTypeQueue'
 import { toast } from 'vue-sonner'
 import {
   Home,
@@ -49,27 +54,10 @@ import {
 } from 'lucide-vue-next'
 import { levelColor } from '@/utils/format'
 
-interface SlideCaptchaExposed {
-  success: (result?: { token: string; x: number; y: number }) => void
-  fail: () => void
-  refresh: () => void
+interface CaptchaExposed {
+  success: () => void
+  fail: (message?: string) => void
   reset: () => void
-}
-
-/** 仅滑块/图形验证码校验失败（不含发送频率等业务错误） */
-const isCaptchaBusinessError = (message: string): boolean => {
-  const lower = message.toLowerCase()
-  return (
-    lower.includes('验证码错误') ||
-    lower.includes('验证码验证失败') ||
-    lower.includes('验证码已过期') ||
-    lower.includes('请填写图形验证码') ||
-    lower.includes('图形验证码') ||
-    lower.includes('captcha verification') ||
-    lower.includes('captcha expired') ||
-    lower.includes('slide captcha') ||
-    lower.includes('invalid slide captcha')
-  )
 }
 
 const router = useRouter()
@@ -113,8 +101,12 @@ const graphicsCaptchaValue = ref<{ captchaID: string; captchaCode: string }>({
   captchaID: '',
   captchaCode: '',
 })
-const slideCaptchaOpen = ref(false)
-const slideCaptchaDialogRef = ref<SlideCaptchaExposed | null>(null)
+const captchaOpen = ref(false)
+const captchaType = ref<'click' | 'slide'>('slide')
+const captchaRevision = ref(0)
+const captchaDialogRef = ref<CaptchaExposed | null>(null)
+const typeQueue = useCaptchaTypeQueue(() => 'register')
+let captchaSelectionId = 0
 
 const RECORD_PAGE_SIZE = 8
 
@@ -190,15 +182,7 @@ const refreshGraphicsCaptcha = () => {
 }
 
 const buildBindEmailCaptchaPayload = () => {
-  const payload: {
-    type: 3
-    email: string
-    captchaID?: string
-    captchaCode?: string
-    slideCaptchaToken?: string
-    slideCaptchaX?: number
-    slideCaptchaY?: number
-  } = {
+  const payload: SendEmailCaptchaParams = {
     type: 3,
     email: bindEmailAddress.value.trim(),
   }
@@ -570,7 +554,7 @@ const startBindEmailCountdown = () => {
   }, 1000)
 }
 
-const handleSendBindEmailCode = () => {
+const handleSendBindEmailCode = async () => {
   if (!canSendBindEmail.value) {
     if (
       userInfo.value?.email &&
@@ -588,12 +572,40 @@ const handleSendBindEmailCode = () => {
     return
   }
 
-  if (siteStore.isRegisterSlideCaptchaEnabled) {
-    slideCaptchaOpen.value = true
-    return
-  }
+  const opened = await openBindCaptcha()
+  if (opened === false) await sendBindEmailCodeWithoutSlide()
+}
 
-  void sendBindEmailCodeWithoutSlide()
+const openBindCaptcha = async (): Promise<boolean | null> => {
+  if (isSendingBindEmail.value) return null
+  const id = ++captchaSelectionId
+  isSendingBindEmail.value = true
+  try {
+    const type = await typeQueue.take()
+    if (id !== captchaSelectionId) return null
+    captchaOpen.value = type !== 'none'
+    if (type !== 'none') {
+      captchaType.value = type
+      captchaRevision.value += 1
+    }
+    await nextTick()
+    typeQueue.warmup()
+    return type !== 'none'
+  } catch (error: unknown) {
+    if (id === captchaSelectionId)
+      toast.error(error instanceof Error ? error.message : '验证码准备失败，请重试')
+    typeQueue.warmup()
+    return null
+  } finally {
+    if (id === captchaSelectionId) isSendingBindEmail.value = false
+  }
+}
+const handleCaptchaRetry = () => {
+  if (captchaOpen.value) void openBindCaptcha()
+}
+const handleCaptchaCancel = () => {
+  captchaSelectionId += 1
+  isSendingBindEmail.value = false
 }
 
 const sendBindEmailCodeWithoutSlide = async () => {
@@ -612,30 +624,30 @@ const sendBindEmailCodeWithoutSlide = async () => {
   }
 }
 
-const handleSlideCaptchaConfirm = async (value: { token: string; x: number; y: number }) => {
+const handleBindCaptchaConfirm = async (captcha: InteractiveCaptchaPayload) => {
+  if (isSendingBindEmail.value) return
+  const dialog = captchaDialogRef.value
+  const id = captchaSelectionId
   isSendingBindEmail.value = true
   try {
     const result = await sendEmailCaptcha(
       {
         ...buildBindEmailCaptchaPayload(),
-        slideCaptchaToken: value.token,
-        slideCaptchaX: value.x,
-        slideCaptchaY: value.y,
+        ...captcha,
       },
       { silent: true }
     )
     bindEmailID.value = result.emailID
-    slideCaptchaDialogRef.value?.success(value)
+    if (id !== captchaSelectionId) return
+    dialog?.success()
     toast.success('验证码已发送到您的邮箱')
     startBindEmailCountdown()
     refreshGraphicsCaptcha()
   } catch (error: unknown) {
-    slideCaptchaDialogRef.value?.fail()
-    refreshGraphicsCaptcha()
     const message = error instanceof Error ? error.message : ''
-    if (message && (message.includes('图形验证码') || !isCaptchaBusinessError(message))) {
-      toast.error(message)
-    }
+    if (id !== captchaSelectionId) return
+    dialog?.fail(message)
+    refreshGraphicsCaptcha()
   } finally {
     isSendingBindEmail.value = false
   }
@@ -689,11 +701,13 @@ const handleBindEmail = async () => {
 }
 
 onMounted(() => {
+  typeQueue.warmup()
   void siteStore.fetchConfig()
   void fetchData()
 })
 
 onUnmounted(() => {
+  captchaSelectionId += 1
   if (bindEmailCountdownTimer) {
     clearInterval(bindEmailCountdownTimer)
     bindEmailCountdownTimer = null
@@ -1282,10 +1296,15 @@ watch(activeRecordTab, (tab) => {
     </div>
 
     <!-- Dialog models for slide validation -->
-    <SlideCaptchaDialog
-      ref="slideCaptchaDialogRef"
-      v-model:open="slideCaptchaOpen"
-      @confirm="handleSlideCaptchaConfirm"
+    <InteractiveCaptchaDialog
+      ref="captchaDialogRef"
+      v-model:open="captchaOpen"
+      :type="captchaType"
+      :revision="captchaRevision"
+      scene="register"
+      @confirm="handleBindCaptchaConfirm"
+      @retry="handleCaptchaRetry"
+      @cancel="handleCaptchaCancel"
     />
   </div>
 </template>

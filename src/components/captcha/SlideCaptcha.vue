@@ -1,20 +1,23 @@
 <script setup lang="ts">
-/**
- * 客户端滑块验证码（对齐管理端交互与状态机）
- * 拖拽释放后 emit confirm，由父组件请求后端校验，再调用 success()/fail()
- */
+/** 与管理端使用相同的滑块交互和判定动效。 */
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { Loader2, RefreshCw } from 'lucide-vue-next'
-import { getSlideCaptcha, type SlideCaptcha } from '@/api/captcha'
+
+import { getSlideCaptcha, type CaptchaScene, type SlideCaptcha } from '@/api/captcha'
 
 interface Props {
-  /** 是否显示/激活（用于弹层挂载时再拉码） */
+  /** 是否显示验证码 */
   visible?: boolean
+  scene?: CaptchaScene
+  autoRetry?: boolean
 }
 
 interface CaptchaResult {
+  /** 验证码 Token */
   token: string
+  /** 滑块 X 坐标 */
   x: number
+  /** 滑块 Y 坐标 */
   y: number
 }
 
@@ -22,28 +25,46 @@ type VerifyStatus = 'idle' | 'verifying' | 'success' | 'fail'
 
 const props = withDefaults(defineProps<Props>(), {
   visible: true,
+  scene: 'register',
+  autoRetry: true,
 })
 
 const emit = defineEmits<{
+  /** 验证成功 */
   success: [result: CaptchaResult]
+  /** 确认验证（用户释放滑块） */
   confirm: [result: CaptchaResult]
+  /** 验证失败 */
   fail: []
+  /** 刷新验证码 */
   refresh: []
+  /** 成功画面已完成，可以开始弹层离场 */
+  settled: []
+  retry: []
 }>()
 
 const DEFAULT_SLIDER_WIDTH = 44
 const FAILURE_RESET_DELAY = 1100
+const RECOIL_DURATION = 200
+const ARIA_SYNC_INTERVAL = 150
+const SUCCESS_HOLD_DURATION = 280
+const SUCCESS_FALLBACK_DURATION = 1400
 
 const captchaData = ref<SlideCaptcha | null>(null)
 const loading = ref(false)
+const failMessage = ref('')
 const isDragging = ref(false)
+const isReturning = ref(false)
+const imageHeight = ref(160)
 const sliderX = ref(0)
 const scale = ref(1)
-const startX = ref(0)
 const verifyStatus = ref<VerifyStatus>('idle')
 const containerWidth = ref(280)
 const sliderWidth = ref(DEFAULT_SLIDER_WIDTH)
 const lastResult = ref<CaptchaResult | null>(null)
+const masterImageReady = ref(false)
+const tileImageReady = ref(false)
+const imageFailed = ref(false)
 
 const containerRef = ref<HTMLDivElement | null>(null)
 const sliderRef = ref<HTMLDivElement | null>(null)
@@ -51,7 +72,16 @@ const masterImageRef = ref<HTMLImageElement | null>(null)
 
 let resizeObserver: ResizeObserver | undefined
 let failureResetTimer: ReturnType<typeof setTimeout> | undefined
+let returnTimer: ReturnType<typeof setTimeout> | undefined
+let settleTimer: ReturnType<typeof setTimeout> | undefined
+let settleArmed = false
 let captchaRequestId = 0
+let rawX = 0
+let pointerOrigin = 0
+let pointerScale = 1
+let activePointerId: number | null = null
+let dragFrame = 0
+let lastAriaSync = 0
 
 const maxSlideDistance = computed(() => Math.max(containerWidth.value - sliderWidth.value, 0))
 const maxSlideDistanceRounded = computed(() => Math.round(maxSlideDistance.value))
@@ -59,13 +89,18 @@ const progressPercentage = computed(() => {
   if (maxSlideDistance.value <= 0) return 0
   return Math.round((sliderX.value / maxSlideDistance.value) * 100)
 })
-const fillScale = computed(() => {
-  if (containerWidth.value <= 0) return 0
-  return Math.min((sliderX.value + sliderWidth.value) / containerWidth.value, 1)
-})
 const showSuccessResult = computed(() => verifyStatus.value === 'success')
+const imagesReady = computed(
+  () => masterImageReady.value && tileImageReady.value && !imageFailed.value
+)
+const isPreparing = computed(
+  () => loading.value || (Boolean(captchaData.value) && !imagesReady.value && !imageFailed.value)
+)
 const isInteractive = computed(
-  () => !loading.value && Boolean(captchaData.value) && verifyStatus.value === 'idle'
+  () => props.visible && !isPreparing.value && imagesReady.value && verifyStatus.value === 'idle'
+)
+const canRefresh = computed(
+  () => !loading.value && verifyStatus.value !== 'verifying' && verifyStatus.value !== 'success'
 )
 const tipText = computed(() => {
   switch (verifyStatus.value) {
@@ -74,83 +109,154 @@ const tipText = computed(() => {
     case 'success':
       return '验证成功'
     case 'fail':
-      return '验证失败，请重试'
+      return failMessage.value || '验证失败，请重试'
     default:
-      return '向右拖动滑块完成验证'
+      return '请拖动滑块完成验证'
   }
 })
-const sliderStyle = computed(() => ({
-  transform: `translate3d(${sliderX.value}px, 0, 0)`,
-}))
 const tileStyle = computed(() => ({
-  transform: `translate3d(${sliderX.value}px, ${(captchaData.value?.thumbY ?? 0) * scale.value}px, 0) scale(${scale.value})`,
+  transform: `translate3d(var(--captcha-x, 0px), ${(captchaData.value?.thumbY ?? 0) * scale.value}px, 0) scale(${scale.value})`,
   transformOrigin: 'left top',
-}))
-const fillStyle = computed(() => ({
-  transform: `scaleX(${fillScale.value})`,
 }))
 
 function clearFailureTimers(): void {
   if (failureResetTimer) clearTimeout(failureResetTimer)
+  if (returnTimer) clearTimeout(returnTimer)
   failureResetTimer = undefined
+  returnTimer = undefined
+}
+
+function clearSettleTimer(): void {
+  if (settleTimer) clearTimeout(settleTimer)
+  settleTimer = undefined
+  settleArmed = false
+}
+
+function handleSettled(): void {
+  if (!settleArmed || verifyStatus.value !== 'success' || !props.visible) return
+  clearSettleTimer()
+  const reducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
+  settleTimer = setTimeout(
+    () => {
+      settleTimer = undefined
+      if (props.visible && verifyStatus.value === 'success') emit('settled')
+    },
+    reducedMotion ? 0 : SUCCESS_HOLD_DURATION
+  )
+}
+
+function flushPosition(): void {
+  dragFrame = 0
+  const root = containerRef.value
+  if (!root) return
+  root.style.setProperty('--captcha-x', `${rawX}px`)
+  root.style.setProperty(
+    '--captcha-fill',
+    String(Math.min((rawX + sliderWidth.value) / (containerWidth.value || 1), 1))
+  )
+}
+
+function cancelFrame(): void {
+  if (dragFrame) cancelAnimationFrame(dragFrame)
+  dragFrame = 0
+}
+
+function stopDragging(): void {
+  const pointerId = activePointerId
+  activePointerId = null
+  isDragging.value = false
+  cancelFrame()
+  if (pointerId !== null && sliderRef.value?.hasPointerCapture?.(pointerId)) {
+    sliderRef.value.releasePointerCapture(pointerId)
+  }
 }
 
 function measureCaptcha(): void {
   if (containerRef.value) {
-    containerWidth.value = containerRef.value.getBoundingClientRect().width
+    // 使用布局尺寸，避免弹窗缩放入场时把视觉缩放误算进验证码坐标。
+    containerWidth.value = containerRef.value.clientWidth || containerWidth.value
   }
   if (sliderRef.value) {
-    sliderWidth.value = sliderRef.value.getBoundingClientRect().width || DEFAULT_SLIDER_WIDTH
+    sliderWidth.value = sliderRef.value.offsetWidth || DEFAULT_SLIDER_WIDTH
   }
   if (masterImageRef.value?.naturalWidth) {
-    scale.value =
-      masterImageRef.value.getBoundingClientRect().width / masterImageRef.value.naturalWidth
+    const image = masterImageRef.value
+    if (image.clientWidth > 0) {
+      scale.value = image.clientWidth / image.naturalWidth
+      imageHeight.value = image.naturalHeight * scale.value
+    }
   }
-  sliderX.value = Math.min(sliderX.value, maxSlideDistance.value)
+  moveSliderTo(rawX)
 }
 
 async function fetchCaptcha(): Promise<void> {
+  if (!props.visible) return
   const requestId = ++captchaRequestId
   clearFailureTimers()
+  clearSettleTimer()
+  stopDragging()
   loading.value = true
+  masterImageReady.value = false
+  tileImageReady.value = false
+  imageFailed.value = false
   verifyStatus.value = 'idle'
-  isDragging.value = false
-  sliderX.value = 0
+  failMessage.value = ''
+  isReturning.value = false
+  moveSliderTo(0)
   lastResult.value = null
 
   try {
-    const data = await getSlideCaptcha()
+    const data = await getSlideCaptcha(props.scene)
     if (requestId !== captchaRequestId) return
     captchaData.value = data
     await nextTick()
     measureCaptcha()
   } catch {
-    // 错误已在 request 层处理
+    if (requestId === captchaRequestId) captchaData.value = null
+    // 错误已在 request 层归一化处理
   } finally {
     if (requestId === captchaRequestId) loading.value = false
   }
 }
 
 function handleRefresh(): void {
+  if (!canRefresh.value) return
+  clearFailureTimers()
   emit('refresh')
-  void fetchCaptcha()
+  if (props.autoRetry) void fetchCaptcha()
+  else emit('retry')
 }
 
 function onImageLoad(event: Event): void {
   const image = event.target as HTMLImageElement
   if (!image.naturalWidth) return
-  scale.value = image.getBoundingClientRect().width / image.naturalWidth
+  masterImageReady.value = true
+  measureCaptcha()
+}
+
+function onImageError(): void {
+  imageFailed.value = true
 }
 
 function moveSliderTo(position: number): void {
-  sliderX.value = Math.max(0, Math.min(position, maxSlideDistance.value))
+  cancelFrame()
+  rawX = Math.max(0, Math.min(position, maxSlideDistance.value))
+  sliderX.value = rawX
+  flushPosition()
 }
 
 function handlePointerDown(event: PointerEvent): void {
-  if (!isInteractive.value) return
+  if (!isInteractive.value || isDragging.value || event.button !== 0 || event.isPrimary === false)
+    return
 
+  activePointerId = event.pointerId
   isDragging.value = true
-  startX.value = event.clientX - sliderX.value
+  measureCaptcha()
+  const root = containerRef.value
+  pointerScale = root?.clientWidth ? root.getBoundingClientRect().width / root.clientWidth : 1
+  pointerScale = pointerScale || 1
+  pointerOrigin = event.clientX - rawX * pointerScale
+  lastAriaSync = 0
   if (event.currentTarget instanceof HTMLElement) {
     event.currentTarget.setPointerCapture?.(event.pointerId)
   }
@@ -158,37 +264,36 @@ function handlePointerDown(event: PointerEvent): void {
 }
 
 function handlePointerMove(event: PointerEvent): void {
-  if (!isDragging.value) return
-  moveSliderTo(event.clientX - startX.value)
+  if (!isDragging.value || event.pointerId !== activePointerId) return
+  rawX = Math.max(
+    0,
+    Math.min((event.clientX - pointerOrigin) / pointerScale, maxSlideDistance.value)
+  )
+  if (!dragFrame) dragFrame = requestAnimationFrame(flushPosition)
+  if (event.timeStamp - lastAriaSync >= ARIA_SYNC_INTERVAL) {
+    lastAriaSync = event.timeStamp
+    sliderX.value = rawX
+  }
   event.preventDefault()
 }
 
-function releasePointer(event: PointerEvent): void {
-  if (
-    event.currentTarget instanceof HTMLElement &&
-    event.currentTarget.hasPointerCapture?.(event.pointerId)
-  ) {
-    event.currentTarget.releasePointerCapture(event.pointerId)
-  }
-}
-
 function handlePointerUp(event: PointerEvent): void {
-  if (!isDragging.value) return
-  isDragging.value = false
-  releasePointer(event)
+  if (!isDragging.value || event.pointerId !== activePointerId) return
+  moveSliderTo((event.clientX - pointerOrigin) / pointerScale)
+  stopDragging()
   verifySlider()
 }
 
 function handlePointerCancel(event: PointerEvent): void {
-  if (!isDragging.value) return
-  isDragging.value = false
-  releasePointer(event)
+  if (!isDragging.value || event.pointerId !== activePointerId) return
+  stopDragging()
+  moveSliderTo(rawX)
 }
 
 function handleSliderKeydown(event: KeyboardEvent): void {
-  if (!isInteractive.value) return
+  if (!isInteractive.value || isDragging.value) return
 
-  const step = Math.max(Math.round(maxSlideDistance.value / 20), 1)
+  const step = event.shiftKey ? 1 : Math.max(Math.round(maxSlideDistance.value / 20), 1)
   let handled = true
 
   switch (event.key) {
@@ -218,7 +323,7 @@ function handleSliderKeydown(event: KeyboardEvent): void {
 }
 
 function verifySlider(): void {
-  if (!captchaData.value || !isInteractive.value) return
+  if (!captchaData.value || !isInteractive.value || rawX <= 0) return
 
   const result: CaptchaResult = {
     token: captchaData.value.token,
@@ -249,14 +354,23 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   captchaRequestId += 1
+  stopDragging()
   resizeObserver?.disconnect()
   clearFailureTimers()
+  clearSettleTimer()
 })
 
 watch(
   () => props.visible,
   (visible) => {
-    if (visible) void fetchCaptcha()
+    if (visible) {
+      void fetchCaptcha()
+      return
+    }
+    captchaRequestId += 1
+    stopDragging()
+    clearFailureTimers()
+    clearSettleTimer()
   }
 )
 
@@ -264,91 +378,151 @@ defineExpose({
   reset,
   refresh: handleRefresh,
   success: () => {
+    if (!props.visible || verifyStatus.value !== 'verifying') return
     clearFailureTimers()
-    isDragging.value = false
+    clearSettleTimer()
+    stopDragging()
     verifyStatus.value = 'success'
+    settleArmed = true
+    const reducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
+    // animationend 正常收尾，减动效或动画被打断时由定时器兜底。
+    settleTimer = setTimeout(handleSettled, reducedMotion ? 160 : SUCCESS_FALLBACK_DURATION)
     if (lastResult.value) emit('success', lastResult.value)
   },
-  fail: () => {
+  fail: (message?: string) => {
+    failMessage.value = message || ''
+    if (!props.visible) return
     clearFailureTimers()
+    clearSettleTimer()
     verifyStatus.value = 'fail'
-    isDragging.value = false
-    sliderX.value = 0
+    stopDragging()
     emit('fail')
 
+    const reducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
+    if (reducedMotion) {
+      moveSliderTo(0)
+    } else {
+      returnTimer = setTimeout(() => {
+        isReturning.value = true
+        void nextTick(() => {
+          if (verifyStatus.value === 'fail') moveSliderTo(0)
+        })
+      }, RECOIL_DURATION)
+    }
+
     failureResetTimer = setTimeout(() => {
-      void fetchCaptcha()
+      if (!props.visible) return
+      if (props.autoRetry) void fetchCaptcha()
+      else emit('retry')
     }, FAILURE_RESET_DELAY)
   },
 })
 </script>
 
 <template>
-  <div ref="containerRef" class="slide-captcha">
+  <div
+    ref="containerRef"
+    class="slide-captcha"
+    :class="{
+      'slide-captcha--returning': isReturning,
+      'slide-captcha--ready': imagesReady && !loading,
+      'slide-captcha--success': showSuccessResult,
+      'slide-captcha--dragging': isDragging,
+    }"
+    :style="{ '--captcha-image-height': `${imageHeight}px` }"
+    :aria-busy="isPreparing || verifyStatus === 'verifying'"
+  >
     <div
       class="slide-captcha__image-wrapper"
       :class="{
         'slide-captcha__image-wrapper--dragging': isDragging,
       }"
     >
-      <div class="slide-captcha__image-container">
-        <div v-if="loading" class="slide-captcha__loading">
-          <Loader2 class="slide-captcha__loading-icon" />
-          <span>加载中...</span>
+      <div class="slide-captcha__loading-shell">
+        <div v-if="isPreparing" class="slide-captcha__loading" role="status" aria-label="加载中">
+          <Loader2 class="h-6 w-6 animate-spin" />
         </div>
+        <div class="slide-captcha__image-container">
+          <div class="slide-captcha__scene">
+            <img
+              v-if="captchaData?.masterImage"
+              :key="`master-${captchaData.token}`"
+              ref="masterImageRef"
+              :src="captchaData.masterImage"
+              class="slide-captcha__master-image"
+              alt="安全验证"
+              draggable="false"
+              @load="onImageLoad"
+              @error="onImageError"
+            />
 
-        <template v-else>
-          <img
-            v-if="captchaData?.masterImage"
-            ref="masterImageRef"
-            :src="captchaData.masterImage"
-            class="slide-captcha__master-image"
-            alt="滑块验证码"
-            draggable="false"
-            @load="onImageLoad"
-          />
-
-          <img
-            v-if="captchaData?.tileImage"
-            :src="captchaData.tileImage"
-            class="slide-captcha__tile-image"
-            :class="{ 'slide-captcha__tile-image--dragging': isDragging }"
-            :style="tileStyle"
-            alt=""
-            draggable="false"
-          />
-
-          <div v-if="!captchaData" class="slide-captcha__placeholder">加载中...</div>
-        </template>
-
-        <Transition name="captcha-result">
-          <div
-            v-if="showSuccessResult"
-            class="slide-captcha__result slide-captcha__result--success"
-            role="status"
-            aria-live="polite"
-          >
-            <div class="slide-captcha__result-scan" aria-hidden="true" />
-            <svg class="slide-captcha__result-mark" viewBox="0 0 64 64" aria-hidden="true">
-              <circle class="slide-captcha__result-ring" cx="32" cy="32" r="25" />
-              <path
-                class="slide-captcha__result-symbol slide-captcha__result-symbol--check"
-                d="M20 33.5 28.5 42 45 23.5"
-              />
-            </svg>
-            <span class="slide-captcha__result-text">{{ tipText }}</span>
+            <img
+              v-if="captchaData?.tileImage"
+              :key="`tile-${captchaData.token}`"
+              :src="captchaData.tileImage"
+              class="slide-captcha__tile-image"
+              :class="{ 'slide-captcha__tile-image--dragging': isDragging }"
+              :style="tileStyle"
+              alt=""
+              draggable="false"
+              @load="tileImageReady = true"
+              @error="onImageError"
+            />
           </div>
-        </Transition>
+
+          <div v-if="(!captchaData || imageFailed) && !loading" class="slide-captcha__placeholder">
+            <button
+              type="button"
+              class="slide-captcha__retry"
+              :disabled="!canRefresh"
+              @click="handleRefresh"
+            >
+              {{ '刷新验证码' }}
+            </button>
+          </div>
+
+          <Transition name="captcha-result">
+            <div v-if="verifyStatus === 'verifying'" class="slide-captcha__scan" aria-hidden="true">
+              <div class="slide-captcha__result-scan" />
+            </div>
+          </Transition>
+
+          <Transition name="captcha-result">
+            <div
+              v-if="showSuccessResult"
+              class="slide-captcha__result slide-captcha__result--success"
+              role="status"
+              aria-live="polite"
+            >
+              <div class="slide-captcha__result-halo" aria-hidden="true" />
+              <div class="slide-captcha__result-orbit" aria-hidden="true" />
+              <svg class="slide-captcha__result-mark" viewBox="0 0 64 64" aria-hidden="true">
+                <circle class="slide-captcha__result-disc" cx="32" cy="32" r="29" />
+                <circle class="slide-captcha__result-ring" cx="32" cy="32" r="25" />
+                <path
+                  class="slide-captcha__result-symbol slide-captcha__result-symbol--check"
+                  d="M20 33.5 28.5 42 45 23.5"
+                />
+              </svg>
+              <span class="slide-captcha__result-text">
+                {{ tipText }}
+              </span>
+              <span class="slide-captcha__result-caption" @animationend.self="handleSettled">
+                {{ '安全校验完成，可以继续' }}
+              </span>
+            </div>
+          </Transition>
+        </div>
       </div>
 
       <button
         type="button"
         class="slide-captcha__refresh-btn"
-        :disabled="loading || verifyStatus === 'verifying' || verifyStatus === 'success'"
-        aria-label="刷新验证码"
+        :disabled="!canRefresh"
         @click="handleRefresh"
       >
-        <RefreshCw class="slide-captcha__refresh-icon" />
+        <RefreshCw class="h-4 w-4" aria-hidden="true" />
+        <span class="sr-only">{{ '刷新验证码' }}</span>
       </button>
     </div>
 
@@ -361,7 +535,8 @@ defineExpose({
         'slide-captcha__track--fail': verifyStatus === 'fail',
       }"
     >
-      <div class="slide-captcha__track-fill" :style="fillStyle" />
+      <div class="slide-captcha__track-fill" aria-hidden="true" />
+      <div class="slide-captcha__track-shimmer" aria-hidden="true" />
 
       <Transition name="captcha-tip" mode="out-in">
         <span
@@ -384,10 +559,9 @@ defineExpose({
           'slide-captcha__slider--success': verifyStatus === 'success',
           'slide-captcha__slider--fail': verifyStatus === 'fail',
         }"
-        :style="sliderStyle"
         role="slider"
         :tabindex="isInteractive ? 0 : -1"
-        aria-label="向右拖动滑块完成验证"
+        aria-label="请拖动滑块完成验证"
         aria-valuemin="0"
         :aria-valuemax="maxSlideDistanceRounded"
         :aria-valuenow="Math.round(sliderX)"
@@ -397,6 +571,7 @@ defineExpose({
         @pointermove="handlePointerMove"
         @pointerup="handlePointerUp"
         @pointercancel="handlePointerCancel"
+        @lostpointercapture="handlePointerCancel"
         @keydown="handleSliderKeydown"
       >
         <svg class="slide-captcha__slider-icon" viewBox="0 0 24 24" aria-hidden="true">
@@ -419,90 +594,75 @@ defineExpose({
   </div>
 </template>
 
-<style scoped lang="scss">
+<style lang="scss" scoped>
 .slide-captcha {
-  --sc-slider-size: 2.75rem;
-  --sc-primary: var(--color-primary);
-  --sc-surface: var(--color-card);
-  --sc-surface-hover: var(--color-muted);
-  --sc-border: var(--color-border);
-  --sc-border-strong: color-mix(in oklch, var(--color-border) 70%, var(--color-foreground));
-  --sc-text: var(--color-foreground);
-  --sc-text-muted: var(--color-muted-foreground);
-  --sc-success: var(--status-success, oklch(64% 0.12 165deg));
-  --sc-success-light: var(
-    --status-success-soft,
-    color-mix(in oklch, var(--sc-success) 18%, var(--sc-surface))
-  );
-  --sc-danger: var(--status-danger, var(--color-destructive));
-  --sc-danger-light: color-mix(in oklch, var(--sc-danger) 16%, var(--sc-surface));
-  --sc-radius: var(--radius-lg, 0.75rem);
-  --sc-space-1: 0.25rem;
-  --sc-space-2: 0.5rem;
-  --sc-space-3: 0.75rem;
-  --sc-space-6: 1.5rem;
-  --sc-space-16: 4rem;
-  --sc-duration-fast: var(--duration-fast, 140ms);
-  --sc-duration-normal: var(--duration-normal, 240ms);
-  --sc-duration-slow: var(--duration-slow, 420ms);
-  --sc-easing-out: var(--ease-out-quart, cubic-bezier(0.25, 1, 0.5, 1));
-  --sc-easing-expo: var(--ease-out-expo, cubic-bezier(0.16, 1, 0.3, 1));
+  --captcha-slider-size: calc(40px + 4px);
+  --captcha-ease: cubic-bezier(0.22, 1, 0.36, 1);
+  --captcha-spring: cubic-bezier(0.2, 1.35, 0.4, 1);
 
   width: 100%;
-  max-width: 20rem;
   user-select: none;
 
   &__image-wrapper {
     position: relative;
-    margin-bottom: var(--sc-space-3);
-    animation: captcha-stage-enter var(--sc-duration-slow) var(--sc-easing-expo) both;
-
-    &--dragging .slide-captcha__image-container {
-      border-color: color-mix(in oklch, var(--sc-primary) 62%, var(--sc-border));
-      box-shadow: var(--shadow-raised, 0 4px 12px rgb(0 0 0 / 0.08));
-      transform: translateZ(0) scale(1.004);
-    }
+    margin-bottom: 16px;
+    animation: captcha-stage-enter 560ms 90ms var(--captcha-ease) both;
   }
 
   &__image-container {
     position: relative;
     width: 100%;
-    min-height: 10rem;
+    min-height: var(--captcha-image-height);
     overflow: hidden;
     isolation: isolate;
-    background-color: var(--sc-surface-hover);
-    border: 1px solid color-mix(in oklch, var(--sc-border) 80%, transparent);
-    border-radius: var(--sc-radius);
-    box-shadow: var(--shadow-surface, 0 1px 2px rgb(0 0 0 / 0.05));
+    background-color: var(--bg-surface-2);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-xl);
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--bg-surface-1) 12%, transparent);
     transform: translateZ(0);
     transition:
-      border-color var(--sc-duration-normal) var(--sc-easing-out),
-      box-shadow var(--sc-duration-normal) var(--sc-easing-out),
-      transform var(--sc-duration-normal) var(--sc-easing-out);
+      border-color 200ms cubic-bezier(0.25, 1, 0.5, 1),
+      box-shadow 200ms cubic-bezier(0.25, 1, 0.5, 1),
+      transform 320ms var(--captcha-ease);
   }
 
-  &__loading {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    gap: var(--sc-space-2);
-    min-height: 10rem;
-    color: var(--sc-text-muted);
-    font-size: 0.8125rem;
+  &__image-wrapper--dragging &__image-container {
+    border-color: color-mix(in srgb, var(--brand-blue) 62%, var(--border-color));
+    box-shadow: var(--shadow-raised-value);
+    transform: translateY(-2px);
+  }
 
-    &-icon {
-      width: 1.75rem;
-      height: 1.75rem;
-      animation: captcha-spin 0.8s linear infinite;
-    }
+  &__scene {
+    position: relative;
+    opacity: 0;
+    transform: scale(1.045);
+    transition:
+      opacity 360ms ease,
+      transform 680ms var(--captcha-ease);
+  }
+
+  &--ready &__scene {
+    opacity: 1;
+    transform: scale(1);
+  }
+
+  &--dragging &__scene {
+    transform: scale(1);
+    transition: none;
+  }
+
+  &--success &__scene {
+    opacity: 0.12;
+    transform: scale(1.06);
+    transition:
+      opacity 500ms 100ms ease,
+      transform 900ms var(--captcha-ease);
   }
 
   &__master-image {
     display: block;
     width: 100%;
     height: auto;
-    animation: captcha-image-reveal var(--sc-duration-slow) var(--sc-easing-out) both;
   }
 
   &__tile-image {
@@ -512,10 +672,8 @@ defineExpose({
     z-index: 2;
     object-fit: contain;
     pointer-events: none;
-    filter: drop-shadow(
-      0 var(--sc-space-1) var(--sc-space-2) color-mix(in oklch, var(--sc-text) 28%, transparent)
-    );
-    transition: transform var(--sc-duration-fast) var(--sc-easing-expo);
+    filter: drop-shadow(0 4px 8px color-mix(in srgb, var(--text-1) 28%, transparent));
+    transition: transform 100ms cubic-bezier(0.16, 1, 0.3, 1);
 
     &--dragging {
       will-change: transform;
@@ -524,146 +682,196 @@ defineExpose({
   }
 
   &__placeholder {
+    position: absolute;
+    inset: 0;
     display: flex;
     align-items: center;
     justify-content: center;
     width: 100%;
-    min-height: 10rem;
-    color: var(--sc-text-muted);
-    font-size: 0.875rem;
+    min-height: calc(80px * 2);
+    color: var(--text-2);
+    font-size: var(--text-sm);
+  }
+
+  &__loading-shell {
+    position: relative;
+  }
+
+  &__loading {
+    position: absolute;
+    inset: 0;
+    z-index: 11;
+    display: grid;
+    place-items: center;
+    color: var(--brand-blue);
+    background: var(--bg-surface-2);
+    border-radius: var(--radius-xl);
+  }
+
+  &__retry {
+    padding: 8px 16px;
+    cursor: pointer;
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-lg);
   }
 
   &__refresh-btn {
     position: absolute;
-    top: var(--sc-space-2);
-    right: var(--sc-space-2);
+    top: 8px;
+    right: 8px;
     z-index: 12;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 2rem;
-    height: 2rem;
+    display: grid;
+    place-items: center;
+    width: 28px;
+    height: 28px;
     padding: 0;
-    color: var(--sc-surface);
     cursor: pointer;
-    background-color: color-mix(in oklch, var(--sc-text) 52%, transparent);
-    border: none;
-    border-radius: 999px;
-    box-shadow: var(--shadow-surface, 0 1px 2px rgb(0 0 0 / 0.08));
+    border: 0;
+    border-radius: 50%;
+    color: var(--bg-surface-1);
+    background-color: color-mix(in srgb, var(--text-1) 52%, transparent);
+    box-shadow: var(--shadow-surface-value);
     transition:
-      background-color var(--sc-duration-fast) var(--sc-easing-out),
-      opacity var(--sc-duration-fast) var(--sc-easing-out),
-      transform var(--sc-duration-fast) var(--sc-easing-out);
+      background-color 100ms cubic-bezier(0.25, 1, 0.5, 1),
+      opacity 100ms cubic-bezier(0.25, 1, 0.5, 1),
+      transform 100ms cubic-bezier(0.25, 1, 0.5, 1);
 
     &:hover:not(:disabled) {
-      background-color: color-mix(in oklch, var(--sc-text) 72%, transparent);
+      background-color: color-mix(in srgb, var(--text-1) 72%, transparent);
       transform: rotate(18deg) scale(1.04);
     }
 
     &:active:not(:disabled) {
       transform: rotate(18deg) scale(0.94);
     }
-
-    &:disabled {
-      cursor: not-allowed;
-      opacity: 0.5;
-    }
   }
 
-  &__refresh-icon {
-    width: 0.95rem;
-    height: 0.95rem;
+  &--success &__refresh-btn {
+    opacity: 0;
+    transform: scale(0.8);
+    pointer-events: none;
   }
 
   &__track {
     position: relative;
-    height: var(--sc-slider-size);
+    height: var(--captcha-slider-size);
     overflow: hidden;
-    background-color: var(--sc-surface-hover);
-    border: 1px solid var(--sc-border);
-    border-radius: var(--sc-radius);
-    box-shadow: inset 0 1px 0 color-mix(in oklch, var(--sc-surface) 55%, transparent);
-    animation: captcha-stage-enter var(--sc-duration-slow) var(--sc-duration-fast)
-      var(--sc-easing-expo) both;
+    background-color: var(--bg-surface-2);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-lg);
+    box-shadow: inset 0 1px 0 color-mix(in srgb, var(--bg-surface-1) 55%, transparent);
+    animation: captcha-stage-enter 560ms 180ms var(--captcha-ease) both;
     transition:
-      background-color var(--sc-duration-normal) var(--sc-easing-out),
-      border-color var(--sc-duration-normal) var(--sc-easing-out),
-      box-shadow var(--sc-duration-normal) var(--sc-easing-out);
+      background-color 200ms cubic-bezier(0.25, 1, 0.5, 1),
+      border-color 200ms cubic-bezier(0.25, 1, 0.5, 1),
+      box-shadow 200ms cubic-bezier(0.25, 1, 0.5, 1);
+
+    &--dragging,
+    &--verifying {
+      border-color: color-mix(in srgb, var(--brand-blue) 68%, var(--border-color));
+      box-shadow:
+        inset 0 1px 0 color-mix(in srgb, var(--bg-surface-1) 55%, transparent),
+        0 0 0 3px color-mix(in srgb, var(--brand-blue) 10%, transparent);
+    }
 
     &--success {
-      background-color: color-mix(in oklch, var(--sc-success-light) 68%, var(--sc-surface));
-      border-color: var(--sc-success);
-
-      .slide-captcha__track-fill {
-        background: color-mix(in oklch, var(--sc-success) 16%, transparent);
-      }
+      background-color: color-mix(in srgb, var(--status-success) 5%, var(--bg-surface-1));
+      border-color: color-mix(in srgb, var(--status-success) 32%, var(--border-color));
     }
 
     &--fail {
-      background-color: color-mix(in oklch, var(--sc-danger-light) 68%, var(--sc-surface));
-      border-color: var(--sc-danger);
-      animation: captcha-error-recoil var(--sc-duration-normal) var(--sc-easing-out);
-
-      .slide-captcha__track-fill {
-        background: color-mix(in oklch, var(--sc-danger) 14%, transparent);
-      }
+      background-color: color-mix(in srgb, var(--status-danger-soft) 68%, var(--bg-surface-1));
+      border-color: var(--status-danger);
+      animation: captcha-error-recoil 200ms cubic-bezier(0.25, 1, 0.5, 1);
     }
+  }
 
-    &-fill {
-      position: absolute;
-      inset: 0;
-      background: linear-gradient(
-        90deg,
-        color-mix(in oklch, var(--sc-primary) 10%, transparent),
-        color-mix(in oklch, var(--sc-primary) 22%, transparent)
-      );
-      pointer-events: none;
-      transform: scaleX(0);
-      transform-origin: left center;
-      transition:
-        background-color var(--sc-duration-normal) var(--sc-easing-out),
-        transform var(--sc-duration-fast) var(--sc-easing-expo);
-    }
+  &__track-fill {
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(
+      90deg,
+      color-mix(in srgb, var(--brand-blue) 10%, transparent),
+      color-mix(in srgb, var(--brand-blue) 22%, transparent)
+    );
+    pointer-events: none;
+    transform: scaleX(var(--captcha-fill, 0));
+    transform-origin: left center;
+    transition:
+      background-color 200ms cubic-bezier(0.25, 1, 0.5, 1),
+      transform 100ms cubic-bezier(0.16, 1, 0.3, 1);
+  }
 
-    &--dragging .slide-captcha__track-fill {
-      will-change: transform;
-      transition: none;
-    }
+  &__track--dragging &__track-fill {
+    will-change: transform;
+    transition: none;
+  }
 
-    &--dragging .slide-captcha__tip {
-      opacity: 0.42;
-    }
+  &__track--success &__track-fill {
+    background: color-mix(in srgb, var(--status-success) 9%, transparent);
+    transform: scaleX(1);
+    transition: transform 560ms var(--captcha-ease);
+  }
+
+  &__track--fail &__track-fill {
+    background: color-mix(in srgb, var(--status-danger) 14%, transparent);
+  }
+
+  &__track-shimmer {
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(
+      105deg,
+      transparent 25%,
+      color-mix(in srgb, var(--brand-blue) 9%, transparent) 48%,
+      transparent 70%
+    );
+    opacity: 0;
+    transform: translateX(-100%);
+    pointer-events: none;
+  }
+
+  &--ready:not(.slide-captcha--dragging, .slide-captcha--success) &__track-shimmer {
+    animation: captcha-track-invitation 1800ms 600ms var(--captcha-ease) 2;
   }
 
   &__tip {
     position: absolute;
     top: 50%;
     left: 50%;
-    max-width: calc(100% - 4rem);
+    max-width: calc(100% - 64px);
     overflow: hidden;
-    color: var(--sc-text-muted);
-    font-size: 0.8125rem;
+    color: var(--text-2);
+    font-size: var(--text-sm);
     line-height: 1.25;
     text-overflow: ellipsis;
     white-space: nowrap;
     pointer-events: none;
     transform: translate(-50%, -50%);
     transition:
-      color var(--sc-duration-normal) var(--sc-easing-out),
-      opacity var(--sc-duration-fast) var(--sc-easing-out);
+      color 200ms cubic-bezier(0.25, 1, 0.5, 1),
+      opacity 100ms cubic-bezier(0.25, 1, 0.5, 1);
 
     &--verifying {
-      color: var(--sc-primary);
+      color: var(--brand-blue);
     }
 
     &--success {
-      color: var(--sc-success);
+      color: var(--status-success);
       font-weight: 600;
     }
 
     &--fail {
-      color: var(--sc-danger);
+      color: var(--status-danger);
     }
+  }
+
+  &__track--dragging &__tip {
+    opacity: 0;
+  }
+
+  &__track--success &__tip {
+    max-width: calc(100% - 16px);
   }
 
   &__slider {
@@ -674,92 +882,122 @@ defineExpose({
     display: flex;
     align-items: center;
     justify-content: center;
-    width: var(--sc-slider-size);
-    height: var(--sc-slider-size);
-    color: var(--sc-primary);
+    width: var(--captcha-slider-size);
+    height: var(--captcha-slider-size);
+    color: var(--brand-blue);
     touch-action: none;
     cursor: grab;
-    background-color: var(--sc-surface);
-    border: 1px solid var(--sc-border-strong);
-    border-radius: var(--sc-radius);
-    box-shadow: var(--shadow-surface, 0 1px 3px rgb(0 0 0 / 0.08));
-    transform: translate3d(0, 0, 0);
+    background-color: var(--bg-surface-1);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-surface-value);
+    transform: translate3d(var(--captcha-x, 0), 0, 0);
     transition:
-      color var(--sc-duration-fast) var(--sc-easing-out),
-      background-color var(--sc-duration-fast) var(--sc-easing-out),
-      border-color var(--sc-duration-fast) var(--sc-easing-out),
-      box-shadow var(--sc-duration-fast) var(--sc-easing-out),
-      transform var(--sc-duration-fast) var(--sc-easing-expo);
+      color 100ms cubic-bezier(0.25, 1, 0.5, 1),
+      background-color 100ms cubic-bezier(0.25, 1, 0.5, 1),
+      border-color 100ms cubic-bezier(0.25, 1, 0.5, 1),
+      box-shadow 100ms cubic-bezier(0.25, 1, 0.5, 1),
+      opacity 220ms ease,
+      transform 100ms cubic-bezier(0.16, 1, 0.3, 1);
 
     &:hover:not([aria-disabled='true']) {
-      color: var(--color-primary-foreground, #fff);
-      background-color: var(--sc-primary);
-      border-color: var(--sc-primary);
-      box-shadow: var(--shadow-raised, 0 4px 12px rgb(0 0 0 / 0.1));
+      color: var(--bg-surface-1);
+      background-color: var(--brand-blue);
+      border-color: var(--brand-blue);
+      box-shadow: var(--shadow-raised-value);
     }
 
     &:active:not([aria-disabled='true']) {
-      box-shadow: var(--shadow-surface, 0 1px 2px rgb(0 0 0 / 0.08));
+      box-shadow: var(--shadow-surface-value);
+    }
+
+    &:focus-visible {
+      outline: 2px solid var(--brand-blue);
+      outline-offset: -3px;
     }
 
     &--dragging {
-      color: var(--color-primary-foreground, #fff);
+      color: var(--bg-surface-1);
       cursor: grabbing;
-      background-color: var(--sc-primary);
-      border-color: var(--sc-primary);
-      box-shadow: var(--shadow-raised, 0 4px 12px rgb(0 0 0 / 0.1));
+      background-color: var(--brand-blue);
+      border-color: var(--brand-blue);
+      box-shadow: var(--shadow-raised-value);
       will-change: transform;
       transition:
-        color var(--sc-duration-fast) var(--sc-easing-out),
-        background-color var(--sc-duration-fast) var(--sc-easing-out),
-        border-color var(--sc-duration-fast) var(--sc-easing-out),
-        box-shadow var(--sc-duration-fast) var(--sc-easing-out);
+        color 100ms cubic-bezier(0.25, 1, 0.5, 1),
+        background-color 100ms cubic-bezier(0.25, 1, 0.5, 1),
+        border-color 100ms cubic-bezier(0.25, 1, 0.5, 1),
+        box-shadow 100ms cubic-bezier(0.25, 1, 0.5, 1);
     }
 
     &--verifying {
-      color: var(--color-primary-foreground, #fff);
+      color: var(--bg-surface-1);
       cursor: wait;
-      background-color: var(--sc-primary);
-      border-color: var(--sc-primary);
+      background-color: var(--brand-blue);
+      border-color: var(--brand-blue);
     }
 
     &--success {
-      color: #fff;
+      color: var(--bg-surface-1);
       cursor: default;
-      background-color: var(--sc-success);
-      border-color: var(--sc-success);
-      box-shadow: 0 0 0 4px color-mix(in oklch, var(--sc-success) 14%, transparent);
+      background-color: var(--status-success);
+      border-color: var(--status-success);
+      box-shadow: 0 0 0 4px color-mix(in srgb, var(--status-success) 14%, transparent);
+      opacity: 0;
+      pointer-events: none;
     }
 
     &--fail {
-      color: #fff;
+      color: var(--bg-surface-1);
       cursor: default;
-      background-color: var(--sc-danger);
-      border-color: var(--sc-danger);
+      background-color: var(--status-danger);
+      border-color: var(--status-danger);
     }
+  }
 
-    &-icon {
-      width: 1.5rem;
-      height: 1.5rem;
-      overflow: visible;
-      fill: none;
-      stroke: currentcolor;
-      stroke-linecap: round;
-      stroke-linejoin: round;
-      stroke-width: 1.8;
-    }
+  &__slider-icon {
+    width: 24px;
+    height: 24px;
+    overflow: visible;
+    fill: none;
+    stroke: currentcolor;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    stroke-width: 1.8;
+    transition: transform 280ms var(--captcha-spring);
+  }
 
-    &-check {
-      stroke-dasharray: 18;
-      stroke-dashoffset: 18;
-      animation: captcha-draw-symbol var(--sc-duration-slow) var(--sc-easing-out) forwards;
-    }
+  &__slider:hover &__slider-icon {
+    transform: translateX(2px);
+  }
 
-    &-spinner {
-      stroke-dasharray: 34 18;
-      transform-origin: center;
-      animation: captcha-spin 0.9s linear infinite;
-    }
+  &__slider--dragging &__slider-icon {
+    transform: translateX(2px) scale(0.88);
+  }
+
+  &--returning &__slider,
+  &--returning &__tile-image,
+  &--returning &__track-fill {
+    transition: transform 400ms cubic-bezier(0.22, 1, 0.36, 1);
+  }
+
+  &__slider-arrow,
+  &__slider-check {
+    transition:
+      opacity 100ms cubic-bezier(0.25, 1, 0.5, 1),
+      transform 100ms cubic-bezier(0.25, 1, 0.5, 1);
+  }
+
+  &__slider-check {
+    stroke-dasharray: 18;
+    stroke-dashoffset: 18;
+    animation: captcha-draw-symbol 300ms cubic-bezier(0.25, 1, 0.5, 1) forwards;
+  }
+
+  &__slider-spinner {
+    stroke-dasharray: 34 18;
+    transform-origin: center;
+    animation: captcha-spin 500ms linear infinite;
   }
 
   &__result {
@@ -768,97 +1006,134 @@ defineExpose({
     z-index: 10;
     display: flex;
     flex-direction: column;
+    gap: 6px;
     align-items: center;
     justify-content: center;
     overflow: hidden;
-    background-color: color-mix(in oklch, var(--sc-surface) 91%, transparent);
-    backdrop-filter: blur(2px);
+    padding: 12px;
+    background:
+      radial-gradient(
+        ellipse at 50% 40%,
+        color-mix(in srgb, var(--status-success) 9%, transparent),
+        transparent 72%
+      ),
+      color-mix(in srgb, var(--bg-surface-1) 94%, transparent);
+    pointer-events: none;
 
     &--success {
-      color: var(--sc-success);
-
-      .slide-captcha__result-scan {
-        animation: captcha-security-scan 0.9s var(--sc-easing-out) both;
-      }
+      color: var(--status-success);
     }
+  }
 
-    &-scan {
-      position: absolute;
-      inset: 0 auto 0 0;
-      width: 28%;
-      pointer-events: none;
-      opacity: 0;
-      background: linear-gradient(
-        90deg,
-        transparent,
-        color-mix(in oklch, currentcolor 22%, transparent),
-        transparent
-      );
-    }
+  &__result-halo,
+  &__result-orbit {
+    position: absolute;
+    top: calc(50% - 28px);
+    left: 50%;
+    width: 112px;
+    height: 112px;
+    margin: -56px 0 0 -56px;
+    border: 1px solid color-mix(in srgb, var(--status-success) 20%, transparent);
+    border-radius: 50%;
+    opacity: 0;
+    animation: captcha-success-ripple 900ms 120ms var(--captcha-ease) both;
+  }
 
-    &-mark {
-      width: var(--sc-space-16);
-      height: var(--sc-space-16);
-      overflow: visible;
-      fill: none;
-      stroke: currentcolor;
-      stroke-linecap: round;
-      stroke-linejoin: round;
-    }
+  &__result-orbit {
+    animation-delay: 260ms;
+  }
 
-    &-ring {
-      opacity: 0.34;
-      stroke-width: 1.5;
-      stroke-dasharray: 158;
-      stroke-dashoffset: 158;
-      transform: rotate(-90deg);
-      transform-origin: center;
-      animation: captcha-draw-ring 0.7s var(--ease-out-quint, cubic-bezier(0.22, 1, 0.36, 1))
-        forwards;
-    }
+  &__scan {
+    position: absolute;
+    inset: 0;
+    z-index: 3;
+    overflow: hidden;
+    color: var(--brand-blue);
+    pointer-events: none;
+  }
 
-    &-symbol {
-      stroke-width: 3;
-      stroke-dasharray: 42;
-      stroke-dashoffset: 42;
-      animation: captcha-draw-symbol var(--sc-duration-slow) var(--sc-duration-normal)
-        var(--sc-easing-out) forwards;
-    }
+  &__result-scan {
+    position: absolute;
+    inset: 0 auto 0 0;
+    width: 28%;
+    pointer-events: none;
+    opacity: 0;
+    background: linear-gradient(
+      90deg,
+      transparent,
+      color-mix(in srgb, currentcolor 22%, transparent),
+      transparent
+    );
+  }
 
-    &-text {
-      margin-top: var(--sc-space-2);
-      font-size: 1rem;
-      font-weight: 600;
-      letter-spacing: 0.02em;
-      opacity: 0;
-      transform: translateY(var(--sc-space-1));
-      animation: captcha-result-copy var(--sc-duration-slow) var(--sc-duration-normal)
-        var(--sc-easing-out) forwards;
-    }
+  &__scan &__result-scan {
+    animation: captcha-security-scan calc(500ms * 2) cubic-bezier(0.25, 1, 0.5, 1) infinite;
+  }
+
+  &__result-mark {
+    flex-shrink: 0;
+    width: 64px;
+    height: 64px;
+    margin-bottom: 2px;
+    overflow: visible;
+    fill: none;
+    stroke: currentcolor;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    animation: captcha-success-mark 620ms 80ms var(--captcha-spring) both;
+  }
+
+  &__result-disc {
+    fill: color-mix(in srgb, var(--status-success) 10%, var(--bg-surface-1));
+    stroke: none;
+  }
+
+  &__result-ring {
+    opacity: 0.5;
+    stroke-width: 1.5;
+    stroke-dasharray: 158;
+    stroke-dashoffset: 158;
+    transform: rotate(-90deg);
+    transform-origin: center;
+    animation: captcha-draw-ring 560ms 160ms var(--captcha-ease) forwards;
+  }
+
+  &__result-symbol {
+    stroke-width: 3;
+    stroke-dasharray: 42;
+    stroke-dashoffset: 42;
+    animation: captcha-draw-symbol 360ms 300ms var(--captcha-ease) forwards;
+  }
+
+  &__result-text {
+    font-size: var(--text-lg);
+    font-weight: 600;
+    letter-spacing: 0.025em;
+    opacity: 0;
+    transform: translateY(8px);
+    animation: captcha-result-copy 420ms 300ms var(--captcha-ease) forwards;
+  }
+
+  &__result-caption {
+    color: var(--text-2);
+    font-size: var(--text-xs);
+    line-height: 1.5;
+    opacity: 0;
+    transform: translateY(6px);
+    animation: captcha-result-copy 360ms 520ms var(--captcha-ease) forwards;
   }
 }
 
-.slide-captcha__track--dragging,
-.slide-captcha__track--verifying {
-  border-color: color-mix(in oklch, var(--sc-primary) 68%, var(--sc-border));
-  box-shadow:
-    inset 0 1px 0 color-mix(in oklch, var(--sc-surface) 55%, transparent),
-    0 0 0 3px color-mix(in oklch, var(--sc-primary) 10%, transparent);
-}
-
 .captcha-result-enter-active {
-  transition:
-    opacity var(--sc-duration-normal) var(--sc-easing-out),
-    transform var(--sc-duration-normal) var(--sc-easing-out);
+  transition: opacity 420ms cubic-bezier(0.25, 1, 0.5, 1);
 }
 
 .captcha-result-leave-active {
-  transition: opacity var(--sc-duration-fast) ease-in;
+  transition: opacity 100ms ease-in;
 }
 
 .captcha-result-enter-from {
   opacity: 0;
-  transform: scale(0.985);
 }
 
 .captcha-result-leave-to {
@@ -868,41 +1143,74 @@ defineExpose({
 .captcha-tip-enter-active,
 .captcha-tip-leave-active {
   transition:
-    opacity var(--sc-duration-fast) var(--sc-easing-out),
-    transform var(--sc-duration-fast) var(--sc-easing-out);
+    opacity 100ms cubic-bezier(0.25, 1, 0.5, 1),
+    transform 100ms cubic-bezier(0.25, 1, 0.5, 1);
 }
 
 .captcha-tip-enter-from {
   opacity: 0;
-  transform: translate(-50%, calc(-50% + var(--sc-space-1)));
+  transform: translate(-50%, calc(-50% + 4px));
 }
 
 .captcha-tip-leave-to {
   opacity: 0;
-  transform: translate(-50%, calc(-50% - var(--sc-space-1)));
+  transform: translate(-50%, calc(-50% - 4px));
 }
 
 @keyframes captcha-stage-enter {
   from {
     opacity: 0;
-    transform: translateY(var(--sc-space-3));
+    transform: translateY(18px) scale(0.98);
   }
 
   to {
     opacity: 1;
-    transform: translateY(0);
+    transform: translateY(0) scale(1);
   }
 }
 
-@keyframes captcha-image-reveal {
+@keyframes captcha-track-invitation {
+  0% {
+    opacity: 0;
+    transform: translateX(-100%);
+  }
+
+  25% {
+    opacity: 1;
+  }
+
+  75%,
+  100% {
+    opacity: 0;
+    transform: translateX(100%);
+  }
+}
+
+@keyframes captcha-success-mark {
   from {
     opacity: 0;
-    transform: scale(1.015);
+    transform: translateY(10px) scale(0.66) rotate(-12deg);
   }
 
   to {
     opacity: 1;
-    transform: scale(1);
+    transform: translateY(0) scale(1) rotate(0);
+  }
+}
+
+@keyframes captcha-success-ripple {
+  0% {
+    opacity: 0;
+    transform: scale(0.4);
+  }
+
+  30% {
+    opacity: 0.6;
+  }
+
+  100% {
+    opacity: 0;
+    transform: scale(1.5);
   }
 }
 
@@ -954,50 +1262,83 @@ defineExpose({
   }
 
   36% {
-    transform: translateX(calc(var(--sc-space-1) * -0.75));
+    transform: translateX(calc(4px * -0.75));
   }
 
   72% {
-    transform: translateX(calc(var(--sc-space-1) * 0.4));
+    transform: translateX(calc(4px * 0.4));
   }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .slide-captcha__image-wrapper,
-  .slide-captcha__master-image,
-  .slide-captcha__track,
-  .slide-captcha__slider-check,
-  .slide-captcha__slider-spinner,
-  .slide-captcha__result-ring,
-  .slide-captcha__result-symbol,
-  .slide-captcha__result-text,
-  .slide-captcha__loading-icon {
-    animation: none;
-  }
+  .slide-captcha {
+    &__image-wrapper,
+    &__master-image,
+    &__track,
+    &__slider-check,
+    &__slider-spinner,
+    &__result-mark,
+    &__result-halo,
+    &__result-orbit,
+    &__result-ring,
+    &__result-symbol,
+    &__result-text,
+    &__result-caption {
+      animation: none;
+    }
 
-  .slide-captcha__track--fail {
-    animation: none;
-  }
+    &__track--fail {
+      animation: none;
+    }
 
-  .slide-captcha__tile-image,
-  .slide-captcha__slider,
-  .slide-captcha__result,
-  .slide-captcha__tip {
-    transition: none;
-  }
+    &__tile-image,
+    &__slider,
+    &__track-fill,
+    &__scene,
+    &__slider-icon,
+    &__refresh-btn,
+    &__image-container,
+    &__result,
+    &__tip {
+      transition: none;
+    }
 
-  .slide-captcha__result-scan {
-    display: none;
-  }
+    &__result-scan {
+      display: none;
+    }
 
-  .slide-captcha__result-ring,
-  .slide-captcha__result-symbol {
-    stroke-dashoffset: 0;
-  }
+    &__track-shimmer {
+      display: none;
+    }
 
-  .slide-captcha__result-text {
-    opacity: 1;
-    transform: none;
+    &__result-ring,
+    &__result-symbol,
+    &__slider-check {
+      stroke-dashoffset: 0;
+    }
+
+    &--returning &__slider,
+    &--returning &__tile-image,
+    &--returning &__track-fill {
+      transition: none;
+    }
+
+    &__result-text,
+    &__result-caption {
+      opacity: 1;
+      transform: none;
+    }
+
+    &--ready &__scene,
+    &--success &__scene,
+    &__image-wrapper--dragging &__image-container {
+      transform: none;
+      transition: none;
+    }
+
+    &__track--success &__track-fill {
+      transition: none;
+    }
   }
 }
 </style>

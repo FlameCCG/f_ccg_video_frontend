@@ -14,6 +14,13 @@ export interface ApiResponse<T = unknown> {
   data: T
 }
 
+export class ApiBusinessError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'ApiBusinessError'
+  }
+}
+
 // Token storage keys
 const ACCESS_TOKEN_KEY = 'accessToken'
 const REFRESH_TOKEN_KEY = 'refreshToken'
@@ -343,7 +350,7 @@ request.interceptors.response.use(
     if (!response.config?.silent) {
       toast.error(normalizedMsg || '请求失败')
     }
-    return Promise.reject(new Error(normalizedMsg || '请求失败'))
+    return Promise.reject(new ApiBusinessError(normalizedMsg || '请求失败'))
   },
   async (error: AxiosError) => {
     const config = error.config
@@ -395,11 +402,12 @@ request.interceptors.response.use(
     }
 
     // Skip toast for silent requests / 用户取消
-    if (config?.silent || error.code === 'ERR_CANCELED') {
+    if (error.code === 'ERR_CANCELED') {
       return Promise.reject(error)
     }
 
-    toast.error(getTransportErrorMessage(error))
+    error.message = getTransportErrorMessage(error)
+    if (!config?.silent) toast.error(error.message)
     return Promise.reject(error)
   }
 )

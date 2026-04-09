@@ -5,11 +5,15 @@ import {
   loginByPassword,
   loginByQQ,
   loginByGoogle,
+  loginByGithub,
+  loginByX,
   refreshToken as refreshTokenApi,
   getCurrentUserInfo,
   type LoginPwdParams,
   type LoginQQParams,
   type LoginGoogleParams,
+  type LoginGithubParams,
+  type LoginXParams,
   type UserInfo,
   type JwtToken,
 } from '@/api/user'
@@ -97,6 +101,42 @@ export const useAuthStore = defineStore(
       isLoading.value = true
       try {
         const tokens = await loginByGoogle(params)
+        setAuthTokens(tokens)
+        await fetchUserInfo()
+        toast.success('登录成功')
+        return true
+      } catch {
+        return false
+      } finally {
+        isLoading.value = false
+      }
+    }
+
+    /**
+     * GitHub 登录
+     */
+    const loginWithGithub = async (params: LoginGithubParams): Promise<boolean> => {
+      isLoading.value = true
+      try {
+        const tokens = await loginByGithub(params)
+        setAuthTokens(tokens)
+        await fetchUserInfo()
+        toast.success('登录成功')
+        return true
+      } catch {
+        return false
+      } finally {
+        isLoading.value = false
+      }
+    }
+
+    /**
+     * X 登录
+     */
+    const loginWithX = async (params: LoginXParams): Promise<boolean> => {
+      isLoading.value = true
+      try {
+        const tokens = await loginByX(params)
         setAuthTokens(tokens)
         await fetchUserInfo()
         toast.success('登录成功')
@@ -200,6 +240,8 @@ export const useAuthStore = defineStore(
       login,
       loginWithQQ,
       loginWithGoogle,
+      loginWithGithub,
+      loginWithX,
       logout,
       refreshAccessToken,
       fetchUserInfo,

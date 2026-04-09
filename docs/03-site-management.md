@@ -65,14 +65,14 @@ Base URL：/v1
 - 接口路径: GET /common/site/github-url
 - 认证: 无需登录
 - 依赖接口: 无
-- 接口说明: 获取GitHub OAuth登录跳转URL；支持可选 state 与 PKCE codeChallenge
+- 接口说明: 获取GitHub OAuth登录跳转URL；前端需传入 state，后端会记录该 state 并在登录回调时校验；支持可选 PKCE codeChallenge
 - HTTP 状态码: 200（业务码 code 判断成功/失败）
 - 响应结构: code=0 成功，code=1 失败；msg 为提示信息
 
 请求参数:
 | 名称 | 位置 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- | --- |
-| state | query | string | 否 | CSRF 防护状态值 |
+| state | query | string | 是 | CSRF 防护状态值；后端会记录并在登录回调时校验 |
 | codeChallenge | query | string | 否 | PKCE codeChallenge；传入后会拼接到 GitHub 授权URL |
 | codeChallengeMethod | query | string | 否 | PKCE challenge 计算方式，默认 S256 可选: S256 |
 
@@ -96,14 +96,14 @@ Base URL：/v1
 - 接口路径: GET /common/site/x-url
 - 认证: 无需登录
 - 依赖接口: 无
-- 接口说明: 获取X OAuth登录跳转URL；需传入 PKCE codeChallenge
+- 接口说明: 获取X OAuth登录跳转URL；前端需传入 state 与 PKCE codeChallenge，后端会记录 state 并在登录回调时校验
 - HTTP 状态码: 200（业务码 code 判断成功/失败）
 - 响应结构: code=0 成功，code=1 失败；msg 为提示信息
 
 请求参数:
 | 名称 | 位置 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- | --- |
-| state | query | string | 否 | CSRF 防护状态值 |
+| state | query | string | 是 | CSRF 防护状态值；后端会记录并在登录回调时校验 |
 | codeChallenge | query | string | 是 | X PKCE codeChallenge |
 | codeChallengeMethod | query | string | 否 | PKCE challenge 计算方式，默认 S256 可选: S256/plain |
 
@@ -141,10 +141,14 @@ Base URL：/v1
 | data | object | - |
 | data.site | PublicSiteConfig | - |
 | data.site.defaultUserBannerID | integer(uint) | 默认用户主页横幅ID |
+| data.site.defaultUserBannerIDs | array<integer(uint)> | 系统默认用户主页横幅ID列表 |
 | data.site.contentReview | AdminSiteContentReviewConfig | - |
 | data.site.contentReview.enable | boolean | 是否开启内容审核 |
 | data.site.login | AdminSiteLoginConfig | - |
 | data.site.login.qqLogin | boolean | 是否开启QQ登录 |
+| data.site.login.googleLogin | boolean | 是否开启Google登录 |
+| data.site.login.githubLogin | boolean | 是否开启GitHub登录 |
+| data.site.login.xLogin | boolean | 是否开启X登录 |
 | data.site.login.usernamePwdLogin | boolean | 是否开启用户名密码登录 |
 | data.site.login.textGraphicCaptcha | boolean | 是否开启文本图形验证码登录 |
 | data.site.login.textClickCaptcha | boolean | 是否开启文本点击验证码登录 |
@@ -170,11 +174,15 @@ Base URL：/v1
   "data": {
     "site": {
       "defaultUserBannerID": 19,
+      "defaultUserBannerIDs": [19, 21],
       "contentReview": {
         "enable": true
       },
       "login": {
         "qqLogin": true,
+        "googleLogin": true,
+        "githubLogin": true,
+        "xLogin": true,
         "usernamePwdLogin": true,
         "textGraphicCaptcha": true,
         "textClickCaptcha": true,

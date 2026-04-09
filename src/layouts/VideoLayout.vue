@@ -1,20 +1,6 @@
 <script setup lang="ts">
-import { onMounted, onBeforeUnmount } from 'vue'
 import { RouterView } from 'vue-router'
 import Navbar from '@/components/layout/Navbar.vue'
-
-let wasDark = false
-
-onMounted(() => {
-  wasDark = document.documentElement.classList.contains('dark')
-  document.documentElement.classList.remove('dark')
-})
-
-onBeforeUnmount(() => {
-  if (wasDark) {
-    document.documentElement.classList.add('dark')
-  }
-})
 </script>
 
 <template>
@@ -32,7 +18,7 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
-/* Override Navbar's white-text classes for solid white header */
+/* Override Navbar's legacy white-text classes so the header follows theme tokens */
 .video-layout-header :deep([class*='text-white']) {
   color: var(--color-muted-foreground) !important;
 }

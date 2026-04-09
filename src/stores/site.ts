@@ -11,6 +11,10 @@ export const useSiteStore = defineStore('site', () => {
   // Getters - Login
   const isQQLoginEnabled = computed(() => config.value?.login.qqLogin ?? false)
   const isGoogleLoginEnabled = computed(() => config.value?.login.googleLogin ?? true)
+  const isGithubLoginEnabled = computed(
+    () => config.value?.login.githubLogin ?? config.value?.login.gitHubLogin ?? false
+  )
+  const isXLoginEnabled = computed(() => config.value?.login.xLogin ?? false)
   const isPasswordLoginEnabled = computed(() => config.value?.login.usernamePwdLogin ?? true)
   const isLoginGraphicsCaptchaEnabled = computed(
     () => config.value?.login.textGraphicCaptcha ?? false
@@ -65,6 +69,8 @@ export const useSiteStore = defineStore('site', () => {
     // Getters - Login
     isQQLoginEnabled,
     isGoogleLoginEnabled,
+    isGithubLoginEnabled,
+    isXLoginEnabled,
     isPasswordLoginEnabled,
     isLoginGraphicsCaptchaEnabled,
     isLoginClickCaptchaEnabled,

@@ -145,7 +145,7 @@ Base URL：/v1
 - 接口路径: POST /common/user/login/github
 - 认证: 可选登录（客户端可携带 Token）
 - 依赖接口: 无
-- 接口说明: 使用GitHub授权码登录，未注册用户会自动注册；支持可选 PKCE codeVerifier
+- 接口说明: 使用GitHub授权码登录，未注册用户会自动注册；需回传与获取登录URL时一致的 state，支持可选 PKCE codeVerifier
 - HTTP 状态码: 200（业务码 code 判断成功/失败）
 - 响应结构: code=0 成功，code=1 失败；msg 为提示信息
 
@@ -153,6 +153,7 @@ Base URL：/v1
 | 名称 | 位置 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- | --- |
 | code | body | string | 是 | GitHub授权码 |
+| state | body | string | 是 | GitHub登录流程中的 state；后端会校验并一次性消费 |
 | codeVerifier | body | string | 否 | PKCE codeVerifier，若生成登录URL时传了 codeChallenge 则需要回传 |
 
 响应字段:
@@ -180,7 +181,7 @@ Base URL：/v1
 - 接口路径: POST /common/user/login/x
 - 认证: 可选登录（客户端可携带 Token）
 - 依赖接口: 无
-- 接口说明: 使用X授权码登录，未注册用户会自动注册；需配合 PKCE 的 codeVerifier
+- 接口说明: 使用X授权码登录，未注册用户会自动注册；需回传与获取登录URL时一致的 state，并配合 PKCE 的 codeVerifier
 - HTTP 状态码: 200（业务码 code 判断成功/失败）
 - 响应结构: code=0 成功，code=1 失败；msg 为提示信息
 
@@ -188,6 +189,7 @@ Base URL：/v1
 | 名称 | 位置 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- | --- |
 | code | body | string | 是 | X授权码 |
+| state | body | string | 是 | X登录流程中的 state；后端会校验并一次性消费 |
 | codeVerifier | body | string | 是 | X PKCE codeVerifier |
 
 响应字段:
@@ -585,6 +587,7 @@ Base URL：/v1
 | openFollow | body | boolean | 否 | 是否公开关注（可选） |
 | openLikeVideo | body | boolean | 否 | 是否公开点赞视频（可选） |
 | openCoinVideo | body | boolean | 否 | 是否公开投币视频（可选） |
+| bannerId | body | integer(uint) | 否 | 系统默认横幅ID（可选，仅允许传系统默认横幅列表中的ID；传入后会清空已有 bannerUrl） |
 | bannerUrl | body | string | 否 | 自定义横幅URL（可选） |
 | likeTags | body | array<string> | 否 | 喜欢的标签列表（可选） |
 
@@ -600,6 +603,68 @@ Base URL：/v1
   "code": 0,
   "data": {},
   "msg": "更新成功"
+}
+```
+
+## [GET] 获取系统默认用户主页横幅列表
+
+- 接口路径: GET /common/user/banner/defaults
+- 认证: 可选登录（客户端可携带 Token）
+- 依赖接口: 无
+- 接口说明: 获取系统配置的默认用户主页横幅列表，返回配置中的 bannerId 顺序以及对应可展示的横幅详情
+- HTTP 状态码: 200（业务码 code 判断成功/失败）
+- 响应结构: code=0 成功，code=1 失败；msg 为提示信息
+
+请求参数:
+
+- 无
+
+响应字段:
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| data | object | - |
+| data.bannerIds | array<integer(uint)> | 配置中的默认横幅ID列表 |
+| data.currentBannerId | integer(uint) | 当前用户配置的 bannerId；若用户使用自定义 bannerUrl，则固定返回 0 |
+| data.currentBannerImageUrl | string | 当前用户配置的 bannerId 对应图片URL；若用户使用自定义 bannerUrl，则返回自定义图片URL |
+| data.list | array<BannerItem> | 实际查询到的可展示横幅列表（按 bannerIds 顺序返回） |
+| data.list[].type | integer | 轮播图类型（1首页/分区轮播图 2顶部横幅 3用户主页横幅） |
+
+响应示例:
+
+```json
+{
+  "code": 0,
+  "data": {
+    "bannerIds": [
+      21,
+      19
+    ],
+    "currentBannerId": 19,
+    "currentBannerImageUrl": "https://cdn.example.com/banner-user-19.jpg",
+    "list": [
+      {
+        "id": 21,
+        "cover": "https://cdn.example.com/banner-user-21.jpg",
+        "href": "",
+        "show": true,
+        "type": 3,
+        "partitionId": 0,
+        "createdAt": "2024-06-01T12:00:00Z",
+        "updatedAt": "2024-06-01T12:00:00Z"
+      },
+      {
+        "id": 19,
+        "cover": "https://cdn.example.com/banner-user-19.jpg",
+        "href": "",
+        "show": true,
+        "type": 3,
+        "partitionId": 0,
+        "createdAt": "2024-06-01T12:00:00Z",
+        "updatedAt": "2024-06-01T12:00:00Z"
+      }
+    ]
+  },
+  "msg": "获取成功"
 }
 ```
 

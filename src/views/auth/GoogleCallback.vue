@@ -13,6 +13,13 @@ const errorMessage = ref('')
 
 const handleGoogleCallback = async () => {
   const code = route.query.code as string | undefined
+  const oauthError = route.query.error as string | undefined
+
+  if (oauthError) {
+    errorMessage.value = 'Google 授权已取消或失败，请重新登录'
+    isLoading.value = false
+    return
+  }
 
   if (!code) {
     errorMessage.value = '缺少授权码，请重新登录'
@@ -27,8 +34,8 @@ const handleGoogleCallback = async () => {
     } else {
       errorMessage.value = 'Google 登录失败，请重试'
     }
-  } catch {
-    errorMessage.value = 'Google 登录失败，请重试'
+  } catch (error) {
+    errorMessage.value = error instanceof Error ? error.message : 'Google 登录失败，请重试'
   } finally {
     isLoading.value = false
   }

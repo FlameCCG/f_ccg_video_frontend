@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, computed } from 'vue'
+import { ref, onMounted, onBeforeUnmount, computed, nextTick } from 'vue'
 import { getHomeVideos, type FeedItem } from '@/api/video'
 import { getHomeCarouselBanners, type BannerItem } from '@/api/banner'
 import { touchSiteStat } from '@/api/site'
@@ -16,6 +16,9 @@ const finished = ref(false)
 const page = ref(1)
 const pageSize = 20
 const initialLoading = ref(true)
+const featuredRailRef = ref<HTMLElement | null>(null)
+const heroBannerHeight = ref<number | null>(null)
+let heroResizeObserver: ResizeObserver | null = null
 
 // Featured videos count (shown next to carousel - 3 columns x 2 rows)
 const FEATURED_COUNT = 6
@@ -69,37 +72,74 @@ const handleLoadMore = () => {
   void fetchVideos()
 }
 
+const updateHeroBannerHeight = () => {
+  if (!featuredRailRef.value || window.innerWidth < 1024) {
+    heroBannerHeight.value = null
+    return
+  }
+
+  const railStyles = window.getComputedStyle(featuredRailRef.value)
+  const rowGap = Number.parseFloat(railStyles.rowGap || railStyles.gap || '0')
+  const columnGap = Number.parseFloat(railStyles.columnGap || railStyles.gap || '0')
+  const firstVisibleCard = Array.from(featuredRailRef.value.children).find(
+    (element) => window.getComputedStyle(element).display !== 'none'
+  ) as HTMLElement | undefined
+
+  const measuredCoverHeight = firstVisibleCard?.firstElementChild?.getBoundingClientRect().height
+  const measuredCardHeight = firstVisibleCard?.getBoundingClientRect().height
+  const railWidth = featuredRailRef.value.getBoundingClientRect().width
+  const cardWidth = (railWidth - columnGap * 2) / 3
+  const fallbackCoverHeight = cardWidth * (9 / 16)
+  const fallbackCardHeight = fallbackCoverHeight + 79
+  const coverHeight = measuredCoverHeight ?? fallbackCoverHeight
+  const cardHeight = measuredCardHeight ?? fallbackCardHeight
+
+  heroBannerHeight.value = Math.round(cardHeight + rowGap + coverHeight)
+}
+
 onMounted(async () => {
   // Parallel fetch
   await Promise.all([fetchBanners(), fetchVideos(), siteTouchOnce()])
+  await nextTick()
+
+  updateHeroBannerHeight()
+  heroResizeObserver = new ResizeObserver(() => {
+    updateHeroBannerHeight()
+  })
+
+  if (featuredRailRef.value) {
+    heroResizeObserver.observe(featuredRailRef.value)
+  }
+})
+
+onBeforeUnmount(() => {
+  heroResizeObserver?.disconnect()
 })
 </script>
 
 <template>
   <div class="mx-auto mt-6 pb-8 max-w-[1800px] px-4 sm:px-6 lg:px-8">
-    <div class="mb-6 grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
+    <div class="mb-6 lg:flex lg:items-start lg:gap-4">
       <div
-        class="col-span-2 overflow-hidden rounded-lg sm:col-span-2 md:col-span-2 lg:col-span-2 lg:row-span-2 relative"
+        class="relative overflow-hidden rounded-[var(--radius-2xl)] border border-border/50 bg-card shadow-raised lg:min-w-0 lg:flex-[2]"
+        :style="heroBannerHeight ? { height: `${heroBannerHeight}px` } : undefined"
       >
-        <div
-          class="block w-full h-full lg:h-auto lg:absolute lg:top-0 lg:left-0 lg:right-0 lg:bottom-[79px]"
-        >
+        <div class="home-hero-carousel block h-full w-full lg:absolute lg:inset-0">
           <Carousel :items="banners" :autoplay="true" :interval="5000" class="h-full w-full" />
         </div>
       </div>
 
-      <!-- Featured Videos (same grid cells as below) -->
-      <template v-if="initialLoading">
-        <VideoCardSkeleton v-for="i in 6" :key="i" class="hidden lg:block" />
-      </template>
-      <template v-else>
-        <VideoCard
-          v-for="video in featuredVideos"
-          :key="video.id"
-          :video="video"
-          class="hidden lg:block"
-        />
-      </template>
+      <div
+        ref="featuredRailRef"
+        class="mt-4 hidden lg:grid lg:min-w-0 lg:flex-[3] lg:grid-cols-3 lg:gap-4 lg:mt-0"
+      >
+        <template v-if="initialLoading">
+          <VideoCardSkeleton v-for="i in 6" :key="i" />
+        </template>
+        <template v-else>
+          <VideoCard v-for="video in featuredVideos" :key="video.id" :video="video" />
+        </template>
+      </div>
     </div>
 
     <!-- Video Grid -->
@@ -118,3 +158,15 @@ onMounted(async () => {
     </InfiniteScroll>
   </div>
 </template>
+
+<style scoped>
+.home-hero-carousel :deep(.group) {
+  height: 100%;
+}
+
+.home-hero-carousel :deep(.group > div:first-child) {
+  height: 100%;
+  min-height: 0;
+  aspect-ratio: auto;
+}
+</style>

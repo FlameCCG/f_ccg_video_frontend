@@ -530,7 +530,6 @@ const sendEvent = (payload: ChatClientEvent) => {
 }
 
 const composerDisabled = computed(() => !currentPeerId.value)
-const connectionLabel = computed(() => (connected.value ? '消息实时连接中' : '消息重连中'))
 
 const MAX_TEXT_LENGTH = 500
 const charCount = computed(() => draftText.value.length)
@@ -612,16 +611,6 @@ onBeforeUnmount(() => {
         class="flex h-[52px] shrink-0 items-center justify-between border-b border-border/40 px-4"
       >
         <h2 class="text-[14px] font-medium text-foreground">我的消息</h2>
-        <span
-          class="rounded-full px-2 py-1 text-[11px]"
-          :class="
-            connected
-              ? 'bg-[var(--status-success-soft)] text-[var(--status-success-ink)]'
-              : 'bg-[var(--status-warning-soft)] text-[var(--status-warning-ink)]'
-          "
-        >
-          {{ connectionLabel }}
-        </span>
       </div>
 
       <div class="flex h-[38px] shrink-0 items-center border-b border-border/30 px-4">

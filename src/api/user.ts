@@ -26,6 +26,18 @@ export interface LoginGoogleParams {
   code: string
 }
 
+export interface LoginGithubParams {
+  code: string
+  state: string
+  codeVerifier?: string
+}
+
+export interface LoginXParams {
+  code: string
+  state: string
+  codeVerifier: string
+}
+
 export interface RefreshTokenParams {
   refreshToken: string
 }
@@ -330,6 +342,28 @@ export const loginByQQ = (params: LoginQQParams): Promise<JwtToken> => {
  */
 export const loginByGoogle = (params: LoginGoogleParams): Promise<JwtToken> => {
   return request.post('/common/user/login/google', params)
+}
+
+/**
+ * GitHub登录
+ * POST /common/user/login/github
+ * 认证: 可选登录（客户端可携带 Token）
+ * 依赖接口: 无
+ * 接口说明: 使用 GitHub 授权码登录，未注册用户会自动注册
+ */
+export const loginByGithub = (params: LoginGithubParams): Promise<JwtToken> => {
+  return request.post('/common/user/login/github', params)
+}
+
+/**
+ * X登录
+ * POST /common/user/login/x
+ * 认证: 可选登录（客户端可携带 Token）
+ * 依赖接口: 无
+ * 接口说明: 使用 X 授权码登录，未注册用户会自动注册
+ */
+export const loginByX = (params: LoginXParams): Promise<JwtToken> => {
+  return request.post('/common/user/login/x', params)
 }
 
 /**

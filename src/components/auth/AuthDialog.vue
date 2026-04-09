@@ -4,10 +4,18 @@ import { Eye, EyeOff, Loader2, User, Lock, Mail, Send, ArrowLeft } from 'lucide-
 import { toast } from 'vue-sonner'
 import { useAuthStore } from '@/stores/auth'
 import { useSiteStore } from '@/stores/site'
-import { getGoogleLoginUrl, getQQLoginUrl } from '@/api/site'
+import { getGithubLoginUrl, getGoogleLoginUrl, getQQLoginUrl, getXLoginUrl } from '@/api/site'
 import { sendEmailCaptcha } from '@/api/captcha'
 import { registerByEmail, resetPassword } from '@/api/user'
 import type { ClickCaptchaPoint } from '@/api/user'
+import {
+  clearOAuthSession,
+  createCodeChallenge,
+  createCodeVerifier,
+  createOAuthState,
+  saveOAuthSession,
+  type OAuthProvider,
+} from '@/utils/oauth'
 import { Dialog, DialogContent } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
@@ -125,6 +133,15 @@ const canSendEmail = computed(() => {
     return false
   if (siteStore.isRegisterSlideCaptchaEnabled && !slideCaptchaVerified.value) return false
   return !isSendingEmail.value
+})
+
+const hasSocialLoginOptions = computed(() => {
+  return (
+    siteStore.isQQLoginEnabled ||
+    siteStore.isGoogleLoginEnabled ||
+    siteStore.isGithubLoginEnabled ||
+    siteStore.isXLoginEnabled
+  )
 })
 
 // Methods
@@ -292,30 +309,88 @@ const handleResetPassword = async () => {
 }
 
 // OAuth handlers
-const handleQQLogin = async () => {
-  try {
-    const url = await getQQLoginUrl()
-    window.location.href = url
-  } catch {
-    // Error handled by request interceptor
+const socialLoginLabels: Record<'qq' | 'google' | OAuthProvider, string> = {
+  qq: 'QQ',
+  google: 'Google',
+  github: 'GitHub',
+  x: 'X',
+}
+
+const isSocialLoginEnabled = (provider: 'qq' | 'google' | OAuthProvider) => {
+  if (provider === 'qq') return siteStore.isQQLoginEnabled
+  if (provider === 'google') return siteStore.isGoogleLoginEnabled
+  if (provider === 'github') return siteStore.isGithubLoginEnabled
+  return siteStore.isXLoginEnabled
+}
+
+const preparePkceLogin = async (provider: OAuthProvider) => {
+  const state = createOAuthState()
+  const codeVerifier = createCodeVerifier()
+  const codeChallenge = await createCodeChallenge(codeVerifier)
+
+  saveOAuthSession(provider, {
+    codeVerifier,
+    createdAt: Date.now(),
+    state,
+  })
+
+  return {
+    codeChallenge,
+    codeChallengeMethod: 'S256' as const,
+    state,
   }
 }
 
-const handleGoogleLogin = async () => {
-  try {
-    const url = await getGoogleLoginUrl()
-    window.location.href = url
-  } catch {
-    // Error handled by request interceptor
+const startSocialLogin = async (provider: 'qq' | 'google' | OAuthProvider) => {
+  const configReady = siteStore.isLoaded
+    ? await siteStore.refreshConfig()
+    : await siteStore.fetchConfig()
+
+  if (configReady && !isSocialLoginEnabled(provider)) {
+    toast.error(`${socialLoginLabels[provider]} 登录已关闭`)
+    return
   }
+
+  try {
+    if (provider === 'qq') {
+      window.location.href = await getQQLoginUrl()
+      return
+    }
+
+    if (provider === 'google') {
+      window.location.href = await getGoogleLoginUrl()
+      return
+    }
+
+    const pkceParams = await preparePkceLogin(provider)
+
+    if (provider === 'github') {
+      window.location.href = await getGithubLoginUrl(pkceParams)
+      return
+    }
+
+    window.location.href = await getXLoginUrl(pkceParams)
+  } catch {
+    if (provider === 'github' || provider === 'x') {
+      clearOAuthSession(provider)
+    }
+  }
+}
+
+const handleQQLogin = () => {
+  void startSocialLogin('qq')
+}
+
+const handleGoogleLogin = () => {
+  void startSocialLogin('google')
 }
 
 const handleGithubLogin = () => {
-  toast.info('GitHub 登录即将上线')
+  void startSocialLogin('github')
 }
 
 const handleXLogin = () => {
-  toast.info('X 登录即将上线')
+  void startSocialLogin('x')
 }
 
 watch(
@@ -470,7 +545,7 @@ onUnmounted(() => {
           </Button>
 
           <!-- OAuth Divider -->
-          <div class="relative py-4">
+          <div v-if="hasSocialLoginOptions" class="relative py-4">
             <div class="absolute inset-0 flex items-center">
               <div class="w-full border-t border-border/40"></div>
             </div>
@@ -483,7 +558,7 @@ onUnmounted(() => {
           </div>
 
           <!-- OAuth Buttons -->
-          <div class="flex justify-center gap-3">
+          <div v-if="hasSocialLoginOptions" class="flex justify-center gap-3">
             <button
               v-if="siteStore.isQQLoginEnabled"
               type="button"
@@ -532,6 +607,7 @@ onUnmounted(() => {
               </div>
             </button>
             <button
+              v-if="siteStore.isGithubLoginEnabled"
               type="button"
               class="group flex h-12 w-12 cursor-pointer items-center justify-center rounded-xl border border-border/40 bg-transparent transition-all hover:border-border hover:bg-muted/50 hover:shadow-sm"
               title="GitHub 登录"
@@ -548,6 +624,7 @@ onUnmounted(() => {
               </svg>
             </button>
             <button
+              v-if="siteStore.isXLoginEnabled"
               type="button"
               class="group flex h-12 w-12 cursor-pointer items-center justify-center rounded-xl border border-border/40 bg-transparent transition-all hover:border-border hover:bg-muted/50 hover:shadow-sm"
               title="X 登录"

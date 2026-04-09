@@ -158,10 +158,21 @@ const formatDateTime = (value: string) => {
 }
 
 const formatLoginType = (value: string) => {
+  if (value === 'github') return 'GitHub 登录'
   if (value === 'pwd') return '密码登录'
   if (value === 'qq') return 'QQ 登录'
+  if (value === 'x') return 'X 登录'
   if (value === 'google') return 'Google 登录'
   return value || '未知方式'
+}
+
+const formatRegisterSource = (value: string | undefined) => {
+  if (!value || value === 'email' || value === 'pwd') return '邮箱注册'
+  if (value === 'qq') return 'QQ 登录'
+  if (value === 'google') return 'Google 登录'
+  if (value === 'github') return 'GitHub 登录'
+  if (value === 'x') return 'X 登录'
+  return value
 }
 
 const loadLoginRecords = async (page = 1) => {
@@ -709,7 +720,7 @@ watch(activeRecordTab, (tab) => {
               <span>邮箱</span><span>{{ userInfo?.email || '未绑定' }}</span>
             </div>
             <div class="sec-row">
-              <span>注册来源</span><span>{{ userInfo?.registerSource || '邮箱注册' }}</span>
+              <span>注册来源</span><span>{{ formatRegisterSource(userInfo?.registerSource) }}</span>
             </div>
           </div>
 

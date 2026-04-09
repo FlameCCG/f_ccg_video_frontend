@@ -8,6 +8,9 @@ import request from './request'
 export interface LoginConfig {
   qqLogin: boolean
   googleLogin?: boolean
+  githubLogin?: boolean
+  gitHubLogin?: boolean
+  xLogin?: boolean
   usernamePwdLogin: boolean
   textGraphicCaptcha: boolean
   textClickCaptcha: boolean
@@ -70,6 +73,18 @@ export interface SiteHeartbeatResult {
   online: number
 }
 
+export interface GetGithubLoginUrlParams {
+  state: string
+  codeChallenge?: string
+  codeChallengeMethod?: 'S256'
+}
+
+export interface GetXLoginUrlParams {
+  state: string
+  codeChallenge: string
+  codeChallengeMethod?: 'S256' | 'plain'
+}
+
 const normalizePositiveNumber = (value: unknown, fallback: number): number => {
   if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) {
     return fallback
@@ -130,6 +145,28 @@ export const getQQLoginUrl = (): Promise<string> => {
  */
 export const getGoogleLoginUrl = (): Promise<string> => {
   return request.get('/common/site/google-url')
+}
+
+/**
+ * 获取GitHub登录URL
+ * GET /common/site/github-url
+ * 认证: 无需登录
+ * 依赖接口: 无
+ * 接口说明: 获取 GitHub OAuth 登录跳转 URL
+ */
+export const getGithubLoginUrl = (params?: GetGithubLoginUrlParams): Promise<string> => {
+  return request.get('/common/site/github-url', { params })
+}
+
+/**
+ * 获取X登录URL
+ * GET /common/site/x-url
+ * 认证: 无需登录
+ * 依赖接口: 无
+ * 接口说明: 获取 X OAuth 登录跳转 URL
+ */
+export const getXLoginUrl = (params: GetXLoginUrlParams): Promise<string> => {
+  return request.get('/common/site/x-url', { params })
 }
 
 /**

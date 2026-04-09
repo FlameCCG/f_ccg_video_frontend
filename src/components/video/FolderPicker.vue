@@ -4,12 +4,13 @@ import {
   getFolderList,
   getFolderVideos,
   createFolder,
+  deleteFolder,
   toggleVideoFavorite,
   type FolderItem,
 } from '@/api/video'
 import { useVideoStore } from '@/stores/video'
 import { Dialog, DialogContent, DialogTitle, DialogHeader } from '@/components/ui/dialog'
-import { Plus, Loader2, Check } from 'lucide-vue-next'
+import { Plus, Loader2, Check, Trash2 } from 'lucide-vue-next'
 import { toast } from 'vue-sonner'
 
 const props = defineProps<{
@@ -36,7 +37,25 @@ const showCreateInput = ref(false)
 const newFolderName = ref('')
 const isCreating = ref(false)
 
-const MAX_FOLDER_VIDEOS = 1000
+const handleDeleteFolder = async (folder: FolderItem) => {
+  if (folder.isDefault) return
+  if (!confirm(`确定要删除收藏夹"${folder.name}"吗？`)) return
+  try {
+    await deleteFolder({ folderId: folder.id })
+    folders.value = folders.value.filter((f) => f.id !== folder.id)
+    const nextSelected = new Set(selectedFolderIds.value)
+    nextSelected.delete(folder.id)
+    selectedFolderIds.value = nextSelected
+    const nextInitial = new Set(initialFolderIds.value)
+    nextInitial.delete(folder.id)
+    initialFolderIds.value = nextInitial
+    toast.success('收藏夹已删除')
+  } catch (err: unknown) {
+    const msg =
+      (err as { response?: { data?: { msg?: string } } })?.response?.data?.msg || '删除收藏夹失败'
+    toast.error(msg)
+  }
+}
 
 const loadFolders = async () => {
   isLoading.value = true
@@ -204,42 +223,52 @@ const handleOpenChange = (val: boolean) => {
       <!-- Folder List -->
       <template v-else>
         <div class="folder-list">
-          <button
-            v-for="folder in folders"
-            :key="folder.id"
-            class="folder-row"
-            @click="toggleFolder(folder.id)"
-          >
-            <span
-              class="folder-checkbox"
-              :class="{ 'is-checked': selectedFolderIds.has(folder.id) }"
+          <div v-for="folder in folders" :key="folder.id" class="folder-row-wrap">
+            <button class="folder-row" @click="toggleFolder(folder.id)">
+              <span
+                class="folder-checkbox"
+                :class="{ 'is-checked': selectedFolderIds.has(folder.id) }"
+              >
+                <Check v-if="selectedFolderIds.has(folder.id)" :size="12" class="check-icon" />
+              </span>
+              <span class="folder-name">{{ folder.isDefault ? '默认收藏夹' : folder.name }}</span>
+              <span class="folder-count">{{ folder.videoCount }}</span>
+            </button>
+            <button
+              v-if="!folder.isDefault"
+              class="folder-delete-btn"
+              title="删除收藏夹"
+              type="button"
+              @click.stop="handleDeleteFolder(folder)"
             >
-              <Check v-if="selectedFolderIds.has(folder.id)" :size="12" class="check-icon" />
-            </span>
-            <span class="folder-name">{{ folder.isDefault ? '默认收藏夹' : folder.name }}</span>
-            <span class="folder-count">{{ folder.videoCount }}/{{ MAX_FOLDER_VIDEOS }}</span>
-          </button>
+              <Trash2 :size="14" />
+            </button>
+            <!-- 默认收藏夹没有删除按钮：占位保持各行的数字右缘对齐 -->
+            <span v-else class="folder-delete-slot" aria-hidden="true"></span>
+          </div>
         </div>
 
         <!-- Create Folder -->
         <div class="folder-create-area">
           <Transition name="create-slide">
-            <div v-if="showCreateInput" class="folder-create-form">
-              <input
-                v-model="newFolderName"
-                class="folder-create-input"
-                placeholder="输入收藏夹名称"
-                maxlength="20"
-                @keydown.enter="handleCreateFolder"
-              />
-              <button
-                class="folder-create-confirm"
-                :disabled="!newFolderName.trim() || isCreating"
-                @click="handleCreateFolder"
-              >
-                <Loader2 v-if="isCreating" :size="14" class="animate-spin" />
-                <template v-else>创建</template>
-              </button>
+            <div v-if="showCreateInput" class="folder-create-slide">
+              <div class="folder-create-form">
+                <input
+                  v-model="newFolderName"
+                  class="folder-create-input"
+                  placeholder="输入收藏夹名称"
+                  maxlength="20"
+                  @keydown.enter="handleCreateFolder"
+                />
+                <button
+                  class="folder-create-confirm"
+                  :disabled="!newFolderName.trim() || isCreating"
+                  @click="handleCreateFolder"
+                >
+                  <Loader2 v-if="isCreating" :size="14" class="animate-spin" />
+                  <template v-else>创建</template>
+                </button>
+              </div>
             </div>
           </Transition>
 
@@ -251,7 +280,19 @@ const handleOpenChange = (val: boolean) => {
 
         <!-- Confirm Button -->
         <div class="folder-dialog-footer">
-          <button class="folder-confirm-btn" :disabled="isSubmitting" @click="handleConfirm">
+          <button
+            class="folder-cancel-btn ui-button"
+            type="button"
+            @click="handleOpenChange(false)"
+          >
+            取消
+          </button>
+          <button
+            class="folder-confirm-btn ui-button"
+            type="button"
+            :disabled="isSubmitting"
+            @click="handleConfirm"
+          >
             <Loader2 v-if="isSubmitting" :size="14" class="mr-1.5 animate-spin" />
             {{ isSubmitting ? '保存中...' : '确定' }}
           </button>
@@ -275,7 +316,7 @@ const handleOpenChange = (val: boolean) => {
 }
 
 .folder-dialog-title {
-  font-size: 16px;
+  font-size: 1rem;
   font-weight: 600;
   text-align: center;
   color: oklch(var(--foreground));
@@ -287,21 +328,62 @@ const handleOpenChange = (val: boolean) => {
   padding: 8px 0;
 }
 
+.folder-row-wrap {
+  display: flex;
+  align-items: center;
+  padding-right: 24px;
+  transition: background-color var(--duration-fast) var(--ease-out-quart);
+
+  &:hover {
+    background: oklch(var(--muted) / 0.5);
+
+    .folder-delete-btn {
+      opacity: 1;
+    }
+  }
+}
+
 .folder-row {
   display: flex;
   align-items: center;
   gap: 12px;
-  width: 100%;
-  padding: 10px 24px;
+  flex: 1;
+  min-width: 0;
+  padding: 10px 12px 10px 24px;
   cursor: pointer;
-  transition: background 0.15s ease;
   background: transparent;
   border: none;
   text-align: left;
+}
+
+.folder-delete-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 4px;
+  border: none;
+  background: transparent;
+  color: oklch(var(--muted-foreground));
+  opacity: 0;
+  cursor: pointer;
+  transition:
+    opacity var(--duration-fast) linear,
+    color var(--duration-fast) linear,
+    background-color var(--duration-fast) linear;
 
   &:hover {
-    background: oklch(var(--muted) / 0.5);
+    color: oklch(var(--destructive, 0.6 0.2 25));
+    background: oklch(var(--muted) / 0.8);
   }
+}
+
+/* 与删除按钮同尺寸的占位：默认收藏夹行用它顶住右侧，数字列右缘全行对齐 */
+.folder-delete-slot {
+  width: 28px;
+  height: 28px;
+  flex-shrink: 0;
 }
 
 .folder-checkbox {
@@ -313,12 +395,19 @@ const handleOpenChange = (val: boolean) => {
   border-radius: 50%;
   border: 2px solid oklch(var(--muted-foreground) / 0.3);
   flex-shrink: 0;
-  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  transition:
+    background-color var(--duration-fast) var(--ease-out-expo),
+    border-color var(--duration-fast) var(--ease-out-expo),
+    transform var(--duration-fast) var(--ease-out-quint);
 
   &.is-checked {
     background-color: var(--color-primary);
     border-color: var(--color-primary);
   }
+}
+
+.folder-row:active .folder-checkbox {
+  transform: scale(0.9);
 }
 
 .check-icon {
@@ -337,9 +426,10 @@ const handleOpenChange = (val: boolean) => {
 
 .folder-count {
   flex-shrink: 0;
-  font-size: 13px;
+  font-size: var(--text-sm-plus, 0.8125rem);
   color: oklch(var(--muted-foreground));
   font-variant-numeric: tabular-nums;
+  font-feature-settings: 'tnum' 1;
 }
 
 .folder-create-area {
@@ -357,7 +447,7 @@ const handleOpenChange = (val: boolean) => {
   background: none;
   border: none;
   cursor: pointer;
-  transition: color 0.15s ease;
+  transition: color var(--duration-fast) linear;
   width: 100%;
 
   &:hover {
@@ -377,12 +467,11 @@ const handleOpenChange = (val: boolean) => {
   height: 36px;
   padding: 0 12px;
   border: 1px solid oklch(var(--border));
-  border-radius: 6px;
-  font-size: 13px;
+  border-radius: var(--radius-sm, 0.375rem);
+  font-size: var(--text-sm-plus, 0.8125rem);
   color: oklch(var(--foreground));
   background: oklch(var(--background));
-  outline: none;
-  transition: border-color 0.2s ease;
+  transition: border-color var(--duration-fast) var(--ease-out-quart);
 
   &:focus {
     border-color: var(--color-primary);
@@ -396,15 +485,22 @@ const handleOpenChange = (val: boolean) => {
 .folder-create-confirm {
   height: 36px;
   padding: 0 16px;
-  border-radius: 6px;
-  font-size: 13px;
+  border-radius: var(--radius-sm, 0.375rem);
+  font-size: var(--text-sm-plus, 0.8125rem);
   font-weight: 500;
-  color: #fff;
+  color: var(--color-primary-foreground);
   background-color: var(--color-primary);
   border: none;
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition:
+    background-color var(--duration-fast) var(--ease-out-quart),
+    opacity var(--duration-fast) linear,
+    transform var(--duration-fast) var(--ease-out-quint);
   white-space: nowrap;
+
+  &:active:not(:disabled) {
+    transform: scale(0.97);
+  }
 
   &:hover:not(:disabled) {
     background: oklch(from var(--color-primary) calc(l - 0.05) c h);
@@ -417,24 +513,57 @@ const handleOpenChange = (val: boolean) => {
 }
 
 .folder-dialog-footer {
-  padding: 12px 24px 18px;
   display: flex;
-  justify-content: center;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 12px 24px 18px;
+  border-top: 1px solid var(--color-border);
 }
 
-.folder-confirm-btn {
-  padding: 8px 48px;
-  border-radius: 6px;
-  font-size: 14px;
+/* 次要动作：有边框但不抢主按钮 */
+.folder-cancel-btn {
+  padding: 8px 18px;
+  color: var(--color-foreground);
+  font-size: 0.875rem;
   font-weight: 500;
-  color: var(--color-primary);
   background: transparent;
-  border: none;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
   cursor: pointer;
-  transition: all 0.15s ease;
+
+  &:hover {
+    background: color-mix(in oklch, var(--color-foreground) 6%, transparent);
+  }
+}
+
+/*
+ * 弹窗主确认动作使用清晰的按钮层级。
+ */
+.folder-confirm-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 88px;
+  padding: 8px 22px;
+  color: var(--color-primary-foreground);
+  font-size: 0.875rem;
+  font-weight: 500;
+  background: var(--color-primary);
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-surface);
+  cursor: pointer;
+  transition:
+    background-color var(--duration-fast) var(--ease-out-quart),
+    opacity var(--duration-fast) linear,
+    transform var(--duration-fast) var(--ease-out-quint);
+
+  &:active:not(:disabled) {
+    transform: scale(0.97);
+  }
 
   &:hover:not(:disabled) {
-    background: oklch(var(--muted) / 0.5);
+    background: color-mix(in oklch, var(--color-primary) 88%, var(--color-foreground));
   }
 
   &:disabled {
@@ -443,24 +572,35 @@ const handleOpenChange = (val: boolean) => {
   }
 }
 
+/*
+ * 展开与收起通过 grid-template-rows 在 0fr 和 1fr 之间过渡，无需预估内容高度。
+ */
+.folder-create-slide {
+  display: grid;
+  grid-template-rows: 1fr;
+
+  > * {
+    min-height: 0;
+    overflow: hidden;
+  }
+}
+
 .create-slide-enter-active,
 .create-slide-leave-active {
-  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
-  overflow: hidden;
+  transition:
+    grid-template-rows var(--duration-normal) var(--ease-out-expo),
+    opacity var(--duration-fast) linear;
 }
 
 .create-slide-enter-from,
 .create-slide-leave-to {
+  grid-template-rows: 0fr;
   opacity: 0;
-  max-height: 0;
-  transform: translateY(-8px);
 }
 
 .create-slide-enter-to,
 .create-slide-leave-from {
+  grid-template-rows: 1fr;
   opacity: 1;
-  max-height: 60px;
 }
-
-/* Create input slide transition */
 </style>

@@ -2,6 +2,7 @@
 import { onMounted } from 'vue'
 import { storeToRefs } from 'pinia'
 import { RouterView, useRoute } from 'vue-router'
+import { Send } from 'lucide-vue-next'
 import Navbar from '@/components/layout/Navbar.vue'
 import { useNotificationStore } from '@/stores/notification'
 
@@ -41,17 +42,22 @@ const getBadgeCount = (path: string) => {
 </script>
 
 <template>
-  <div class="relative min-h-screen bg-background">
+  <div
+    class="relative min-h-screen bg-background"
+    style="--shell-max: var(--container-focus, 1140px)"
+  >
     <!-- Navbar -->
-    <div class="sticky top-0 z-50 w-full bg-card border-b border-border/40 shadow-sm">
+    <div class="sticky top-0 z-50 w-full border-b border-border/40 bg-card shadow-surface">
       <Navbar light />
     </div>
 
     <!-- Main Content Container -->
     <main
-      class="relative z-10 mx-auto mt-3 max-w-[1140px] px-2 sm:px-4 md:mt-4 h-[calc(100vh-80px)] md:h-[calc(100vh-90px)]"
+      class="relative z-10 mx-auto mt-3 h-[calc(100vh-80px)] w-full max-w-focus px-4 sm:px-6 md:mt-4 md:h-[calc(100vh-90px)] lg:px-8"
     >
-      <div class="flex h-full flex-col overflow-hidden rounded-2xl bg-card shadow-sm md:flex-row">
+      <div
+        class="flex h-full flex-col overflow-hidden rounded-2xl bg-card shadow-surface md:flex-row"
+      >
         <!-- Left Sidebar Navigation -->
         <aside
           class="w-full shrink-0 overflow-hidden border-b border-border/50 bg-card md:w-[180px] md:border-b-0 md:border-r"
@@ -59,21 +65,7 @@ const getBadgeCount = (path: string) => {
           <div
             class="flex items-center gap-2 px-4 py-4 text-base font-semibold text-foreground md:mb-4 md:px-6 md:pt-6 md:pb-0"
           >
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              width="16"
-              height="16"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="2"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-              class="lucide lucide-send"
-            >
-              <path d="m22 2-7 20-4-9-9-4Z" />
-              <path d="M22 2 11 13" />
-            </svg>
+            <Send class="h-4 w-4 shrink-0" aria-hidden="true" />
             消息中心
           </div>
 
@@ -83,7 +75,7 @@ const getBadgeCount = (path: string) => {
             <template v-for="item in navItems" :key="item.path">
               <router-link
                 :to="item.path"
-                class="group flex shrink-0 items-center justify-between rounded-full px-3 py-2 text-sm transition-colors hover:bg-muted md:rounded-lg md:px-3 md:py-2.5"
+                class="t-tint group flex shrink-0 items-center justify-between rounded-full px-3 py-2 text-sm hover:bg-muted md:rounded-lg md:px-3 md:py-2.5"
                 :class="[
                   route.path.startsWith(item.path)
                     ? 'font-medium text-primary'
@@ -100,7 +92,7 @@ const getBadgeCount = (path: string) => {
                 </div>
                 <span
                   v-if="getBadgeCount(item.path) > 0"
-                  class="flex h-5 items-center justify-center rounded-full bg-destructive px-1.5 text-[11px] font-medium text-destructive-foreground"
+                  class="tabular flex h-5 items-center justify-center rounded-full bg-destructive px-1.5 text-2xs font-medium text-destructive-foreground"
                 >
                   {{ getBadgeCount(item.path) > 99 ? '99+' : getBadgeCount(item.path) }}
                 </span>
@@ -113,7 +105,11 @@ const getBadgeCount = (path: string) => {
 
         <!-- Right Content Area -->
         <div class="min-w-0 flex-1 bg-card">
-          <RouterView />
+          <RouterView v-slot="{ Component, route: current }">
+            <Transition name="route" mode="out-in">
+              <component :is="Component" :key="current.path" />
+            </Transition>
+          </RouterView>
         </div>
       </div>
     </main>

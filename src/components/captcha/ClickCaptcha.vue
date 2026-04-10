@@ -24,7 +24,6 @@ const clickedPoints = ref<ClickCaptchaPoint[]>([])
 const imageRef = ref<HTMLImageElement | null>(null)
 
 // Computed
-const isComplete = computed(() => clickedPoints.value.length >= 4)
 const currentValue = computed(() => ({
   token: captchaData.value?.token || '',
   dots: clickedPoints.value,
@@ -45,11 +44,16 @@ const loadCaptcha = async () => {
 }
 
 const handleImageClick = (event: MouseEvent) => {
-  if (!imageRef.value || isComplete.value) return
+  if (!imageRef.value) return
 
   const rect = imageRef.value.getBoundingClientRect()
-  const x = Math.round(event.clientX - rect.left)
-  const y = Math.round(event.clientY - rect.top)
+  const visualX = event.clientX - rect.left
+  const visualY = event.clientY - rect.top
+  const scaleX = imageRef.value.naturalWidth / rect.width
+  const scaleY = imageRef.value.naturalHeight / rect.height
+
+  const x = Math.round(visualX * scaleX)
+  const y = Math.round(visualY * scaleY)
 
   const point: ClickCaptchaPoint = {
     index: clickedPoints.value.length,
@@ -61,9 +65,10 @@ const handleImageClick = (event: MouseEvent) => {
 
   // Update model value
   emit('update:modelValue', currentValue.value)
+}
 
-  // If we have 4 points, emit verified
-  if (clickedPoints.value.length >= 4) {
+const handleConfirmDots = () => {
+  if (clickedPoints.value.length > 0) {
     emit('verified', currentValue.value)
   }
 }
@@ -96,39 +101,42 @@ defineExpose({
   <div class="space-y-3">
     <!-- Captcha Image Container -->
     <div class="relative overflow-hidden rounded-lg border bg-muted">
-      <!-- Loading State -->
-      <div v-if="isLoading" class="flex h-[200px] items-center justify-center">
-        <Loader2 class="h-8 w-8 animate-spin text-muted-foreground" />
-      </div>
+      <Transition mode="out-in" name="fade">
+        <!-- Loading State -->
+        <div v-if="isLoading" key="loading" class="flex h-[200px] items-center justify-center">
+          <Loader2 class="h-8 w-8 animate-spin text-muted-foreground" />
+        </div>
 
-      <!-- Captcha Image -->
-      <template v-else-if="captchaData">
-        <div class="relative">
-          <img
-            ref="imageRef"
-            :src="captchaData.masterImage"
-            alt="点击验证码"
-            class="w-full cursor-crosshair select-none"
-            @click="handleImageClick"
-          />
+        <!-- Captcha Image -->
+        <div v-else-if="captchaData" key="captcha" class="flex flex-col">
+          <div class="relative">
+            <img
+              ref="imageRef"
+              :src="captchaData.masterImage"
+              alt="点击验证码"
+              class="w-full h-auto object-contain cursor-crosshair select-none"
+              draggable="false"
+              @click="handleImageClick"
+            />
 
-          <!-- Clicked Points -->
-          <div
-            v-for="(point, index) in clickedPoints"
-            :key="index"
-            class="absolute flex h-6 w-6 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full bg-primary text-xs font-bold text-primary-foreground shadow-md"
-            :style="{ left: `${point.x}px`, top: `${point.y}px` }"
-          >
-            {{ index + 1 }}
+            <!-- Clicked Points -->
+            <div
+              v-for="(point, index) in clickedPoints"
+              :key="index"
+              class="absolute flex h-6 w-6 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full bg-primary text-xs font-bold text-primary-foreground shadow-md transition-all animate-in zoom-in-50 duration-300"
+              :style="{ left: `${point.x / (imageRef?.naturalWidth || 1) * 100}%`, top: `${point.y / (imageRef?.naturalHeight || 1) * 100}%` }"
+            >
+              {{ index + 1 }}
+            </div>
+          </div>
+
+          <!-- Thumb Image (hint) -->
+          <div class="flex items-center flex-wrap gap-2 border-t bg-background/80 p-2">
+            <span class="text-xs shrink-0 text-muted-foreground">请依次点击:</span>
+            <img :src="captchaData.thumbImage" alt="提示" class="h-8 w-auto min-w-0 object-contain rounded shrink-0" />
           </div>
         </div>
-
-        <!-- Thumb Image (hint) -->
-        <div class="flex items-center gap-2 border-t bg-background/80 p-2">
-          <span class="text-xs text-muted-foreground">请依次点击:</span>
-          <img :src="captchaData.thumbImage" alt="提示" class="h-8 rounded" />
-        </div>
-      </template>
+      </Transition>
     </div>
 
     <!-- Controls -->
@@ -154,7 +162,29 @@ defineExpose({
           撤销
         </Button>
       </div>
-      <span class="text-xs text-muted-foreground"> 已点击 {{ clickedPoints.length }}/4 个点 </span>
+      <div class="flex items-center gap-3">
+        <span class="text-xs text-muted-foreground"> 已点击 {{ clickedPoints.length }} 个点 </span>
+        <Button
+          v-if="clickedPoints.length > 0"
+          type="button"
+          variant="default"
+          size="sm"
+          @click="handleConfirmDots"
+        >
+          确定
+        </Button>
+      </div>
     </div>
   </div>
 </template>
+
+<style scoped>
+.fade-enter-active,
+.fade-leave-active {
+  transition: opacity 0.3s ease;
+}
+.fade-enter-from,
+.fade-leave-to {
+  opacity: 0;
+}
+</style>

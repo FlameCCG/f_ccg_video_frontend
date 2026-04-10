@@ -137,14 +137,14 @@ defineExpose({
   <div class="space-y-3">
     <!-- Captcha Image Container -->
     <div class="relative overflow-hidden rounded-lg border bg-muted">
-      <!-- Loading State -->
-      <div v-if="isLoading" class="flex h-[160px] items-center justify-center">
-        <Loader2 class="h-8 w-8 animate-spin text-muted-foreground" />
-      </div>
+      <Transition mode="out-in" name="fade">
+        <!-- Loading State -->
+        <div v-if="isLoading" key="loading" class="flex h-[160px] items-center justify-center">
+          <Loader2 class="h-8 w-8 animate-spin text-muted-foreground" />
+        </div>
 
-      <!-- Captcha Image -->
-      <template v-else-if="captchaData">
-        <div class="relative">
+        <!-- Captcha Image -->
+        <div v-else-if="captchaData" key="captcha" class="relative">
           <!-- Background Image -->
           <img
             :src="captchaData.masterImage"
@@ -162,7 +162,7 @@ defineExpose({
             draggable="false"
           />
         </div>
-      </template>
+      </Transition>
     </div>
 
     <!-- Slider Track -->
@@ -230,3 +230,14 @@ defineExpose({
     </div>
   </div>
 </template>
+
+<style scoped>
+.fade-enter-active,
+.fade-leave-active {
+  transition: opacity 0.3s ease;
+}
+.fade-enter-from,
+.fade-leave-to {
+  opacity: 0;
+}
+</style>

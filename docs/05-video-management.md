@@ -842,7 +842,6 @@ Base URL：/v1
 - 响应结构: code=0 成功，code=1 失败；msg 为提示信息
 
 请求参数:
-通用字段:
 | 名称 | 位置 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- | --- |
 | title | body | string | 是 | 视频标题 |
@@ -850,31 +849,19 @@ Base URL：/v1
 | partitionId | body | integer | 是 | 分区ID |
 | tags | body | array<integer> | 否 | 标签ID列表（可选，最多10个） |
 | isOriginal | body | boolean | 否 | 是否原创（可选） |
+| isPrivate | body | boolean | 否 | 是否私密（可选，默认 false；传 true 时发布为私密作品） |
 | coverUrl | body | string | 是 | 封面图片URL |
-| publishTime | body | string(date-time) | 否 | 定时发布时间（可选） |
-
-单文件投稿:
-| 名称 | 位置 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- | --- |
 | filePath | body | string | 是 | 视频文件路径 |
 | fileName | body | string | 是 | 视频文件名 |
 | fileHash | body | string | 是 | 文件哈希值 |
-
-分P投稿:
-| 名称 | 位置 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- | --- |
-| parts | body | array<object> | 是 | 分P列表 |
-| parts[].title | body | string | 否 | 分P标题；不传时以后端默认规则生成 |
-| parts[].filePath | body | string | 是 | 当前分P视频文件路径 |
-| parts[].fileName | body | string | 是 | 当前分P视频文件名 |
-| parts[].fileHash | body | string | 是 | 当前分P视频文件哈希值 |
+| publishTime | body | string(date-time) | 否 | 定时发布时间（可选） |
 
 响应字段:
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
 | data | object | - |
 | data.videoId | integer | 视频ID |
-| data.status | integer | 视频状态 |
+| data.status | integer | 视频状态（1已发布 2私密 4审核中） |
 | data.publishTime | string(date-time) | 发布时间 |
 | data.cover | string | 封面URL |
 
@@ -910,6 +897,7 @@ Base URL：/v1
 | partitionId | body | integer | 否 | 分区ID（可选） |
 | tags | body | array<integer> | 否 | 标签ID列表（可选） |
 | isOriginal | body | boolean | 否 | 是否原创（可选） |
+| isPrivate | body | boolean | 否 | 是否私密（可选；传 true 转为私密，传 false 转为公开/审核中） |
 | coverUrl | body | string | 否 | 封面图片URL（可选） |
 | publishTime | body | string(date-time) | 否 | 发布时间（可选） |
 

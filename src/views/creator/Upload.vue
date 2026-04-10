@@ -44,6 +44,7 @@ import {
   normalizeStorageConfig,
   type StorageConfig,
 } from '@/api/site'
+import { resolveCreatorTagIds } from '@/utils/creator-video'
 
 const router = useRouter()
 const { toast } = useToast()
@@ -77,6 +78,7 @@ interface VideoWorkForm {
   tags: string[]
   tagInput: string
   isOriginal: boolean
+  isPrivate: boolean
   publishType: 'immediate' | 'scheduled'
   publishTime: string
 }
@@ -101,6 +103,7 @@ const createWorkForm = (): VideoWorkForm => ({
   tags: [],
   tagInput: '',
   isOriginal: true,
+  isPrivate: false,
   publishType: 'immediate',
   publishTime: '',
 })
@@ -168,6 +171,7 @@ const uploadConstraintsText = computed(() => {
 const activeWork = computed(() => works.value[activeWorkIndex.value])
 const activeParts = computed(() => activeWork.value?.parts ?? [])
 const allParts = computed(() => works.value.flatMap((w) => w.parts))
+const isActiveScheduleDisabled = computed(() => Boolean(activeWork.value?.form.isPrivate))
 
 const isUploadingAny = computed(() =>
   allParts.value.some((p) =>
@@ -511,9 +515,17 @@ watch(
 )
 
 watch(
-  () => activeWork.value?.form.publishType,
-  (publishType) => {
-    if (!activeWork.value || publishType !== 'scheduled') return
+  () => [activeWork.value?.form.publishType, activeWork.value?.form.isPrivate] as const,
+  ([publishType, isPrivate]) => {
+    if (!activeWork.value) return
+    if (isPrivate) {
+      if (activeWork.value.form.publishType !== 'immediate') {
+        activeWork.value.form.publishType = 'immediate'
+      }
+      activeWork.value.form.publishTime = ''
+      return
+    }
+    if (publishType !== 'scheduled') return
     refreshScheduleBoundary()
     activeWork.value.form.publishTime =
       normalizeScheduledPublishTime(activeWork.value.form.publishTime) ||
@@ -524,6 +536,7 @@ watch(
 watch([scheduledPublishMinValue, scheduledPublishMaxValue], () => {
   if (
     !activeWork.value ||
+    activeWork.value.form.isPrivate ||
     activeWork.value.form.publishType !== 'scheduled' ||
     !activeWork.value.form.publishTime
   )
@@ -1164,7 +1177,7 @@ const handlePublish = async () => {
     isPublishing.value = true
     for (const work of works.value) {
       let publishTimeStr: string | undefined
-      if (work.form.publishType === 'scheduled') {
+      if (!work.form.isPrivate && work.form.publishType === 'scheduled') {
         const normalized = normalizeScheduledPublishTime(work.form.publishTime)
         if (!normalized) {
           toast({ title: '发布时间格式不正确', variant: 'destructive' })
@@ -1172,6 +1185,7 @@ const handlePublish = async () => {
         }
         publishTimeStr = new Date(normalized).toISOString()
       }
+      const tagIds = await resolveCreatorTagIds(work.form.tags)
       let coverUrl = ''
       if (work.coverFile) {
         const coverRes = await uploadImage(work.parts[0]?.hash || '', work.coverFile)
@@ -1181,7 +1195,9 @@ const handlePublish = async () => {
         title: work.form.title,
         description: work.form.description,
         partitionId: work.form.partitionId!,
+        tags: tagIds,
         isOriginal: work.form.isOriginal,
+        isPrivate: work.form.isPrivate,
         coverUrl,
         publishTime: publishTimeStr,
         parts: work.parts.map((p) => ({
@@ -1669,6 +1685,38 @@ const handlePublish = async () => {
             ></textarea>
           </div>
 
+          <!-- Privacy -->
+          <div class="space-y-3">
+            <Label class="text-base">可见性</Label>
+            <label
+              class="flex items-start gap-3 rounded-2xl border border-border/60 bg-muted/20 p-4 transition-colors hover:border-primary/40"
+            >
+              <input
+                v-model="activeWork.form.isPrivate"
+                type="checkbox"
+                class="mt-1 h-4 w-4 shrink-0 accent-primary"
+              />
+              <div class="space-y-1">
+                <div class="flex flex-wrap items-center gap-2">
+                  <span class="text-sm font-medium text-foreground">设为私密视频</span>
+                  <span
+                    class="rounded-full px-2 py-0.5 text-[11px] font-medium"
+                    :class="
+                      activeWork.form.isPrivate
+                        ? 'bg-[var(--status-warning-soft)] text-[var(--status-warning-ink)]'
+                        : 'bg-[var(--status-success-soft)] text-[var(--status-success-ink)]'
+                    "
+                  >
+                    {{ activeWork.form.isPrivate ? '仅自己可见' : '公开视频' }}
+                  </span>
+                </div>
+                <p class="text-sm text-muted-foreground">
+                  私密作品不会出现在公开列表、推荐和搜索中，且前端不允许设置定时发布。
+                </p>
+              </div>
+            </label>
+          </div>
+
           <!-- Publish Time -->
           <div class="space-y-2">
             <Label class="text-base">发布时间</Label>
@@ -1683,15 +1731,30 @@ const handlePublish = async () => {
                   />
                   <span class="text-sm">立即发布</span>
                 </label>
-                <label class="flex items-center gap-2 cursor-pointer">
+                <label
+                  class="flex items-center gap-2 transition-opacity"
+                  :class="
+                    isActiveScheduleDisabled
+                      ? 'cursor-not-allowed text-muted-foreground/60 opacity-50'
+                      : 'cursor-pointer'
+                  "
+                >
                   <input
                     v-model="activeWork.form.publishType"
                     type="radio"
                     value="scheduled"
                     class="accent-primary w-4 h-4"
+                    :disabled="isActiveScheduleDisabled"
                   />
                   <span class="text-sm">定时发布</span>
                 </label>
+              </div>
+
+              <div
+                v-if="isActiveScheduleDisabled"
+                class="rounded-2xl border border-dashed border-border/60 bg-muted/15 px-4 py-3 text-sm text-muted-foreground"
+              >
+                私密视频仅支持立即发布。取消私密后，才可以设置最早 5 分钟、最晚 15 天的定时发布。
               </div>
 
               <div

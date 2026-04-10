@@ -45,6 +45,7 @@ import { toast } from 'vue-sonner'
 import Navbar from '@/components/layout/Navbar.vue'
 import AppAvatar from '@/components/common/AppAvatar.vue'
 import CommentSection from '@/components/comment/CommentSection.vue'
+import UserBannerPicker from '@/components/user/UserBannerPicker.vue'
 import {
   Home,
   Zap,
@@ -56,6 +57,7 @@ import {
   Upload,
   FileVideo,
   ChevronRight,
+  Shirt,
   Pin,
   Trash2,
   MoreVertical,
@@ -83,6 +85,8 @@ const relation = ref<RelationInfo | null>(null)
 const loading = ref(true)
 const followLoading = ref(false)
 const chatOpening = ref(false)
+const bannerPreviewUrl = ref('')
+const bannerPickerOpen = ref(false)
 
 type TabKey = 'home' | 'dynamic' | 'videos' | 'favorites' | 'following' | 'fans' | 'settings'
 const activeTab = ref<TabKey>('home')
@@ -147,6 +151,7 @@ const localFollowState = ref(new Map<number, boolean>())
 
 const isFollowed = computed(() => relation.value?.isFocus ?? false)
 const isMutual = computed(() => relation.value?.isMutualFollow ?? false)
+const displayBannerUrl = computed(() => bannerPreviewUrl.value || user.value?.bannerUrl || '')
 
 const followBtnText = computed(() => {
   if (isMutual.value) return '互相关注'
@@ -636,6 +641,33 @@ const toggleConf = async (key: keyof UpdateUserConfigParams) => {
   }
 }
 
+const handleBannerPreview = (url: string | null) => {
+  bannerPreviewUrl.value = url ?? ''
+}
+
+const handleBannerSaved = (payload: { bannerId: number; bannerUrl: string }) => {
+  bannerPreviewUrl.value = ''
+
+  if (user.value) {
+    user.value.bannerUrl = payload.bannerUrl
+  }
+
+  if (userConf.value) {
+    userConf.value.bannerId = payload.bannerId
+    userConf.value.bannerUrl = payload.bannerId === 0 ? payload.bannerUrl : ''
+  }
+
+  authStore.updateUser({ bannerUrl: payload.bannerUrl })
+}
+
+const toggleBannerPicker = () => {
+  bannerPickerOpen.value = !bannerPickerOpen.value
+}
+
+const closeBannerPicker = () => {
+  bannerPickerOpen.value = false
+}
+
 const getTabQueryValue = (tab: TabKey): string | undefined => {
   return tab === 'home' ? undefined : tab
 }
@@ -655,6 +687,7 @@ const syncTabQuery = (tab: TabKey) => {
 
 const switchTab = (tab: TabKey, syncQuery = true) => {
   activeTab.value = tab
+  if (tab !== 'home') bannerPickerOpen.value = false
   if (syncQuery) syncTabQuery(tab)
   if (tab === 'home') {
     if (!homeVideos.value.length) void fetchHomeVideos()
@@ -782,6 +815,8 @@ watch(userId, () => {
   dynamicFilter.value = 'all'
   expandedComments.value.clear()
   userConf.value = null
+  bannerPreviewUrl.value = ''
+  bannerPickerOpen.value = false
   followingList.value = []
   followingTotal.value = 0
   followingPage.value = 1
@@ -851,13 +886,33 @@ const privacySettings = [
 
     <template v-else-if="user">
       <!-- Header & Banner -->
-      <div class="h-header relative h-[220px]">
+      <div class="h-header relative h-[220px] overflow-hidden">
         <div class="absolute inset-0 z-0">
-          <img v-if="user.bannerUrl" :src="user.bannerUrl" class="w-full h-full object-cover" />
+          <img v-if="displayBannerUrl" :src="displayBannerUrl" class="h-full w-full object-cover" />
           <div v-else class="w-full h-full bg-gradient-to-r from-primary to-accent"></div>
         </div>
         <div class="absolute top-0 left-0 right-0 z-50">
-          <Navbar class="text-white" />
+          <Navbar class="text-white">
+            <template #after-actions="{ actionTextClass }">
+              <button
+                v-if="isSelf && activeTab === 'home'"
+                type="button"
+                class="ml-1 flex h-8 w-8 flex-shrink-0 items-center translate-x-[-80px] translate-y-[150px] justify-center rounded-full border border-white/12 bg-black/20 shadow-[0_18px_34px_-24px_rgba(0,0,0,0.72)] backdrop-blur-md sm:ml-2"
+                :class="[
+                  actionTextClass,
+                  bannerPickerOpen
+                    ? 'border-white/40 bg-black/36 text-white'
+                    : 'hover:border-white/35 hover:bg-black/30',
+                ]"
+                :aria-expanded="bannerPickerOpen"
+                :title="bannerPickerOpen ? '收起横幅面板' : '打开横幅面板'"
+                aria-label="切换横幅面板"
+                @click="toggleBannerPicker"
+              >
+                <Shirt class="h-4 w-4" />
+              </button>
+            </template>
+          </Navbar>
         </div>
         <div
           class="absolute bottom-0 left-0 right-0 z-10 flex items-end pb-4 pt-24 bg-gradient-to-t from-black/60 to-transparent"
@@ -982,76 +1037,141 @@ const privacySettings = [
       <!-- Main Content -->
       <div class="w-full px-4 md:px-8 xl:px-[140px] pt-5 pb-12">
         <!-- ==================== HOME TAB ==================== -->
-        <div v-if="activeTab === 'home'" class="flex gap-5 items-start">
-          <div class="flex-1 min-w-0 space-y-8">
-            <!-- User Videos Section -->
-            <div>
-              <div class="flex items-center justify-between mb-4">
-                <div class="flex items-center gap-3">
-                  <h3 class="text-[16px] font-bold text-foreground">视频 · {{ homeVideoTotal }}</h3>
-                  <div class="flex gap-1">
+        <div v-if="activeTab === 'home'" class="space-y-8">
+          <div class="flex flex-col gap-5 xl:flex-row xl:items-start">
+            <div class="min-w-0 flex-1">
+              <!-- User Videos Section -->
+              <div>
+                <div class="mb-4 flex items-center justify-between">
+                  <div class="flex items-center gap-3">
+                    <h3 class="text-[16px] font-bold text-foreground">
+                      视频 · {{ homeVideoTotal }}
+                    </h3>
+                    <div class="flex gap-1">
+                      <button
+                        v-for="o in sortOpts"
+                        :key="o.value"
+                        class="px-3 py-0.5 rounded-full text-[12px] transition-colors"
+                        :class="
+                          homeVideoSort === o.value
+                            ? 'bg-primary text-white'
+                            : 'bg-secondary text-muted-foreground hover:text-foreground'
+                        "
+                        @click="changeHomeVideoSort(o.value)"
+                      >
+                        {{ o.label }}
+                      </button>
+                    </div>
+                  </div>
+                  <div class="flex items-center gap-3">
                     <button
-                      v-for="o in sortOpts"
-                      :key="o.value"
-                      class="px-3 py-0.5 rounded-full text-[12px] transition-colors"
-                      :class="
-                        homeVideoSort === o.value
-                          ? 'bg-primary text-white'
-                          : 'bg-secondary text-muted-foreground hover:text-foreground'
-                      "
-                      @click="changeHomeVideoSort(o.value)"
+                      class="flex items-center gap-1 text-[12px] text-muted-foreground transition-colors hover:text-primary"
                     >
-                      {{ o.label }}
+                      <Play :size="12" fill="currentColor" /> 播放全部
+                    </button>
+                    <button
+                      class="flex items-center text-[12px] text-muted-foreground transition-colors hover:text-primary"
+                      @click="switchTab('videos')"
+                    >
+                      查看更多 <ChevronRight :size="14" />
                     </button>
                   </div>
                 </div>
-                <div class="flex items-center gap-3">
-                  <button
-                    class="flex items-center gap-1 text-[12px] text-muted-foreground hover:text-primary transition-colors"
+                <div v-if="homeVideos.length > 0" class="grid grid-cols-4 gap-4">
+                  <div
+                    v-for="v in homeVideos"
+                    :key="v.id"
+                    class="u-video-card"
+                    @click="goVideo(v.id)"
                   >
-                    <Play :size="12" fill="currentColor" /> 播放全部
-                  </button>
-                  <button
-                    class="flex items-center text-[12px] text-muted-foreground hover:text-primary transition-colors"
-                    @click="switchTab('videos')"
-                  >
-                    查看更多 <ChevronRight :size="14" />
-                  </button>
-                </div>
-              </div>
-              <div v-if="homeVideos.length > 0" class="grid grid-cols-5 gap-5">
-                <div
-                  v-for="v in homeVideos"
-                  :key="v.id"
-                  class="u-video-card"
-                  @click="goVideo(v.id)"
-                >
-                  <div class="uvc-cover">
-                    <img :src="v.cover" />
-                    <div class="uvc-stats">
-                      <span><Play :size="11" /> {{ fmtCount(v.views) }}</span>
-                      <span><MessageSquare :size="11" /> {{ fmtCount(v.danmuCount) }}</span>
+                    <div class="uvc-cover">
+                      <img :src="v.cover" />
+                      <div class="uvc-stats">
+                        <span><Play :size="11" /> {{ fmtCount(v.views) }}</span>
+                        <span><MessageSquare :size="11" /> {{ fmtCount(v.danmuCount) }}</span>
+                      </div>
+                      <div class="uvc-dur">{{ fmtDuration(v.duration) }}</div>
                     </div>
-                    <div class="uvc-dur">{{ fmtDuration(v.duration) }}</div>
+                    <h4 class="uvc-title">{{ v.title }}</h4>
+                    <div class="uvc-time">{{ fmtTime(v.createdAt) }}</div>
                   </div>
-                  <h4 class="uvc-title">{{ v.title }}</h4>
-                  <div class="uvc-time">{{ fmtTime(v.createdAt) }}</div>
                 </div>
-              </div>
-              <div
-                v-else-if="!homeVideosLoading"
-                class="py-10 text-center text-muted-foreground/80 text-[13px]"
-              >
-                暂无投稿视频
+                <div
+                  v-else-if="!homeVideosLoading"
+                  class="py-10 text-center text-[13px] text-muted-foreground/80"
+                >
+                  暂无投稿视频
+                </div>
               </div>
             </div>
 
+            <!-- Right Sidebar -->
+            <div class="w-full flex-shrink-0 space-y-4 xl:w-[260px]">
+              <div v-if="isSelf" class="rounded-lg bg-secondary p-4">
+                <div class="mb-3 flex items-center justify-between">
+                  <span class="text-[14px] font-medium text-foreground">创作中心</span>
+                  <button class="text-[12px] text-primary" @click="router.push('/creator')">
+                    进入 >
+                  </button>
+                </div>
+                <div class="flex gap-2">
+                  <button
+                    class="flex flex-1 items-center justify-center gap-1 rounded bg-secondary py-1.5 text-[12px] text-muted-foreground transition-colors hover:text-primary"
+                    @click="router.push('/creator/upload')"
+                  >
+                    <Upload :size="13" /> 视频投稿
+                  </button>
+                  <button
+                    class="flex flex-1 items-center justify-center gap-1 rounded bg-secondary py-1.5 text-[12px] text-muted-foreground transition-colors hover:text-primary"
+                    @click="router.push('/creator/content')"
+                  >
+                    <FileVideo :size="13" /> 投稿管理
+                  </button>
+                </div>
+              </div>
+
+              <div class="rounded-lg bg-secondary p-4">
+                <div
+                  class="mb-2 border-b border-border pb-2 text-[14px] font-medium text-foreground"
+                >
+                  个人资料
+                </div>
+                <div class="flex flex-col gap-1.5 text-[12px]">
+                  <div class="flex">
+                    <span class="w-10 text-muted-foreground/80">UID</span>
+                    <span class="text-muted-foreground">{{ user.id }}</span>
+                  </div>
+                  <div class="flex">
+                    <span class="w-10 text-muted-foreground/80">生日</span>
+                    <span class="text-muted-foreground">{{
+                      user.birthday ? fmtDate(user.birthday) : '-'
+                    }}</span>
+                  </div>
+                  <div class="flex">
+                    <span class="w-10 text-muted-foreground/80">性别</span>
+                    <span class="text-muted-foreground">{{ genderText }}</span>
+                  </div>
+                </div>
+              </div>
+
+              <div class="rounded-lg bg-secondary p-4">
+                <div
+                  class="mb-2 border-b border-border pb-2 text-[14px] font-medium text-foreground"
+                >
+                  公告
+                </div>
+                <div class="text-[12px] text-muted-foreground/80">这个人很懒，什么都没写</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="space-y-8 xl:pr-[280px]">
             <!-- Liked Videos -->
             <div v-if="likedVideos.length > 0">
-              <h3 class="text-[16px] font-bold text-foreground mb-4">最近点赞的视频</h3>
-              <div class="grid grid-cols-5 gap-5">
+              <h3 class="mb-4 text-[16px] font-bold text-foreground">最近点赞的视频</h3>
+              <div class="grid grid-cols-4 gap-4">
                 <div
-                  v-for="v in likedVideos.slice(0, 10)"
+                  v-for="v in likedVideos.slice(0, 8)"
                   :key="v.id"
                   class="u-video-card"
                   @click="goVideo(v.id)"
@@ -1072,10 +1192,10 @@ const privacySettings = [
 
             <!-- Coined Videos -->
             <div v-if="coinedVideos.length > 0">
-              <h3 class="text-[16px] font-bold text-foreground mb-4">最近投币的视频</h3>
-              <div class="grid grid-cols-5 gap-5">
+              <h3 class="mb-4 text-[16px] font-bold text-foreground">最近投币的视频</h3>
+              <div class="grid grid-cols-4 gap-4">
                 <div
-                  v-for="v in coinedVideos.slice(0, 10)"
+                  v-for="v in coinedVideos.slice(0, 8)"
                   :key="v.id"
                   class="u-video-card"
                   @click="goVideo(v.id)"
@@ -1096,21 +1216,21 @@ const privacySettings = [
 
             <!-- Folders on Home -->
             <div v-if="folders.length > 0">
-              <div class="flex justify-between items-center mb-4">
+              <div class="mb-4 flex items-center justify-between">
                 <div class="flex items-center gap-2">
                   <h3 class="text-[16px] font-bold text-foreground">收藏夹</h3>
                   <span class="text-[12px] text-muted-foreground/80">· {{ folders.length }}</span>
                 </div>
                 <button
-                  class="flex items-center text-[12px] text-muted-foreground hover:text-primary transition-colors"
+                  class="flex items-center text-[12px] text-muted-foreground transition-colors hover:text-primary"
                   @click="router.push('/favorites')"
                 >
                   查看更多 <ChevronRight :size="14" />
                 </button>
               </div>
-              <div class="grid grid-cols-5 gap-5">
+              <div class="grid grid-cols-4 gap-4">
                 <div
-                  v-for="f in folders.slice(0, 5)"
+                  v-for="f in folders.slice(0, 4)"
                   :key="f.id"
                   class="u-folder-card"
                   @click="router.push({ path: '/favorites', query: { folderId: String(f.id) } })"
@@ -1130,61 +1250,6 @@ const privacySettings = [
                   <div class="ufc-meta">公开</div>
                 </div>
               </div>
-            </div>
-          </div>
-
-          <!-- Right Sidebar -->
-          <div class="w-[260px] flex-shrink-0 space-y-4">
-            <div v-if="isSelf" class="bg-secondary rounded-lg p-4">
-              <div class="flex justify-between items-center mb-3">
-                <span class="text-[14px] font-medium text-foreground">创作中心</span>
-                <button class="text-[12px] text-primary" @click="router.push('/creator')">
-                  进入 >
-                </button>
-              </div>
-              <div class="flex gap-2">
-                <button
-                  class="flex-1 py-1.5 bg-secondary rounded text-[12px] text-muted-foreground hover:text-primary flex justify-center items-center gap-1 transition-colors"
-                  @click="router.push('/creator/upload')"
-                >
-                  <Upload :size="13" /> 视频投稿
-                </button>
-                <button
-                  class="flex-1 py-1.5 bg-secondary rounded text-[12px] text-muted-foreground hover:text-primary flex justify-center items-center gap-1 transition-colors"
-                  @click="router.push('/creator/content')"
-                >
-                  <FileVideo :size="13" /> 投稿管理
-                </button>
-              </div>
-            </div>
-
-            <div class="bg-secondary rounded-lg p-4">
-              <div class="text-[14px] font-medium text-foreground mb-2 pb-2 border-b border-border">
-                个人资料
-              </div>
-              <div class="flex flex-col gap-1.5 text-[12px]">
-                <div class="flex">
-                  <span class="text-muted-foreground/80 w-10">UID</span>
-                  <span class="text-muted-foreground">{{ user.id }}</span>
-                </div>
-                <div class="flex">
-                  <span class="text-muted-foreground/80 w-10">生日</span>
-                  <span class="text-muted-foreground">{{
-                    user.birthday ? fmtDate(user.birthday) : '-'
-                  }}</span>
-                </div>
-                <div class="flex">
-                  <span class="text-muted-foreground/80 w-10">性别</span>
-                  <span class="text-muted-foreground">{{ genderText }}</span>
-                </div>
-              </div>
-            </div>
-
-            <div class="bg-secondary rounded-lg p-4">
-              <div class="text-[14px] font-medium text-foreground mb-2 pb-2 border-b border-border">
-                公告
-              </div>
-              <div class="text-[12px] text-muted-foreground/80">这个人很懒，什么都没写</div>
             </div>
           </div>
         </div>
@@ -1914,6 +1979,27 @@ const privacySettings = [
             </template>
           </div>
         </div>
+
+        <Teleport to="body">
+          <transition name="banner-sheet">
+            <div
+              v-if="isSelf && activeTab === 'home' && bannerPickerOpen"
+              class="fixed inset-x-0 bottom-0 z-[70] pointer-events-none"
+            >
+              <div
+                class="banner-sheet-panel pointer-events-auto w-screen border-t border-border/70 bg-card/[0.98] shadow-[0_-28px_80px_-40px_rgba(0,0,0,0.48)] backdrop-blur-xl"
+              >
+                <UserBannerPicker
+                  :open="bannerPickerOpen"
+                  class="!rounded-none !border-x-0 !border-b-0 !shadow-none"
+                  @close="closeBannerPicker"
+                  @preview="handleBannerPreview"
+                  @saved="handleBannerSaved"
+                />
+              </div>
+            </div>
+          </transition>
+        </Teleport>
       </div>
     </template>
   </div>
@@ -2202,5 +2288,27 @@ const privacySettings = [
 
 .sc-btn-follow:hover {
   opacity: 0.9;
+}
+
+.banner-sheet-enter-active,
+.banner-sheet-leave-active {
+  transition: opacity 180ms ease;
+}
+
+.banner-sheet-enter-active .banner-sheet-panel,
+.banner-sheet-leave-active .banner-sheet-panel {
+  transition:
+    transform 260ms cubic-bezier(0.22, 1, 0.36, 1),
+    opacity 180ms ease;
+}
+
+.banner-sheet-enter-from,
+.banner-sheet-leave-to {
+  opacity: 0;
+}
+
+.banner-sheet-enter-from .banner-sheet-panel,
+.banner-sheet-leave-to .banner-sheet-panel {
+  transform: translateY(100%);
 }
 </style>

@@ -4,7 +4,13 @@ import { Eye, EyeOff, Loader2, User, Lock, Mail, Send, ArrowLeft } from 'lucide-
 import { toast } from 'vue-sonner'
 import { useAuthStore } from '@/stores/auth'
 import { useSiteStore } from '@/stores/site'
-import { getGithubLoginUrl, getGoogleLoginUrl, getQQLoginUrl, getXLoginUrl } from '@/api/site'
+import {
+  getGithubLoginUrl,
+  getGoogleLoginUrl,
+  getLinuxDoLoginUrl,
+  getQQLoginUrl,
+  getXLoginUrl,
+} from '@/api/site'
 import { sendEmailCaptcha } from '@/api/captcha'
 import { registerByEmail, resetPassword } from '@/api/user'
 import type { ClickCaptchaPoint } from '@/api/user'
@@ -140,6 +146,7 @@ const hasSocialLoginOptions = computed(() => {
     siteStore.isQQLoginEnabled ||
     siteStore.isGoogleLoginEnabled ||
     siteStore.isGithubLoginEnabled ||
+    siteStore.isLinuxDoLoginEnabled ||
     siteStore.isXLoginEnabled
   )
 })
@@ -313,6 +320,7 @@ const socialLoginLabels: Record<'qq' | 'google' | OAuthProvider, string> = {
   qq: 'QQ',
   google: 'Google',
   github: 'GitHub',
+  linuxdo: 'LinuxDo',
   x: 'X',
 }
 
@@ -320,7 +328,19 @@ const isSocialLoginEnabled = (provider: 'qq' | 'google' | OAuthProvider) => {
   if (provider === 'qq') return siteStore.isQQLoginEnabled
   if (provider === 'google') return siteStore.isGoogleLoginEnabled
   if (provider === 'github') return siteStore.isGithubLoginEnabled
+  if (provider === 'linuxdo') return siteStore.isLinuxDoLoginEnabled
   return siteStore.isXLoginEnabled
+}
+
+const prepareStateLogin = (provider: OAuthProvider) => {
+  const state = createOAuthState()
+
+  saveOAuthSession(provider, {
+    createdAt: Date.now(),
+    state,
+  })
+
+  return { state }
 }
 
 const preparePkceLogin = async (provider: OAuthProvider) => {
@@ -362,6 +382,12 @@ const startSocialLogin = async (provider: 'qq' | 'google' | OAuthProvider) => {
       return
     }
 
+    if (provider === 'linuxdo') {
+      const stateParams = prepareStateLogin(provider)
+      window.location.href = await getLinuxDoLoginUrl(stateParams)
+      return
+    }
+
     const pkceParams = await preparePkceLogin(provider)
 
     if (provider === 'github') {
@@ -371,7 +397,7 @@ const startSocialLogin = async (provider: 'qq' | 'google' | OAuthProvider) => {
 
     window.location.href = await getXLoginUrl(pkceParams)
   } catch {
-    if (provider === 'github' || provider === 'x') {
+    if (provider === 'github' || provider === 'linuxdo' || provider === 'x') {
       clearOAuthSession(provider)
     }
   }
@@ -387,6 +413,10 @@ const handleGoogleLogin = () => {
 
 const handleGithubLogin = () => {
   void startSocialLogin('github')
+}
+
+const handleLinuxDoLogin = () => {
+  void startSocialLogin('linuxdo')
 }
 
 const handleXLogin = () => {
@@ -622,6 +652,21 @@ onUnmounted(() => {
                   d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.531 1.032 1.531 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0022 12.017C22 6.484 17.522 2 12 2z"
                 />
               </svg>
+            </button>
+            <button
+              v-if="siteStore.isLinuxDoLoginEnabled"
+              type="button"
+              class="group flex h-12 w-12 cursor-pointer items-center justify-center rounded-xl border border-border/40 bg-transparent transition-all hover:border-border hover:bg-muted/50 hover:shadow-sm"
+              title="LinuxDo 登录"
+              @click="handleLinuxDoLogin"
+            >
+              <img
+                src="/linuxdo.png"
+                alt="LinuxDo"
+                class="h-6 w-6 opacity-60 grayscale transition-all group-hover:scale-[1.04] group-hover:opacity-100 group-hover:grayscale-0"
+                loading="lazy"
+                decoding="async"
+              />
             </button>
             <button
               v-if="siteStore.isXLoginEnabled"

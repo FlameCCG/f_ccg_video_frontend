@@ -1,7 +1,7 @@
-export type OAuthProvider = 'github' | 'x'
+export type OAuthProvider = 'github' | 'linuxdo' | 'x'
 
 export interface OAuthSessionPayload {
-  codeVerifier: string
+  codeVerifier?: string
   createdAt: number
   state: string
 }
@@ -57,7 +57,7 @@ export const consumeOAuthSession = (provider: OAuthProvider): OAuthSessionPayloa
   try {
     const parsed = JSON.parse(raw) as Partial<OAuthSessionPayload>
     if (
-      typeof parsed.codeVerifier !== 'string' ||
+      (typeof parsed.codeVerifier !== 'string' && typeof parsed.codeVerifier !== 'undefined') ||
       typeof parsed.state !== 'string' ||
       typeof parsed.createdAt !== 'number'
     ) {

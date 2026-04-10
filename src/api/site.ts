@@ -10,6 +10,7 @@ export interface LoginConfig {
   googleLogin?: boolean
   githubLogin?: boolean
   gitHubLogin?: boolean
+  linuxdoLogin?: boolean
   xLogin?: boolean
   usernamePwdLogin: boolean
   textGraphicCaptcha: boolean
@@ -79,6 +80,10 @@ export interface GetGithubLoginUrlParams {
   codeChallengeMethod?: 'S256'
 }
 
+export interface GetLinuxDoLoginUrlParams {
+  state: string
+}
+
 export interface GetXLoginUrlParams {
   state: string
   codeChallenge: string
@@ -145,6 +150,17 @@ export const getQQLoginUrl = (): Promise<string> => {
  */
 export const getGoogleLoginUrl = (): Promise<string> => {
   return request.get('/common/site/google-url')
+}
+
+/**
+ * 获取LinuxDo登录URL
+ * GET /common/site/linuxdo-url
+ * 认证: 无需登录
+ * 依赖接口: 无
+ * 接口说明: 获取 LinuxDo OAuth 登录跳转 URL
+ */
+export const getLinuxDoLoginUrl = (params: GetLinuxDoLoginUrlParams): Promise<string> => {
+  return request.get('/common/site/linuxdo-url', { params })
 }
 
 /**

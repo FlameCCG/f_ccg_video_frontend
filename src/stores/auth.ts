@@ -6,6 +6,7 @@ import {
   loginByQQ,
   loginByGoogle,
   loginByGithub,
+  loginByLinuxDo,
   loginByX,
   refreshToken as refreshTokenApi,
   getCurrentUserInfo,
@@ -13,6 +14,7 @@ import {
   type LoginQQParams,
   type LoginGoogleParams,
   type LoginGithubParams,
+  type LoginLinuxDoParams,
   type LoginXParams,
   type UserInfo,
   type JwtToken,
@@ -119,6 +121,24 @@ export const useAuthStore = defineStore(
       isLoading.value = true
       try {
         const tokens = await loginByGithub(params)
+        setAuthTokens(tokens)
+        await fetchUserInfo()
+        toast.success('登录成功')
+        return true
+      } catch {
+        return false
+      } finally {
+        isLoading.value = false
+      }
+    }
+
+    /**
+     * LinuxDo 登录
+     */
+    const loginWithLinuxDo = async (params: LoginLinuxDoParams): Promise<boolean> => {
+      isLoading.value = true
+      try {
+        const tokens = await loginByLinuxDo(params)
         setAuthTokens(tokens)
         await fetchUserInfo()
         toast.success('登录成功')
@@ -241,6 +261,7 @@ export const useAuthStore = defineStore(
       loginWithQQ,
       loginWithGoogle,
       loginWithGithub,
+      loginWithLinuxDo,
       loginWithX,
       logout,
       refreshAccessToken,

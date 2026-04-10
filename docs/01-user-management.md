@@ -176,6 +176,41 @@ Base URL：/v1
 }
 ```
 
+## [POST] LinuxDo登录
+
+- 接口路径: POST /common/user/login/linuxdo
+- 认证: 可选登录（客户端可携带 Token）
+- 依赖接口: 无
+- 接口说明: 使用 LinuxDo 授权码登录，未注册用户会自动注册；需回传与获取登录URL时一致的 state
+- HTTP 状态码: 200（业务码 code 判断成功/失败）
+- 响应结构: code=0 成功，code=1 失败；msg 为提示信息
+
+请求参数:
+| 名称 | 位置 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- | --- |
+| code | body | string | 是 | LinuxDo 授权码 |
+| state | body | string | 是 | LinuxDo 登录流程中的 state；后端会校验并一次性消费 |
+
+响应字段:
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| data | JwtToken | - |
+| data.accessToken | string | 访问令牌 |
+| data.refreshToken | string | 刷新令牌 |
+
+响应示例:
+
+```json
+{
+  "code": 0,
+  "data": {
+    "accessToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+    "refreshToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+  },
+  "msg": "登录成功"
+}
+```
+
 ## [POST] X登录
 
 - 接口路径: POST /common/user/login/x

@@ -1,3 +1,4 @@
+import type { BannerItem } from './banner'
 import request from './request'
 
 // ============================================================================
@@ -30,6 +31,11 @@ export interface LoginGithubParams {
   code: string
   state: string
   codeVerifier?: string
+}
+
+export interface LoginLinuxDoParams {
+  code: string
+  state: string
 }
 
 export interface LoginXParams {
@@ -206,6 +212,13 @@ export interface BannerUploadResult {
   bannerUrl: string
 }
 
+export interface UserHomeBannerDefaultsResult {
+  bannerIds: number[]
+  currentBannerId: number
+  currentBannerImageUrl: string
+  list: BannerItem[]
+}
+
 // User Record Types
 export interface UserLoginRecordItem {
   id: number
@@ -356,6 +369,17 @@ export const loginByGithub = (params: LoginGithubParams): Promise<JwtToken> => {
 }
 
 /**
+ * LinuxDo登录
+ * POST /common/user/login/linuxdo
+ * 认证: 可选登录（客户端可携带 Token）
+ * 依赖接口: 无
+ * 接口说明: 使用 LinuxDo 授权码登录，未注册用户会自动注册
+ */
+export const loginByLinuxDo = (params: LoginLinuxDoParams): Promise<JwtToken> => {
+  return request.post('/common/user/login/linuxdo', params)
+}
+
+/**
  * X登录
  * POST /common/user/login/x
  * 认证: 可选登录（客户端可携带 Token）
@@ -498,6 +522,17 @@ export const getUserConfig = (): Promise<UserConfig> => {
  */
 export const updateUserConfig = (params: UpdateUserConfigParams): Promise<void> => {
   return request.put('/common/user/info/conf', params)
+}
+
+/**
+ * 获取系统默认用户主页横幅列表
+ * GET /common/user/banner/defaults
+ * 认证: 可选登录（客户端可携带 Token）
+ * 依赖接口: 无
+ * 接口说明: 获取系统配置的默认用户主页横幅列表
+ */
+export const getUserBannerDefaults = (): Promise<UserHomeBannerDefaultsResult> => {
+  return request.get('/common/user/banner/defaults')
 }
 
 /**

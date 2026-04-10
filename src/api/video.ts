@@ -162,6 +162,7 @@ export interface VideoDetail {
   storageType: string
   status: number
   createdAt: string
+  publishTime?: string
   partition: Partition
   tags: Tag[]
   resources: VideoResourceItem[]
@@ -242,6 +243,7 @@ export interface PublishVideoParams {
   partitionId: number
   tags?: number[] // 文档限制：最多 10 个
   isOriginal?: boolean
+  isPrivate?: boolean
   coverUrl: string
   parts: VideoPartPayload[]
   publishTime?: string
@@ -261,6 +263,7 @@ export interface UpdateVideoParams {
   partitionId?: number
   tags?: number[]
   isOriginal?: boolean
+  isPrivate?: boolean
   coverUrl?: string
   publishTime?: string
 }

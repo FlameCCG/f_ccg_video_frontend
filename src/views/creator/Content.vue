@@ -270,11 +270,25 @@ const handleDelete = async () => {
               class="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity"
             >
               <Button
+                as-child
                 variant="ghost"
                 size="icon"
                 class="h-8 w-8 text-muted-foreground hover:text-primary"
               >
-                <Edit class="h-4 w-4" />
+                <router-link
+                  :to="{
+                    name: 'creator-content-edit',
+                    params: { id: video.id },
+                    query: {
+                      title: video.title,
+                      cover: video.cover,
+                      status: String(video.status ?? ''),
+                    },
+                  }"
+                  aria-label="编辑视频"
+                >
+                  <Edit class="h-4 w-4" />
+                </router-link>
               </Button>
               <DropdownMenu>
                 <DropdownMenuTrigger as-child>

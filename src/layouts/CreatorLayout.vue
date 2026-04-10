@@ -1,6 +1,7 @@
 <script setup lang="ts">
+import { computed, ref, watch, onMounted, onBeforeUnmount } from 'vue'
 import { RouterView, useRouter, useRoute } from 'vue-router'
-import { useAuthStore } from '@/stores/auth'
+import { useSubmissionAccess, SUBMISSION_DISABLED_MESSAGE } from '@/composables/useSubmissionAccess'
 import {
   Upload,
   Home,
@@ -25,7 +26,59 @@ import AppAvatar from '@/components/common/AppAvatar.vue'
 
 const router = useRouter()
 const route = useRoute()
-const authStore = useAuthStore()
+const { authStore, siteStore, submissionBlocked } = useSubmissionAccess()
+const accessReady = ref(false)
+const accessError = ref(false)
+const isSubmissionPage = computed(
+  () => route.name === 'creator-upload' || route.name === 'creator-content-edit'
+)
+let accessRequest = 0
+let refreshTimer: ReturnType<typeof setInterval> | undefined
+
+const refreshSubmissionAccess = async () => {
+  const request = ++accessRequest
+  const [configOK, userOK] = await Promise.all([
+    siteStore.refreshConfig(true),
+    authStore.fetchUserInfo(),
+  ])
+  if (request !== accessRequest) return
+  if (!configOK || !userOK) {
+    // 后台刷新失败时保留已打开的草稿；首次进入仍需确认权限。
+    if (!accessReady.value) {
+      accessError.value = true
+      accessReady.value = true
+    }
+    return
+  }
+  accessError.value = false
+  accessReady.value = true
+}
+
+const refreshVisibleAccess = () => {
+  if (document.visibilityState === 'visible') void refreshSubmissionAccess()
+}
+
+watch(
+  () => [route.path, authStore.userId, authStore.isLoggedIn],
+  () => {
+    accessReady.value = false
+    void refreshSubmissionAccess()
+  },
+  { immediate: true }
+)
+
+onMounted(() => {
+  window.addEventListener('focus', refreshVisibleAccess)
+  document.addEventListener('visibilitychange', refreshVisibleAccess)
+  refreshTimer = setInterval(refreshVisibleAccess, 30_000)
+})
+
+onBeforeUnmount(() => {
+  accessRequest += 1
+  window.removeEventListener('focus', refreshVisibleAccess)
+  document.removeEventListener('visibilitychange', refreshVisibleAccess)
+  if (refreshTimer) clearInterval(refreshTimer)
+})
 
 const handleLogout = () => {
   authStore.logout()
@@ -56,7 +109,7 @@ const navItems = [
           <div class="hidden h-4 w-px bg-border sm:block"></div>
           <router-link
             to="/"
-            class="flex items-center gap-1 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground sm:gap-1.5 sm:text-sm"
+            class="t-tint flex items-center gap-1 text-xs font-medium text-muted-foreground hover:text-foreground sm:gap-1.5 sm:text-sm"
           >
             <MonitorPlay class="h-4 w-4" />
             <span class="hidden sm:inline">主站</span>
@@ -70,7 +123,7 @@ const navItems = [
               <DropdownMenuTrigger as-child>
                 <div class="cursor-pointer group">
                   <div
-                    class="h-8 w-8 rounded-full border-2 border-transparent group-hover:border-primary transition-colors overflow-hidden"
+                    class="t-tint h-8 w-8 overflow-hidden rounded-full border-2 border-transparent group-hover:border-primary"
                   >
                     <AppAvatar
                       :src="authStore.user?.avatar"
@@ -119,7 +172,7 @@ const navItems = [
     </header>
 
     <!-- Main Content -->
-    <div class="mx-auto flex w-full max-w-[1400px] flex-1">
+    <div class="mx-auto flex w-full max-w-reading flex-1">
       <!-- Left Sidebar -->
       <aside class="w-64 shrink-0 border-r bg-background hidden md:block">
         <div class="p-6 flex flex-col gap-6 sticky top-14">
@@ -127,11 +180,13 @@ const navItems = [
           <Button
             as-child
             size="lg"
-            class="w-full bg-primary hover:bg-primary/90 text-primary-foreground shadow-sm"
+            class="w-full bg-primary text-primary-foreground shadow-surface hover:bg-primary/90"
           >
             <router-link to="/creator/upload" class="flex items-center justify-center gap-2">
               <Upload class="h-5 w-5" />
-              <span class="font-medium text-base">投稿</span>
+              <span class="font-medium text-base">{{
+                submissionBlocked ? '投稿已暂停' : '投稿'
+              }}</span>
             </router-link>
           </Button>
 
@@ -141,7 +196,7 @@ const navItems = [
               v-for="item in navItems"
               :key="item.path"
               :to="item.path"
-              class="flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-colors"
+              class="t-tint flex items-center gap-3 rounded-lg px-4 py-3 text-sm font-medium"
               :class="[
                 route.path.startsWith(item.path) ||
                 (item.path === '/creator/home' && route.path === '/creator')
@@ -158,7 +213,40 @@ const navItems = [
 
       <!-- Main View -->
       <main class="min-w-0 flex-1 p-4 sm:p-6">
-        <RouterView />
+        <section
+          v-if="submissionBlocked && accessReady && !accessError"
+          class="mb-6 rounded-xl border bg-background p-6"
+          role="status"
+          aria-live="polite"
+        >
+          <h1 class="text-lg font-semibold">用户投稿已暂停</h1>
+          <p class="mt-2 text-sm leading-6 text-muted-foreground">
+            {{ SUBMISSION_DISABLED_MESSAGE }}
+          </p>
+        </section>
+        <div
+          v-if="isSubmissionPage && !accessReady"
+          role="status"
+          class="py-12 text-center text-muted-foreground"
+        >
+          正在确认投稿权限…
+        </div>
+        <section
+          v-else-if="isSubmissionPage && accessError"
+          class="rounded-xl border bg-background p-6"
+          role="alert"
+        >
+          <p class="mb-4">无法确认投稿权限，请重试。</p>
+          <Button variant="outline" @click="refreshSubmissionAccess">重新加载</Button>
+        </section>
+        <RouterView
+          v-else-if="!isSubmissionPage || !submissionBlocked"
+          v-slot="{ Component, route: current }"
+        >
+          <Transition name="route" mode="out-in">
+            <component :is="Component" :key="current.path" />
+          </Transition>
+        </RouterView>
       </main>
     </div>
   </div>

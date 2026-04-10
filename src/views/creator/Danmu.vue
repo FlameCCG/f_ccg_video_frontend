@@ -6,6 +6,9 @@ import { MessageCircle, Search, ChevronLeft, ChevronRight, Play, Trash2 } from '
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import AppAvatar from '@/components/common/AppAvatar.vue'
+import AppImage from '@/components/common/AppImage.vue'
+import EmptyState from '@/components/common/EmptyState.vue'
+import SkeletonGroup from '@/components/common/SkeletonGroup.vue'
 import { toast } from 'vue-sonner'
 import { formatClock } from '@/utils/format'
 
@@ -51,6 +54,13 @@ const handleSearch = () => {
   void fetchDanmus()
 }
 
+const clearSearch = () => {
+  keyword.value = ''
+  searchKeyword.value = ''
+  page.value = 1
+  void fetchDanmus()
+}
+
 const handleDelete = async (danmu: CreatorDanmuItem) => {
   if (!confirm('确定要删除这条弹幕吗？')) return
   try {
@@ -90,7 +100,7 @@ const goToTarget = (danmu: CreatorDanmuItem) => {
           <Search class="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
           <Input
             :model-value="keyword"
-            placeholder="搜索弹幕内容/发送者/视频标题"
+            placeholder="按弹幕内容 / 发送者 / 视频标题搜索"
             class="pl-9 h-9 bg-muted/50 border-transparent focus-visible:bg-background"
             @update:model-value="(v) => (keyword = String(v))"
           />
@@ -102,7 +112,7 @@ const goToTarget = (danmu: CreatorDanmuItem) => {
         <div class="text-muted-foreground">共 {{ total }} 条弹幕</div>
         <div class="flex items-center gap-4">
           <button
-            class="transition-colors"
+            class="t-tint"
             :class="
               sortBy === 0
                 ? 'text-primary font-medium'
@@ -113,7 +123,7 @@ const goToTarget = (danmu: CreatorDanmuItem) => {
             最近发布
           </button>
           <button
-            class="transition-colors"
+            class="t-tint"
             :class="
               sortBy === 1
                 ? 'text-primary font-medium'
@@ -128,34 +138,47 @@ const goToTarget = (danmu: CreatorDanmuItem) => {
 
       <!-- List -->
       <div class="p-0">
-        <div v-if="loading" class="p-6 space-y-8">
-          <div v-for="i in 3" :key="i" class="flex gap-4 animate-pulse">
-            <div class="w-10 h-10 bg-muted rounded-full shrink-0"></div>
-            <div class="flex-1 space-y-3 py-1">
-              <div class="h-4 bg-muted rounded w-1/4"></div>
-              <div class="h-4 bg-muted rounded w-3/4"></div>
-              <div class="h-4 bg-muted rounded w-1/2"></div>
+        <!-- 骨架形状对齐真实条目：头像 + 三行文本 + 右侧 16:9 目标视频 -->
+        <SkeletonGroup v-if="loading" :count="4" class="space-y-8 p-6">
+          <div class="cd-sk-row flex gap-4">
+            <div class="skeleton-shimmer h-10 w-10 shrink-0 rounded-full"></div>
+            <div class="min-w-0 flex-1 space-y-3 py-1">
+              <div class="cd-sk-a skeleton-shimmer h-4 w-1/4 rounded"></div>
+              <div class="cd-sk-b skeleton-shimmer h-4 w-3/4 rounded"></div>
+              <div class="cd-sk-c skeleton-shimmer h-3.5 w-1/2 rounded"></div>
             </div>
             <div class="w-32 shrink-0 space-y-2">
-              <div class="w-full aspect-video bg-muted rounded"></div>
-              <div class="h-3 bg-muted rounded w-full"></div>
+              <div class="cd-sk-d skeleton-shimmer aspect-video w-full rounded"></div>
+              <div class="cd-sk-e skeleton-shimmer h-3 w-full rounded"></div>
             </div>
           </div>
-        </div>
+        </SkeletonGroup>
 
-        <div
-          v-else-if="danmus.length === 0"
-          class="py-20 text-center text-muted-foreground flex flex-col items-center"
+        <EmptyState
+          v-else-if="danmus.length === 0 && searchKeyword"
+          size="lg"
+          icon="search"
+          announce
+          title=""
+          description="换个关键词，或者清空搜索看看全部弹幕"
         >
-          <MessageCircle class="h-12 w-12 mb-4 opacity-20" />
-          <p>没有找到相关弹幕</p>
-        </div>
+          <template #title>没有匹配「{{ searchKeyword.slice(0, 20) }}」的弹幕</template>
+          <Button variant="outline" size="sm" @click="clearSearch">清空搜索</Button>
+        </EmptyState>
+
+        <EmptyState
+          v-else-if="danmus.length === 0"
+          size="lg"
+          :icon="MessageCircle"
+          title="你的视频还没有收到弹幕"
+          description="弹幕会实时出现在这里，你可以随时删除不合适的内容"
+        />
 
         <div v-else class="divide-y">
           <div
             v-for="danmu in danmus"
             :key="danmu.id"
-            class="p-6 flex gap-4 group hover:bg-muted/30 transition-colors"
+            class="p-6 flex gap-4 group hover:bg-muted/30 t-tint"
           >
             <!-- Avatar -->
             <div class="shrink-0 cursor-pointer" @click="router.push(`/user/${danmu.userId}`)">
@@ -173,7 +196,7 @@ const goToTarget = (danmu: CreatorDanmuItem) => {
               <!-- Header -->
               <div class="flex items-center flex-wrap gap-x-2 gap-y-1 mb-2">
                 <span
-                  class="font-medium text-sm text-foreground/90 cursor-pointer hover:text-primary transition-colors"
+                  class="font-medium text-sm text-foreground/90 cursor-pointer hover:text-primary t-tint"
                   @click="router.push(`/user/${danmu.userId}`)"
                 >
                   {{ danmu.username }}
@@ -192,14 +215,14 @@ const goToTarget = (danmu: CreatorDanmuItem) => {
 
               <!-- Actions & Meta -->
               <div class="flex items-center gap-6 text-xs text-muted-foreground">
-                <span>{{ formatDate(danmu.createdAt) }}</span>
+                <span class="tabular">{{ formatDate(danmu.createdAt) }}</span>
 
                 <span v-if="danmu.likeCount > 0" class="text-muted-foreground/60">
-                  获赞: {{ danmu.likeCount }}
+                  获赞 <span class="tabular">{{ danmu.likeCount }}</span>
                 </span>
 
                 <button
-                  class="flex items-center gap-1.5 hover:text-destructive transition-colors ml-auto"
+                  class="t-tint ml-auto flex items-center gap-1.5 hover:text-destructive"
                   @click="handleDelete(danmu)"
                 >
                   <Trash2 class="h-3.5 w-3.5" />
@@ -213,20 +236,19 @@ const goToTarget = (danmu: CreatorDanmuItem) => {
               class="w-32 shrink-0 cursor-pointer group/target flex flex-col gap-1.5"
               @click="goToTarget(danmu)"
             >
-              <div class="w-full aspect-video bg-muted rounded overflow-hidden border relative">
-                <img
-                  v-if="danmu.videoCover"
+              <div class="w-full overflow-hidden rounded border">
+                <AppImage
                   :src="danmu.videoCover"
-                  class="w-full h-full object-cover group-hover/target:scale-105 transition-transform duration-300"
+                  :alt="danmu.videoTitle || '目标视频封面'"
+                  aspect="16 / 9"
+                  :fallback-icon="Play"
+                  img-class="cd-cover-img group-hover/target:scale-105"
                 />
-                <div v-else class="absolute inset-0 flex items-center justify-center bg-black/5">
-                  <Play class="h-6 w-6 text-primary/40" />
-                </div>
               </div>
               <div class="flex items-center gap-1">
                 <Play class="h-3 w-3 text-muted-foreground/50 shrink-0" />
                 <div
-                  class="text-xs text-muted-foreground line-clamp-2 group-hover/target:text-primary transition-colors"
+                  class="text-xs text-muted-foreground line-clamp-2 group-hover/target:text-primary t-tint"
                   :title="danmu.videoTitle"
                 >
                   {{ danmu.videoTitle || '查看原视频' }}
@@ -262,3 +284,37 @@ const goToTarget = (danmu: CreatorDanmuItem) => {
     </div>
   </div>
 </template>
+
+<style scoped lang="scss">
+/* 卡内二级错峰：--skeleton-phase 落在行容器上，子块基于它偏移
+   （同一元素既读又写 --skeleton-index 会构成 CSS 循环）。 */
+.cd-sk-row {
+  --skeleton-phase: var(--skeleton-index, 0);
+}
+
+.cd-sk-a {
+  --skeleton-index: calc(var(--skeleton-phase) + 0.25);
+}
+
+.cd-sk-b {
+  --skeleton-index: calc(var(--skeleton-phase) + 0.4);
+}
+
+.cd-sk-c {
+  --skeleton-index: calc(var(--skeleton-phase) + 0.55);
+}
+
+.cd-sk-d {
+  --skeleton-index: calc(var(--skeleton-phase) + 0.35);
+}
+
+.cd-sk-e {
+  --skeleton-index: calc(var(--skeleton-phase) + 0.5);
+}
+
+/* Tailwind v4 的 scale-* 是独立的 `scale` 属性；显式过渡它，否则 hover 缩放是瞬移。
+   选择器要穿透到 AppImage 内部的 <img>，所以用 :deep()。 */
+:deep(.cd-cover-img) {
+  transition: scale var(--duration-normal) var(--ease-out-expo);
+}
+</style>

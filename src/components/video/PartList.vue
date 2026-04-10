@@ -113,7 +113,11 @@ const hasParts = computed(() => props.parts.length > 1)
   border: 1px solid transparent;
   background: transparent;
   color: oklch(var(--foreground));
-  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+  transition:
+    color var(--duration-fast) var(--ease-out-quart),
+    background-color var(--duration-fast) var(--ease-out-quart),
+    border-color var(--duration-fast) var(--ease-out-quart),
+    transform var(--duration-fast) var(--ease-out-quint);
   text-align: left;
 
   &:hover {

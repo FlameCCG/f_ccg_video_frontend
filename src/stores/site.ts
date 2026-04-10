@@ -14,6 +14,7 @@ export const useSiteStore = defineStore('site', () => {
   const isGithubLoginEnabled = computed(
     () => config.value?.login.githubLogin ?? config.value?.login.gitHubLogin ?? false
   )
+  const isLinuxDoLoginEnabled = computed(() => config.value?.login.linuxdoLogin ?? false)
   const isXLoginEnabled = computed(() => config.value?.login.xLogin ?? false)
   const isPasswordLoginEnabled = computed(() => config.value?.login.usernamePwdLogin ?? true)
   const isLoginGraphicsCaptchaEnabled = computed(
@@ -70,6 +71,7 @@ export const useSiteStore = defineStore('site', () => {
     isQQLoginEnabled,
     isGoogleLoginEnabled,
     isGithubLoginEnabled,
+    isLinuxDoLoginEnabled,
     isXLoginEnabled,
     isPasswordLoginEnabled,
     isLoginGraphicsCaptchaEnabled,

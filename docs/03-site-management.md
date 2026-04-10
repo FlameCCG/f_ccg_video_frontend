@@ -91,6 +91,35 @@ Base URL：/v1
 }
 ```
 
+## [GET] 获取LinuxDo登录URL
+
+- 接口路径: GET /common/site/linuxdo-url
+- 认证: 无需登录
+- 依赖接口: 无
+- 接口说明: 获取 LinuxDo OAuth 登录跳转URL；前端需传入 state，后端会记录该 state 并在登录回调时校验
+- HTTP 状态码: 200（业务码 code 判断成功/失败）
+- 响应结构: code=0 成功，code=1 失败；msg 为提示信息
+
+请求参数:
+| 名称 | 位置 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- | --- |
+| state | query | string | 是 | CSRF 防护状态值；后端会记录并在登录回调时校验 |
+
+响应字段:
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| data | string | LinuxDo 登录跳转URL |
+
+响应示例:
+
+```json
+{
+  "code": 0,
+  "data": "https://connect.linux.do/oauth2/authorize?client_id=example&redirect_uri=http%3A%2F%2Flocalhost%3A3000%2Foauth%2Flinuxdo&response_type=code&scope=user&state=linuxdo-state",
+  "msg": "获取成功"
+}
+```
+
 ## [GET] 获取X登录URL
 
 - 接口路径: GET /common/site/x-url
@@ -148,6 +177,7 @@ Base URL：/v1
 | data.site.login.qqLogin | boolean | 是否开启QQ登录 |
 | data.site.login.googleLogin | boolean | 是否开启Google登录 |
 | data.site.login.githubLogin | boolean | 是否开启GitHub登录 |
+| data.site.login.linuxdoLogin | boolean | 是否开启LinuxDo登录 |
 | data.site.login.xLogin | boolean | 是否开启X登录 |
 | data.site.login.usernamePwdLogin | boolean | 是否开启用户名密码登录 |
 | data.site.login.textGraphicCaptcha | boolean | 是否开启文本图形验证码登录 |
@@ -182,6 +212,7 @@ Base URL：/v1
         "qqLogin": true,
         "googleLogin": true,
         "githubLogin": true,
+        "linuxdoLogin": true,
         "xLogin": true,
         "usernamePwdLogin": true,
         "textGraphicCaptcha": true,

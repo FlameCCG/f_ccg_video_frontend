@@ -470,6 +470,8 @@ const navActions = [
         </template>
       </div>
 
+      <slot name="after-actions" :action-text-class="navActionTextClass" />
+
       <!-- Upload Button -->
       <Button
         v-if="authStore.isLoggedIn"

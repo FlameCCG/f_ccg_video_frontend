@@ -167,6 +167,11 @@ const routes: RouteRecordRaw[] = [
         component: () => import('@/views/creator/Content.vue'),
       },
       {
+        path: 'content/:id/edit',
+        name: 'creator-content-edit',
+        component: () => import('@/views/creator/EditVideo.vue'),
+      },
+      {
         path: 'interaction',
         name: 'creator-interaction',
         component: () => import('@/views/creator/Interaction.vue'),
@@ -203,6 +208,12 @@ const routes: RouteRecordRaw[] = [
     meta: { guest: true },
   },
   {
+    path: '/oauth/linuxdo',
+    name: 'linuxdo-callback',
+    component: () => import('@/views/auth/LinuxDoCallback.vue'),
+    meta: { guest: true },
+  },
+  {
     path: '/oauth/x',
     name: 'x-callback',
     component: () => import('@/views/auth/XCallback.vue'),
@@ -215,6 +226,10 @@ const routes: RouteRecordRaw[] = [
   {
     path: '/auth/github/callback',
     redirect: '/oauth/github',
+  },
+  {
+    path: '/auth/linuxdo/callback',
+    redirect: '/oauth/linuxdo',
   },
   {
     path: '/auth/x/callback',

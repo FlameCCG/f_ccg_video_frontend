@@ -194,6 +194,32 @@ export const getDanmuList = (params: DanmuListParams): Promise<DanmuListResult> 
   return request.get('/common/video/danmu/room/list', { params })
 }
 
+export interface DanmuMonthDatesParams {
+  videoId: number
+  partId?: number
+  month: string // 浏览器本地月份 YYYY-MM
+  start: string // 本地月初，RFC3339
+  end: string // 本地下月初，RFC3339
+}
+
+export interface DanmuMonthDatesResult {
+  month: string
+  times: string[] // 库内 Asia/Shanghai 的绝对时间
+}
+
+/**
+ * 某月弹幕的发送时刻
+ * GET /common/video/danmu/month-dates
+ * 认证: 可选登录（客户端可携带 Token）
+ * 依赖接口: 无
+ * 接口说明: 返回本地月份内每条弹幕的发送时刻。时刻按上海时区给出，展示时再换成本地日历日。
+ */
+export const getDanmuMonthDateList = (
+  params: DanmuMonthDatesParams
+): Promise<DanmuMonthDatesResult> => {
+  return request.get('/common/video/danmu/month-dates', { params })
+}
+
 /**
  * 创作者弹幕列表
  * GET /common/video/danmu/creator/list

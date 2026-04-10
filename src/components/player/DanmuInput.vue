@@ -265,7 +265,11 @@ onBeforeUnmount(() => {
   padding: 0 14px;
   font-size: 13px;
   color: var(--color-foreground);
-  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  transition:
+    color var(--duration-fast) var(--ease-out-quart),
+    background-color var(--duration-fast) var(--ease-out-quart),
+    border-color var(--duration-fast) var(--ease-out-quart),
+    transform var(--duration-fast) var(--ease-out-quint);
   outline: none;
 
   &-shell {
@@ -321,7 +325,11 @@ onBeforeUnmount(() => {
   border-radius: 8px;
   color: oklch(55% 0.02 240deg);
   background: transparent;
-  transition: all 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+  transition:
+    color var(--duration-fast) var(--ease-out-quart),
+    background-color var(--duration-fast) var(--ease-out-quart),
+    border-color var(--duration-fast) var(--ease-out-quart),
+    transform var(--duration-fast) var(--ease-out-quint);
   cursor: pointer;
   border: none;
 
@@ -368,7 +376,11 @@ onBeforeUnmount(() => {
   background-color: var(--color-primary);
   border: none;
   cursor: pointer;
-  transition: all 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+  transition:
+    color var(--duration-fast) var(--ease-out-quart),
+    background-color var(--duration-fast) var(--ease-out-quart),
+    border-color var(--duration-fast) var(--ease-out-quart),
+    transform var(--duration-fast) var(--ease-out-quint);
   box-shadow: 0 1px 4px oklch(var(--primary) / 0.25);
 
   &:hover:not(:disabled) {
@@ -473,7 +485,11 @@ onBeforeUnmount(() => {
   border-radius: 50%;
   border: 2px solid transparent;
   cursor: pointer;
-  transition: all 0.15s cubic-bezier(0.16, 1, 0.3, 1);
+  transition:
+    color var(--duration-fast) var(--ease-out-quart),
+    background-color var(--duration-fast) var(--ease-out-quart),
+    border-color var(--duration-fast) var(--ease-out-quart),
+    transform var(--duration-fast) var(--ease-out-quint);
   background: transparent;
   padding: 0;
   display: flex;
@@ -531,7 +547,11 @@ onBeforeUnmount(() => {
     background: transparent;
     border: none;
     cursor: pointer;
-    transition: all 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+    transition:
+      color var(--duration-fast) var(--ease-out-quart),
+      background-color var(--duration-fast) var(--ease-out-quart),
+      border-color var(--duration-fast) var(--ease-out-quart),
+      transform var(--duration-fast) var(--ease-out-quint);
 
     &:hover {
       color: var(--color-foreground);

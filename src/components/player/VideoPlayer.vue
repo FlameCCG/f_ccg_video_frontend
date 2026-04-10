@@ -19,6 +19,7 @@ import {
   setupDashQualityMenu,
 } from '@/utils/dash'
 import type { ArtWithDash } from '@/utils/dash'
+import { resolveMediaUrl } from '@/utils/media'
 import { toast } from 'vue-sonner'
 
 const props = withDefaults(
@@ -67,7 +68,6 @@ type PreciseDanmuPluginInstance = DanmuPluginInstance & {
   __preciseTimeOffsetSchedulerInstalled?: boolean
 }
 
-const VOLUME_STORAGE_KEY = 'artplayer_volume'
 const DEFAULT_DANMU_FONT_SIZE = 24
 const DANMU_FONT_SIZE_MIN = 12
 const DANMU_FONT_SIZE_MAX = 120
@@ -157,7 +157,7 @@ const qualityList = computed(() => {
   return list.map((r, i) => ({
     default: preferred ? r.id === preferred.id : i === 0,
     html: r.resolution || `清晰度${i + 1}`,
-    url: r.fileUrl,
+    url: resolveMediaUrl(r.fileUrl),
   }))
 })
 
@@ -195,10 +195,56 @@ const handleDashFatal = (art: ArtWithDash): void => {
 let progressSaveTimer: ReturnType<typeof setTimeout> | null = null
 const PROGRESS_SAVE_INTERVAL = 15000
 
-let qualitySwitchTime = 0
 let qualitySwitchTimer: ReturnType<typeof setTimeout> | null = null
+let qualitySwitchToken = 0
+const QUALITY_SWITCH_TIMEOUT_MS = 8000
 const isSwitchingQuality = ref(false)
 const switchingQualityLabel = ref('')
+
+const clearQualitySwitchTimer = (): void => {
+  if (!qualitySwitchTimer) return
+  clearTimeout(qualitySwitchTimer)
+  qualitySwitchTimer = null
+}
+
+const resetQualitySwitchUi = (): void => {
+  clearQualitySwitchTimer()
+  isSwitchingQuality.value = false
+  switchingQualityLabel.value = ''
+}
+
+const settleQualitySwitch = (token: number): boolean => {
+  if (token !== qualitySwitchToken) return false
+  qualitySwitchToken += 1
+  resetQualitySwitchUi()
+  return true
+}
+
+const switchMp4Quality = (art: Artplayer, url: string, label: string): void => {
+  const token = ++qualitySwitchToken
+  clearQualitySwitchTimer()
+  isSwitchingQuality.value = true
+  switchingQualityLabel.value = label
+
+  qualitySwitchTimer = setTimeout(() => {
+    if (!settleQualitySwitch(token)) return
+    toast.warning('清晰度切换超时')
+  }, QUALITY_SWITCH_TIMEOUT_MS)
+
+  // switchQuality 在 loadedmetadata 时恢复播放位置，并在 canplay 后恢复播放。
+  // 调用方不额外写入 currentTime，避免换源完成后第二次 seek。
+  void art
+    .switchQuality(url)
+    .then(() => {
+      if (!settleQualitySwitch(token)) return
+      toast.success(`已切换至 ${label}`)
+    })
+    .catch((error: unknown) => {
+      if (!settleQualitySwitch(token)) return
+      console.error('[player] quality switch failed', error)
+      toast.error('清晰度切换失败，请稍后重试')
+    })
+}
 
 const danmuVisible = ref(true)
 const danmuOpacity = ref(1)
@@ -1071,10 +1117,13 @@ const initPlayer = () => {
 
   const useDash = shouldUseDash()
   // DASH 原样传清单 URL（含查询串，切勿改写）；MP4 取默认清晰度直链。
-  const startUrl = useDash ? dashResource.value?.fileUrl : defaultMp4.value?.fileUrl
+  // 两者都先经 resolveMediaUrl 解析（根相对路径 → 按环境拼 host）。
+  const startUrl = useDash
+    ? resolveMediaUrl(dashResource.value?.fileUrl)
+    : resolveMediaUrl(defaultMp4.value?.fileUrl)
   if (!startUrl) return
 
-  const savedVolume = parseFloat(localStorage.getItem(VOLUME_STORAGE_KEY) ?? '0.7')
+  const savedVolume = videoStore.playerState.volume
   // 续播：DASH→MP4 兜底重建优先用保留位置，否则用后端 watchProgress。
   const startAt = pendingSeekTime ?? videoStore.watchProgress ?? 0
   pendingSeekTime = null
@@ -1099,19 +1148,7 @@ const initPlayer = () => {
             toast.success(`已切换至 ${html}`)
             return html
           }
-          qualitySwitchTime = this.currentTime
-          isSwitchingQuality.value = true
-          switchingQualityLabel.value = html
-          // Safety timeout: dismiss overlay if canplay doesn't fire within 8s
-          if (qualitySwitchTimer) clearTimeout(qualitySwitchTimer)
-          qualitySwitchTimer = setTimeout(() => {
-            if (isSwitchingQuality.value) {
-              isSwitchingQuality.value = false
-              switchingQualityLabel.value = ''
-              toast.warning('清晰度切换超时')
-            }
-          }, 8000)
-          void this.switchQuality(url)
+          switchMp4Quality(this, url, html)
         }
         return html
       },
@@ -1137,8 +1174,10 @@ const initPlayer = () => {
   const option: Option = {
     container: containerRef.value,
     url: startUrl,
-    theme: '#00a1d6',
+    lang: 'zh-cn',
+    theme: 'var(--color-primary)',
     volume: savedVolume,
+    muted: videoStore.playerState.muted,
     setting: true,
     flip: true,
     playbackRate: true,
@@ -1178,7 +1217,9 @@ const initPlayer = () => {
             antiOverlap: false,
             synchronousPlayback: true,
             emitter: false,
-            heatmap: true,
+            // 热力图会在主进度条上方额外绘制一层；无弹幕时退化为一条
+            // 没有信息价值的横线，视觉上会与主进度条重复。
+            heatmap: false,
             maxLength: 200,
             FONT_SIZE: {
               min: DANMU_FONT_SIZE_MIN,
@@ -1204,7 +1245,7 @@ const initPlayer = () => {
   }
 
   art.on('video:volumechange', () => {
-    localStorage.setItem(VOLUME_STORAGE_KEY, String(art.volume))
+    videoStore.updatePlayerState({ volume: art.volume, muted: art.muted })
   })
 
   art.on('video:timeupdate', () => {
@@ -1249,23 +1290,6 @@ const initPlayer = () => {
     resetVisibleDanmu()
     if (props.enableDanmu) {
       void ensureSegmentsLoaded(art.currentTime * 1000)
-    }
-  })
-
-  art.on('video:canplay', () => {
-    if (qualitySwitchTime > 0) {
-      art.currentTime = qualitySwitchTime
-      resetPreciseDanmuReadyCursor(qualitySwitchTime)
-      qualitySwitchTime = 0
-    }
-    if (isSwitchingQuality.value) {
-      isSwitchingQuality.value = false
-      if (qualitySwitchTimer) {
-        clearTimeout(qualitySwitchTimer)
-        qualitySwitchTimer = null
-      }
-      toast.success(`已切换至 ${switchingQualityLabel.value}`)
-      switchingQualityLabel.value = ''
     }
   })
 
@@ -1333,6 +1357,8 @@ const resetProgressSaveCycle = (art: Artplayer, options?: { immediate?: boolean 
 
 const destroyPlayer = () => {
   clearProgressSaveTimer()
+  qualitySwitchToken += 1
+  resetQualitySwitchUi()
   cleanupDanmuFontSizeLiveControl?.()
   cleanupDanmuFontSizeLiveControl = null
   cleanupDashMenu?.()
@@ -1367,8 +1393,8 @@ const destroyPlayer = () => {
 
 // 视频 / 分P / 弹幕开关 / VIP 可见性 / 资源清单变化时，销毁旧实例并按选流策略重建。
 const rebuildKey = computed(() => {
-  const dashUrl = dashResource.value?.fileUrl ?? ''
-  const mp4Sig = mp4Resources.value.map((r) => `${r.id}:${r.fileUrl}`).join('|')
+  const dashUrl = resolveMediaUrl(dashResource.value?.fileUrl ?? '')
+  const mp4Sig = mp4Resources.value.map((r) => `${r.id}:${resolveMediaUrl(r.fileUrl)}`).join('|')
   return [
     videoStore.currentVideo?.id ?? 0,
     props.partId ?? 0,
@@ -1401,7 +1427,7 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div class="video-player-container relative w-full overflow-hidden rounded-lg bg-black">
+  <div class="video-player-container relative w-full overflow-hidden rounded-lg">
     <div ref="containerRef" class="artplayer-app aspect-video w-full" />
 
     <!-- Quality switch loading overlay -->
@@ -1418,62 +1444,239 @@ onBeforeUnmount(() => {
 
 <style scoped lang="scss">
 .video-player-container {
-  --art-theme: #00a1d6;
+  // 播放器黑场属于媒体画布，不跟随站点明暗主题。
+  --player-cinema-black: #000;
+  --art-theme: var(--color-primary);
+  --art-font-color: var(--media-overlay-text);
+  --art-background-color: var(--player-cinema-black);
+  // 媒体控制层始终覆盖深色遮罩；以柔和蓝和银灰区分播放、缓冲与底轨。
+  // 从主题 token 派生，避免浅色主题下控制条变白、暗色主题下品牌色过亮。
+  --player-progress-neutral: color-mix(in oklch, var(--media-overlay-text) 94%, var(--brand-blue));
+  --player-progress-track: color-mix(
+    in oklch,
+    var(--player-progress-neutral) 28%,
+    var(--player-cinema-black)
+  );
+  --player-progress-loaded: color-mix(
+    in oklch,
+    var(--player-progress-neutral) 48%,
+    var(--player-cinema-black)
+  );
+  --player-progress-played: color-mix(in oklch, var(--brand-blue) 76%, var(--media-overlay-text));
+  --player-progress-tip-bg: color-mix(
+    in oklch,
+    var(--player-progress-track) 92%,
+    var(--player-cinema-black)
+  );
+  --art-progress-color: var(--player-progress-track);
+  --art-loaded-color: var(--player-progress-loaded);
+  --art-hover-color: transparent;
+  --art-progress-height: 3px;
+  --art-progress-top-gap: 10px;
+  --art-mini-progress-height: 2px;
+  --art-bottom-height: 52px;
+  --art-control-height: 44px;
+  --art-control-opacity: 0.86;
+  --art-control-icon-size: 20px;
+  --art-indicator-size: 12px;
+  --art-padding: 14px;
+  --art-border-radius: var(--radius-lg);
+  --art-transition-duration: var(--duration-fast);
+  --art-widget-background: rgb(4 6 9 / 0.94);
+  --art-tip-background: rgb(4 6 9 / 0.9);
+  --art-settings-max-height: min(360px, calc(100% - var(--art-control-height) - 12px));
+  --art-selector-max-height: min(360px, calc(100% - var(--art-control-height) - 12px));
+  --art-scrollbar-size: 0px;
+
+  isolation: isolate;
+  background: var(--player-cinema-black);
+}
+
+.artplayer-app {
+  background: var(--player-cinema-black);
 }
 
 :deep(.art-video-player) {
-  background: #000 !important;
+  --art-progress-color: var(--player-progress-track);
+  --art-loaded-color: var(--player-progress-loaded);
+  --art-hover-color: transparent;
+  --art-settings-max-height: min(360px, calc(100% - var(--art-control-height) - 12px));
+  --art-selector-max-height: min(360px, calc(100% - var(--art-control-height) - 12px));
+  --art-scrollbar-size: 0px;
+
+  background: var(--player-cinema-black) !important;
+  color: var(--media-overlay-text);
 }
 
 :deep(.art-video-player video) {
+  background: var(--player-cinema-black) !important;
   image-rendering: auto !important;
   filter: none !important;
+  object-fit: contain;
+}
+
+:deep(.art-bottom) {
+  background-image: linear-gradient(
+    to top,
+    rgb(0 0 0 / 0.82) 0%,
+    rgb(0 0 0 / 0.45) 50%,
+    transparent 100%
+  ) !important;
+  background-repeat: no-repeat !important;
+  background-position: center bottom !important;
+  background-size: 100% 64px !important;
+  transition: opacity var(--duration-fast) linear !important;
 }
 
 :deep(.art-control-progress) {
-  height: 14px !important;
+  height: 18px !important;
   bottom: 0 !important;
 }
 
 :deep(.art-control-progress-inner) {
-  height: 3px !important;
-  background: rgb(255 255 255 / 0.2) !important;
-  border-radius: 1.5px !important;
-  transition: height 0.2s ease !important;
+  box-sizing: border-box;
+  height: 4px !important;
+  overflow: visible;
+  border: 0;
+  background: var(--player-progress-track) !important;
+  border-radius: 999px !important;
+  box-shadow: 0 0 0 1px color-mix(in oklch, var(--media-overlay) 40%, transparent) !important;
+  transition: none !important;
 }
 
-:deep(.art-control-progress:hover .art-control-progress-inner) {
-  height: 6px !important;
-  border-radius: 3px !important;
+:deep(.art-control-progress-inner > .art-progress-hover) {
+  background: transparent !important;
+  box-shadow: none !important;
+  opacity: 0;
+}
+
+:deep(.art-control-progress-inner > .art-progress-hover::after) {
+  position: absolute;
+  top: 7px;
+  right: -4px;
+  width: 0;
+  height: 0;
+  border-right: 4px solid transparent;
+  border-bottom: 5px solid var(--player-progress-played);
+  border-left: 4px solid transparent;
+  content: '';
+}
+
+:deep(.art-video-player.art-progress-hover .art-control-progress-inner > .art-progress-hover) {
+  opacity: 1;
 }
 
 :deep(.art-progress-loaded) {
-  background: rgb(255 255 255 / 0.4) !important;
+  background: var(--player-progress-loaded) !important;
   border-radius: inherit !important;
+  box-shadow: none !important;
 }
 
 :deep(.art-progress-played) {
-  background-color: var(--color-primary) !important;
+  background: var(--player-progress-played) !important;
   border-radius: inherit !important;
+  box-shadow: none !important;
 }
 
 :deep(.art-progress-indicator) {
-  background-color: var(--color-primary) !important;
-  border: 2px solid #fff !important;
-  width: 14px !important;
-  height: 14px !important;
+  background-color: var(--player-progress-neutral) !important;
+  border: 2px solid var(--player-progress-played) !important;
+  width: 12px !important;
+  height: 12px !important;
   border-radius: 50% !important;
-  box-shadow: 0 0 4px rgb(0 0 0 / 0.3) !important;
+  box-shadow: none !important;
   transform: scale(0) !important;
-  transition: transform 0.2s ease !important;
+  transition: transform var(--duration-fast) var(--ease-out-quint) !important;
 }
 
 :deep(.art-control-progress:hover .art-progress-indicator) {
   transform: scale(1) !important;
 }
 
-:deep(.art-setting-panel) {
-  border-radius: 8px !important;
+:deep(.art-controls .art-control) {
+  opacity: 0.86;
+  transition:
+    opacity var(--duration-fast) linear,
+    transform var(--duration-fast) var(--ease-out-quint) !important;
+}
+
+:deep(.art-controls .art-control:hover) {
+  opacity: 1;
+  transform: translateY(-1px);
+}
+
+:deep(.art-control-time) {
+  color: color-mix(in oklch, var(--media-overlay-text) 82%, transparent) !important;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.01em;
+}
+
+:deep(.art-settings),
+:deep(.art-selector-list),
+:deep(.art-contextmenus) {
+  border: 1px solid color-mix(in oklch, var(--media-overlay-text) 12%, transparent) !important;
+  border-radius: var(--radius-md) !important;
+  background: color-mix(in oklch, var(--media-overlay) 94%, transparent) !important;
+  box-shadow: var(--shadow-overlay) !important;
+  backdrop-filter: blur(16px);
+}
+
+:deep(.art-progress-tip) {
+  z-index: 70 !important;
+  top: -33px !important;
+  padding: 5px 8px !important;
+  border: 1px solid color-mix(in oklch, var(--media-overlay-text) 16%, transparent) !important;
+  border-radius: 999px !important;
+  color: var(--media-overlay-text) !important;
+  background: var(--player-progress-tip-bg) !important;
+  box-shadow: 0 4px 12px -4px var(--media-overlay) !important;
+  font-size: 11px !important;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.04em;
+  text-shadow: none;
+  backdrop-filter: blur(12px);
+  transform: translateY(5px) scale(0.96) !important;
+  transition:
+    opacity var(--duration-fast) linear,
+    transform var(--duration-normal) var(--ease-out-expo) !important;
+}
+
+:deep(.art-progress-tip::after) {
+  position: absolute;
+  bottom: -6px;
+  left: 50%;
+  width: 0;
+  height: 0;
+  border-top: 6px solid var(--player-progress-tip-bg);
+  border-right: 5px solid transparent;
+  border-left: 5px solid transparent;
+  content: '';
+  transform: translateX(-50%);
+}
+
+:deep(.art-video-player.art-progress-hover .art-progress-tip) {
+  opacity: 1 !important;
+  transform: translateY(0) scale(1) !important;
+}
+
+:deep(.art-control-thumbnails) {
+  display: none !important;
+}
+
+:deep(.art-settings),
+:deep(.art-selector-list) {
+  overscroll-behavior: contain;
+  scrollbar-width: none;
+}
+
+:deep(.art-settings::-webkit-scrollbar),
+:deep(.art-selector-list::-webkit-scrollbar) {
+  display: none;
+}
+
+:deep(.art-mini-progress-bar .art-bottom) {
+  background: transparent !important;
 }
 
 :deep(.art-danmuku) {
@@ -1492,7 +1695,7 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgb(0 0 0 / 0.55);
+  background: rgb(0 0 0 / 0.78);
   backdrop-filter: blur(6px);
   pointer-events: none;
 }
@@ -1507,26 +1710,26 @@ onBeforeUnmount(() => {
 .quality-spinner {
   width: 36px;
   height: 36px;
-  border: 3px solid rgb(255 255 255 / 0.2);
+  border: 3px solid color-mix(in oklch, var(--media-overlay-text) 20%, transparent);
   border-top-color: var(--color-primary);
   border-radius: 50%;
-  animation: quality-spin 0.8s cubic-bezier(0.37, 0, 0.63, 1) infinite;
+  animation: quality-spin 0.8s var(--ease-out-quart) infinite;
 }
 
 .quality-switch-text {
-  color: rgb(255 255 255 / 0.9);
+  color: color-mix(in oklch, var(--media-overlay-text) 92%, transparent);
   font-size: 14px;
   font-weight: 500;
   letter-spacing: 0.02em;
-  text-shadow: 0 1px 4px rgb(0 0 0 / 0.5);
+  text-shadow: 0 1px 4px var(--media-overlay);
 }
 
 .quality-overlay-enter-active {
-  transition: opacity 0.25s ease;
+  transition: opacity var(--duration-normal) var(--ease-out-quart);
 }
 
 .quality-overlay-leave-active {
-  transition: opacity 0.4s ease;
+  transition: opacity var(--duration-slow) var(--ease-out-quart);
 }
 
 .quality-overlay-enter-from,
@@ -1534,16 +1737,17 @@ onBeforeUnmount(() => {
   opacity: 0;
 }
 
-/* Progress bar styling to match Bilibili */
-
-/* Enable pointer events on danmu items for hover interaction */
-
-/* Quality switch overlay */
 @keyframes quality-spin {
   to {
     transform: rotate(360deg);
   }
 }
 
-/* Overlay transition */
+@media (prefers-reduced-motion: reduce) {
+  :deep(.art-progress-tip),
+  :deep(.art-progress-indicator),
+  :deep(.art-controls .art-control) {
+    transition-duration: 0.01ms !important;
+  }
+}
 </style>

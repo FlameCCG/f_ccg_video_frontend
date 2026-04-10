@@ -1,79 +1,42 @@
 <script setup lang="ts">
-import { ref, onMounted, onBeforeUnmount, computed, nextTick } from 'vue'
-import { getHomeVideos, type FeedItem } from '@/api/video'
-import { getHomeCarouselBanners, type BannerItem } from '@/api/banner'
+import { onMounted, computed, ref, onBeforeUnmount, useTemplateRef } from 'vue'
+import { storeToRefs } from 'pinia'
+import { onBeforeRouteLeave } from 'vue-router'
+import { useHomeFeedStore } from '@/stores/homeFeed'
+import { useVirtualGrid } from '@/composables/useVirtualGrid'
 import { touchSiteStat } from '@/api/site'
 import VideoCard from '@/components/video/VideoCard.vue'
 import VideoCardSkeleton from '@/components/common/VideoCardSkeleton.vue'
+import SkeletonGroup from '@/components/common/SkeletonGroup.vue'
 import InfiniteScroll from '@/components/common/InfiniteScroll.vue'
+import FeedError from '@/components/common/FeedError.vue'
+import EmptyState from '@/components/common/EmptyState.vue'
 import Carousel from '@/components/common/Carousel.vue'
 import { BannerDisplay } from '@/constants/banner'
 
-// State
-const banners = ref<BannerItem[]>([])
-const videos = ref<FeedItem[]>([])
-const bannerLoading = ref(true)
-const loading = ref(false)
-const finished = ref(false)
-const page = ref(1)
-const pageSize = 20
-const initialLoading = ref(true)
-const featuredRailRef = ref<HTMLElement | null>(null)
-const heroBannerHeight = ref<number | null>(null)
-let heroResizeObserver: ResizeObserver | null = null
-
-// Featured videos count (shown next to carousel - 3 columns x 2 rows)
+const feed = useHomeFeedStore()
+const { banners, videos, loading, bannerLoading, feedError, finished, initialLoading } =
+  storeToRefs(feed)
+const { fetchVideos } = feed
 const FEATURED_COUNT = 6
-/** 轮播容器最小高度，与 BannerDisplay 同源 */
-const homeCarouselMinHeight = BannerDisplay.homeCarouselMinHeight
-
-// Computed: Featured videos (first 6 for hero section)
-const featuredVideos = computed(() => {
-  if (!bannerLoading.value && banners.value.length === 0) {
-    return []
-  }
-  return videos.value.slice(0, FEATURED_COUNT)
-})
-
-// Computed: Remaining videos (after featured)
-const remainingVideos = computed(() => {
-  if (!bannerLoading.value && banners.value.length === 0) {
-    return videos.value
-  }
-  return videos.value.slice(FEATURED_COUNT)
-})
-
-// Fetch banners
-const fetchBanners = async () => {
-  bannerLoading.value = true
-  try {
-    banners.value = await getHomeCarouselBanners()
-  } catch (error) {
-    console.error('Failed to fetch banners:', error)
-  } finally {
-    bannerLoading.value = false
-  }
+const homeCarouselAspect = BannerDisplay.homeCarouselAspect
+// 轮播加载、失败和空态始终占据相同画幅，迟到的推荐位不会移动视频。
+const desktop = ref(window.matchMedia('(min-width: 1024px)').matches)
+const media = window.matchMedia('(min-width: 1024px)')
+const syncDesktop = () => {
+  desktop.value = media.matches
 }
-
-// Fetch videos
-const fetchVideos = async () => {
-  if (loading.value || finished.value) return
-
-  loading.value = true
-  try {
-    const result = await getHomeVideos({ page: page.value, pageSize })
-    if (result.list.length < pageSize) {
-      finished.value = true
-    }
-    videos.value = [...videos.value, ...result.list]
-    page.value++
-  } catch (error) {
-    console.error('Failed to fetch videos:', error)
-  } finally {
-    loading.value = false
-    initialLoading.value = false
-  }
-}
+media.addEventListener('change', syncDesktop)
+onBeforeUnmount(() => media.removeEventListener('change', syncDesktop))
+const featuredVideos = computed(() => videos.value.slice(0, FEATURED_COUNT))
+const gridVideos = computed(() =>
+  desktop.value ? videos.value.slice(FEATURED_COUNT) : videos.value
+)
+const gridContainer = useTemplateRef<HTMLElement>('gridContainer')
+const { visibleItems, spacerStyle } = useVirtualGrid(gridVideos, gridContainer, feed.scrollTop)
+onBeforeRouteLeave(() => {
+  feed.scrollTop = window.scrollY
+})
 
 // Site touch (打点)
 const siteTouchOnce = async () => {
@@ -86,67 +49,23 @@ const siteTouchOnce = async () => {
 
 // Load more handler
 const handleLoadMore = () => {
+  if (feedError.value) return
   void fetchVideos()
 }
 
-const updateHeroBannerHeight = () => {
-  if (!featuredRailRef.value || window.innerWidth < 1024) {
-    heroBannerHeight.value = null
-    return
-  }
-
-  const railStyles = window.getComputedStyle(featuredRailRef.value)
-  const rowGap = Number.parseFloat(railStyles.rowGap || railStyles.gap || '0')
-  const columnGap = Number.parseFloat(railStyles.columnGap || railStyles.gap || '0')
-  const firstVisibleCard = Array.from(featuredRailRef.value.children).find(
-    (element) => window.getComputedStyle(element).display !== 'none'
-  ) as HTMLElement | undefined
-
-  const measuredCoverHeight = firstVisibleCard?.firstElementChild?.getBoundingClientRect().height
-  const measuredCardHeight = firstVisibleCard?.getBoundingClientRect().height
-  const railWidth = featuredRailRef.value.getBoundingClientRect().width
-  const cardWidth = (railWidth - columnGap * 2) / 3
-  const fallbackCoverHeight = cardWidth * (9 / 16)
-  const fallbackCardHeight = fallbackCoverHeight + 79
-  const coverHeight = measuredCoverHeight ?? fallbackCoverHeight
-  const cardHeight = measuredCardHeight ?? fallbackCardHeight
-
-  heroBannerHeight.value = Math.round(cardHeight + rowGap + coverHeight)
-}
-
-onMounted(async () => {
-  // Initialize banner height immediately on mount so the skeleton is sized correctly
-  await nextTick()
-  updateHeroBannerHeight()
-
-  // Parallel fetch
-  await Promise.all([fetchBanners(), fetchVideos(), siteTouchOnce()])
-  await nextTick()
-
-  updateHeroBannerHeight()
-  heroResizeObserver = new ResizeObserver(() => {
-    updateHeroBannerHeight()
-  })
-
-  if (featuredRailRef.value) {
-    heroResizeObserver.observe(featuredRailRef.value)
-  }
-})
-
-onBeforeUnmount(() => {
-  heroResizeObserver?.disconnect()
+onMounted(() => {
+  void siteTouchOnce()
+  feed.initialize()
 })
 </script>
 
 <template>
-  <div class="mx-auto mt-6 pb-8 max-w-[1800px] px-4 sm:px-6 lg:px-8">
-    <div v-if="bannerLoading || banners.length > 0" class="mb-6 lg:flex lg:items-start lg:gap-4">
+  <div class="mx-auto mt-6 w-full max-w-page px-4 pb-8 sm:px-6 lg:px-8">
+    <!-- 轮播保持 16:9，右侧精选位独立排版，避免反向拉伸 banner。 -->
+    <div class="mb-6 lg:grid lg:grid-cols-[2fr_3fr] lg:items-start lg:gap-4">
       <div
-        class="relative overflow-hidden rounded-[var(--radius-2xl)] border border-border/50 bg-card shadow-raised lg:min-w-0 lg:flex-[2]"
-        :style="{
-          minHeight: `${homeCarouselMinHeight}px`,
-          ...(heroBannerHeight ? { height: `${heroBannerHeight}px` } : {}),
-        }"
+        class="home-hero-frame relative w-full overflow-hidden rounded-2xl border border-border/50 bg-card shadow-raised lg:min-w-0"
+        :style="{ aspectRatio: homeCarouselAspect }"
       >
         <div class="home-hero-carousel block h-full w-full lg:absolute lg:inset-0">
           <Carousel
@@ -159,37 +78,82 @@ onBeforeUnmount(() => {
         </div>
       </div>
 
-      <div
-        ref="featuredRailRef"
-        class="mt-4 hidden lg:grid lg:min-w-0 lg:flex-[3] lg:grid-cols-3 lg:gap-4 lg:mt-0"
-      >
-        <template v-if="initialLoading">
-          <VideoCardSkeleton v-for="i in 6" :key="i" />
-        </template>
-        <template v-else>
+      <!-- 精选和网格随视频请求展示；轮播独立交接。 -->
+      <Transition name="skeleton-swap" mode="out-in">
+        <SkeletonGroup
+          v-if="initialLoading"
+          key="featured-skeleton"
+          :count="FEATURED_COUNT"
+          :start="0.5"
+          :step="0.5"
+          class="mt-4 hidden lg:mt-0 lg:grid lg:min-w-0 lg:grid-cols-3 lg:gap-4 lg:content-start"
+        >
+          <template #default="{ index }">
+            <VideoCardSkeleton :seed="index" />
+          </template>
+        </SkeletonGroup>
+
+        <div
+          v-else-if="featuredVideos.length > 0"
+          key="featured"
+          class="mt-4 hidden lg:mt-0 lg:grid lg:min-w-0 lg:grid-cols-3 lg:gap-4 lg:content-start"
+        >
           <VideoCard v-for="video in featuredVideos" :key="video.id" :video="video" />
-        </template>
-      </div>
+        </div>
+      </Transition>
     </div>
 
     <!-- Video Grid -->
-    <InfiniteScroll :loading="loading" :finished="finished" @load-more="handleLoadMore">
-      <div
-        v-if="initialLoading"
-        class="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5"
-      >
-        <VideoCardSkeleton v-for="i in 10" :key="i" />
-      </div>
+    <InfiniteScroll
+      :disabled="!!feedError"
+      :loading="loading"
+      :finished="finished"
+      :show-status="videos.length > 0 || loading"
+      :initial-loading="initialLoading"
+      @load-more="handleLoadMore"
+    >
+      <template #skeleton>
+        <!-- start/step 接住 hero 精选位的相位，见上方注释 -->
+        <SkeletonGroup
+          :count="10"
+          :start="3.5"
+          :step="0.5"
+          class="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5"
+        >
+          <template #default="{ index }">
+            <VideoCardSkeleton :seed="index" />
+          </template>
+        </SkeletonGroup>
+      </template>
 
       <!-- Video Cards -->
-      <div v-else class="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
-        <VideoCard v-for="video in remainingVideos" :key="video.id" :video="video" />
+      <div ref="gridContainer" :style="spacerStyle" class="home-feed-window">
+        <div class="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
+          <VideoCard v-for="video in visibleItems" :key="video.id" :video="video" />
+        </div>
       </div>
+      <FeedError
+        v-if="feedError && !initialLoading"
+        :message="feedError"
+        :has-items="videos.length > 0"
+        @retry="fetchVideos"
+      />
+      <EmptyState
+        v-else-if="!initialLoading && !loading && videos.length === 0"
+        variant="home"
+        eyebrow="属于你的放映室"
+        title="第一场精彩，还未开映"
+        description="推荐列表暂时为空。等作品发布后，就会在这里与你见面。"
+      />
     </InfiniteScroll>
   </div>
 </template>
 
 <style scoped lang="scss">
+.home-feed-window :deep(.video-card__title) {
+  min-height: 2.5rem;
+}
+
 @media (width >= 1024px) {
   .home-hero-carousel :deep(.group) {
     height: 100%;

@@ -80,7 +80,9 @@ const formatDate = (dateStr: string) => {
 
 const confirmDelete = (id: number) => {
   videoToDelete.value = id
-  deleteDialogOpen.value = true
+  setTimeout(() => {
+    deleteDialogOpen.value = true
+  }, 100)
 }
 
 const handleDelete = async () => {

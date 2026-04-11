@@ -37,7 +37,7 @@ const hasParts = computed(() => props.parts.length > 1)
 
     <div class="part-scroll-area max-h-[380px] space-y-1.5 overflow-y-auto pr-2">
       <button
-        v-for="(part, index) in parts"
+        v-for="part in parts"
         :key="part.id"
         class="part-item group w-full relative overflow-hidden"
         :class="{ 'is-active': part.id === currentPartId }"
@@ -56,7 +56,7 @@ const hasParts = computed(() => props.parts.length > 1)
               class="text-primary playing-icon"
               stroke-width="3"
             />
-            <span v-else>P{{ index + 1 }}</span>
+            <span v-else>P{{ part.sortOrder + 1 }}</span>
           </span>
           <span
             class="flex-1 truncate text-left text-[13px] font-medium transition-colors group-hover:text-primary"

@@ -43,9 +43,7 @@ const avatarBorderClass = computed(() =>
     : 'border-white/50 group-hover:border-white'
 )
 
-const searchContainerClass = computed(() =>
-  props.light ? 'search-bar-solid' : 'search-bar-glass'
-)
+const searchContainerClass = computed(() => (props.light ? 'search-bar-solid' : 'search-bar-glass'))
 
 const router = useRouter()
 const route = useRoute()
@@ -213,8 +211,19 @@ const navActions = [
       class="absolute left-1/2 top-1/2 z-10 w-full max-w-[500px] -translate-x-1/2 -translate-y-1/2 px-4"
     >
       <div class="relative w-full group">
-        <div class="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-4 z-10 transition-colors duration-300">
-          <Search class="h-4 w-4" :class="[searchQuery ? 'text-primary' : (props.light ? 'text-muted-foreground/80' : 'text-white/80 group-focus-within:text-muted-foreground/80')]" />
+        <div
+          class="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-4 z-10 transition-colors duration-300"
+        >
+          <Search
+            class="h-4 w-4"
+            :class="[
+              searchQuery
+                ? 'text-primary'
+                : props.light
+                  ? 'text-muted-foreground/80'
+                  : 'text-white/80 group-focus-within:text-muted-foreground/80',
+            ]"
+          />
         </div>
         <input
           v-model="searchQuery"

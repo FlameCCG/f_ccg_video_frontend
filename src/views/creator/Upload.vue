@@ -89,6 +89,7 @@ interface VideoWork {
   form: VideoWorkForm
   coverFile: File | null
   coverPreview: string
+  coverSource: 'none' | 'auto' | 'manual'
 }
 
 interface UploadFeedback {
@@ -114,6 +115,7 @@ const createWork = (initialParts: VideoPart[] = []): VideoWork => ({
   form: createWorkForm(),
   coverFile: null,
   coverPreview: '',
+  coverSource: 'none',
 })
 
 // State
@@ -187,6 +189,7 @@ const previewVideoUrl = ref('')
 const previewVideoError = ref(false)
 const tempCoverPreview = ref('')
 const tempCoverFile = ref<File | null>(null)
+const autoCoverPartTokens = new Map<string, string>()
 const UPLOAD_STATUS_TIMEOUT = 6000
 const UPLOAD_CHUNK_TIMEOUT = 60000
 const COMPLETE_UPLOAD_TIMEOUT = 5 * 60 * 1000
@@ -476,10 +479,140 @@ const onPreviewVideoError = () => {
   previewVideoError.value = true
 }
 
+const clearAutoCover = (work?: VideoWork) => {
+  if (!work || work.coverSource !== 'auto') return
+  work.coverFile = null
+  work.coverPreview = ''
+  work.coverSource = 'none'
+  autoCoverPartTokens.delete(work.id)
+}
+
+const captureCoverFromVideoElement = async (video: HTMLVideoElement, fileName: string) => {
+  const canvas = document.createElement('canvas')
+  canvas.width = video.videoWidth
+  canvas.height = video.videoHeight
+  const ctx = canvas.getContext('2d')
+  if (!ctx) {
+    throw new Error('无法初始化封面画布')
+  }
+
+  ctx.drawImage(video, 0, 0, canvas.width, canvas.height)
+
+  const blob = await new Promise<Blob | null>((resolve) => {
+    canvas.toBlob(resolve, 'image/jpeg', 0.92)
+  })
+  if (!blob) {
+    throw new Error('封面生成失败')
+  }
+
+  return {
+    preview: canvas.toDataURL('image/jpeg', 0.92),
+    file: new File([blob], fileName, { type: 'image/jpeg' }),
+  }
+}
+
+const autoRecommendCoverForPart = async (part: VideoPart) => {
+  const work = works.value.find((candidate) => candidate.parts.some((item) => item.id === part.id))
+  if (!work || work.parts[0]?.id !== part.id || work.coverSource === 'manual') {
+    return
+  }
+  if (part.status !== 'success') return
+
+  const token = `${part.id}:${part.hash || part.file.name}:${part.file.size}:${part.file.lastModified}`
+  if (
+    work.coverSource === 'auto' &&
+    work.coverPreview &&
+    autoCoverPartTokens.get(work.id) === token
+  ) {
+    return
+  }
+
+  const objectUrl = URL.createObjectURL(part.file)
+  const video = document.createElement('video')
+  video.preload = 'auto'
+  video.muted = true
+  video.playsInline = true
+  video.crossOrigin = 'anonymous'
+
+  try {
+    await new Promise<void>((resolve, reject) => {
+      const timeoutId = window.setTimeout(() => {
+        cleanup()
+        reject(new Error('封面预览超时'))
+      }, 12000)
+
+      const cleanup = () => {
+        clearTimeout(timeoutId)
+        video.onloadeddata = null
+        video.onerror = null
+      }
+
+      video.onloadeddata = () => {
+        cleanup()
+        resolve()
+      }
+      video.onerror = () => {
+        cleanup()
+        reject(new Error('封面预览失败'))
+      }
+
+      video.src = objectUrl
+      void video.load()
+    })
+
+    const duration = Number(video.duration)
+    if (Number.isFinite(duration) && duration > 0.6) {
+      const targetTime = Math.min(Math.max(duration * 0.18, 0.4), Math.max(duration - 0.1, 0.4), 3)
+      if (targetTime > 0.05) {
+        await new Promise<void>((resolve, reject) => {
+          const timeoutId = window.setTimeout(() => {
+            cleanup()
+            resolve()
+          }, 6000)
+
+          const cleanup = () => {
+            clearTimeout(timeoutId)
+            video.onseeked = null
+            video.onerror = null
+          }
+
+          video.onseeked = () => {
+            cleanup()
+            resolve()
+          }
+          video.onerror = () => {
+            cleanup()
+            reject(new Error('封面定位失败'))
+          }
+
+          video.currentTime = targetTime
+        })
+      }
+    }
+
+    const cover = await captureCoverFromVideoElement(video, `auto-cover-${part.id}.jpg`)
+    const latestWork = works.value.find((candidate) => candidate.id === work.id)
+    if (!latestWork || latestWork.parts[0]?.id !== part.id || latestWork.coverSource === 'manual') {
+      return
+    }
+
+    latestWork.coverFile = cover.file
+    latestWork.coverPreview = cover.preview
+    latestWork.coverSource = 'auto'
+    autoCoverPartTokens.set(latestWork.id, token)
+  } catch (error) {
+    console.warn('Auto cover recommendation skipped', error)
+  } finally {
+    URL.revokeObjectURL(objectUrl)
+  }
+}
+
 const confirmCoverSetting = () => {
   if (activeWork.value) {
     activeWork.value.coverPreview = tempCoverPreview.value
     activeWork.value.coverFile = tempCoverFile.value
+    activeWork.value.coverSource = tempCoverFile.value ? 'manual' : activeWork.value.coverSource
+    autoCoverPartTokens.delete(activeWork.value.id)
   }
   showCoverSetting.value = false
 }
@@ -897,6 +1030,7 @@ const uploadPart = async (part: VideoPart, isResume = false) => {
       part.progress = 100
       part.instant = true
       part.status = 'success'
+      void autoRecommendCoverForPart(part)
       return
     }
 
@@ -952,6 +1086,7 @@ const uploadPart = async (part: VideoPart, isResume = false) => {
       )
       part.filePath = res.filePath
       part.status = 'success'
+      void autoRecommendCoverForPart(part)
     } finally {
       releaseCompleteLock()
     }
@@ -969,13 +1104,21 @@ const uploadPart = async (part: VideoPart, isResume = false) => {
 
 const removePart = (index: number) => {
   if (!activeWork.value) return
+  const work = activeWork.value
   const part = activeWork.value.parts[index]
   const removedFirst = index === 0
   if (part?.abortController) {
     part.abortController.abort()
   }
   activeWork.value.parts.splice(index, 1)
-  if (removedFirst) previewVideoError.value = false
+  if (removedFirst) {
+    previewVideoError.value = false
+    clearAutoCover(work)
+    const nextFirst = work.parts[0]
+    if (nextFirst?.status === 'success') {
+      void autoRecommendCoverForPart(nextFirst)
+    }
+  }
   processUploadQueue()
 }
 
@@ -1088,6 +1231,10 @@ const onReplaceFileChange = (e: Event) => {
   const oldName = part.file.name.replace(/\.[^/.]+$/, '')
   if (part.title === oldName || !part.title) {
     part.title = file.name.replace(/\.[^/.]+$/, '')
+  }
+
+  if (replaceTargetPartIndex.value === 0) {
+    clearAutoCover(activeWork.value)
   }
 
   part.file = file
@@ -1439,6 +1586,17 @@ const handlePublish = async () => {
                       part?.instant ? '秒传完成' : '上传完成'
                     }}</span>
                   </div>
+                </div>
+                <div class="mb-3">
+                  <Label :for="`part-title-${part.id}`" class="sr-only">分P标题</Label>
+                  <input
+                    :id="`part-title-${part.id}`"
+                    :value="part.title"
+                    maxlength="200"
+                    class="flex h-8 w-full rounded-md border border-input bg-background px-3 py-1.5 text-xs ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                    placeholder="请输入分P标题"
+                    @input="part.title = ($event.target as HTMLInputElement).value"
+                  />
                 </div>
                 <div v-if="part.status !== 'success'" class="flex items-center gap-3">
                   <div class="flex-grow bg-muted rounded-full h-1.5 overflow-hidden">

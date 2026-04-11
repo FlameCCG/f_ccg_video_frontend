@@ -166,7 +166,7 @@ export interface VideoDetail {
   partition: Partition
   tags: Tag[]
   resources: VideoResourceItem[]
-  parts: VideoPartItem[]
+  parts?: VideoPartItem[]
   isLiked: boolean
   isFavorited: boolean
   isCoined: boolean

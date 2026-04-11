@@ -43,10 +43,8 @@ const avatarBorderClass = computed(() =>
     : 'border-white/50 group-hover:border-white'
 )
 
-const searchBgClass = computed(() =>
-  props.light
-    ? 'bg-secondary/60 hover:bg-secondary/90 focus-visible:bg-background text-foreground placeholder:text-muted-foreground/70 border border-transparent focus-visible:border-primary/40 focus-visible:ring-[3px] focus-visible:ring-primary/20 shadow-[inset_0_1px_2px_rgba(0,0,0,0.05)] dark:shadow-none backdrop-blur-sm transition-all duration-300'
-    : 'bg-white/20 hover:bg-white/30 dark:bg-black/40 dark:hover:bg-black/60 focus-visible:bg-background text-white placeholder:text-white/70 focus-visible:text-foreground focus-visible:placeholder:text-muted-foreground/70 border border-white/20 dark:border-white/10 focus-visible:border-primary/40 focus-visible:ring-[3px] focus-visible:ring-primary/20 backdrop-blur-md shadow-sm transition-all duration-300'
+const searchContainerClass = computed(() =>
+  props.light ? 'search-bar-solid' : 'search-bar-glass'
 )
 
 const router = useRouter()
@@ -221,8 +219,8 @@ const navActions = [
         <input
           v-model="searchQuery"
           type="text"
-          class="flex h-10 w-full rounded-full border-0 px-4 py-2 pl-10 pr-4 text-sm focus-visible:outline-none"
-          :class="searchBgClass"
+          class="flex h-10 w-full rounded-full px-4 py-2 pl-10 pr-4 text-sm focus-visible:outline-none search-input-base"
+          :class="searchContainerClass"
           placeholder="搜索视频、UP主..."
           @input="handleSearchInput"
           @keydown.enter="handleSearch(searchQuery)"
@@ -544,5 +542,69 @@ const navActions = [
   transition:
     transform 0.35s cubic-bezier(0.22, 1, 0.36, 1),
     opacity 0.2s ease;
+}
+
+/* Bulletproof CSS for search bar to evade Tailwind JIT cache bugs */
+.search-input-base {
+  border: 1px solid transparent;
+  transition: all 0.3s ease;
+  backdrop-filter: blur(8px);
+}
+
+.search-input-base:focus-visible {
+  background-color: var(--color-background);
+  color: var(--color-foreground);
+  border-color: color-mix(in oklch, var(--color-primary) 40%, transparent);
+  box-shadow: 0 0 0 3px color-mix(in oklch, var(--color-primary) 20%, transparent);
+}
+
+.search-input-base:focus-visible::placeholder {
+  color: color-mix(in oklch, var(--color-muted-foreground) 70%, transparent);
+}
+
+/* 1. Solid variant (for video detail page / solid headers) */
+.search-bar-solid {
+  background-color: color-mix(in oklch, var(--color-secondary) 60%, transparent);
+  color: var(--color-foreground);
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.05);
+}
+
+:global(.dark) .search-bar-solid {
+  box-shadow: none;
+}
+
+.search-bar-solid:hover:not(:focus-visible) {
+  background-color: color-mix(in oklch, var(--color-secondary) 90%, transparent);
+}
+
+.search-bar-solid::placeholder {
+  color: color-mix(in oklch, var(--color-muted-foreground) 70%, transparent);
+}
+
+/* 2. Glass variant (for homepage / banner overlay headers) */
+.search-bar-glass {
+  background-color: rgba(255, 255, 255, 0.2);
+  border-color: rgba(255, 255, 255, 0.2);
+  color: #ffffff;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+  backdrop-filter: blur(12px);
+}
+
+.search-bar-glass:hover:not(:focus-visible) {
+  background-color: rgba(255, 255, 255, 0.3);
+}
+
+.search-bar-glass::placeholder {
+  color: rgba(255, 255, 255, 0.7);
+}
+
+/* Dark mode overrides for glass variant */
+:global(.dark) .search-bar-glass {
+  background-color: rgba(0, 0, 0, 0.4);
+  border-color: rgba(255, 255, 255, 0.1);
+}
+
+:global(.dark) .search-bar-glass:hover:not(:focus-visible) {
+  background-color: rgba(0, 0, 0, 0.6);
 }
 </style>

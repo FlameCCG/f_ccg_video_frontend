@@ -32,6 +32,7 @@
     "reka-ui": "^2.7.0",
     "tailwind-merge": "^3.3.0",
     "vee-validate": "^4.15.0",
+    "vite-plugin-oh-my-live2d": "^0.19.3",
     "vue": "^3.5.24",
     "vue-router": "^4.6.4",
     "vue-sonner": "^2.0.9",

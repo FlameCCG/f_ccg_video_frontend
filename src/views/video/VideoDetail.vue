@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onBeforeUnmount, watch } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { likeDanmu, reportDanmu, type PlayerDanmuPayload } from '@/api/danmu'
 import { useVideoStore } from '@/stores/video'
@@ -45,6 +45,7 @@ type DanmuHoverState = Omit<DanmuHoverPayload, 'el'> & {
 }
 
 const route = useRoute()
+const router = useRouter()
 const authStore = useAuthStore()
 const videoStore = useVideoStore()
 const playerRef = ref<InstanceType<typeof VideoPlayer> | null>(null)
@@ -59,19 +60,58 @@ const videoId = computed(() => {
 const isLoading = computed(() => videoStore.isLoading)
 const error = computed(() => videoStore.error)
 const video = computed(() => videoStore.currentVideo)
-
-const manualPartId = ref<number | undefined>(undefined)
-const currentPartId = computed(() => {
-  if (manualPartId.value !== undefined) return manualPartId.value
-  const parts = video.value?.parts
-  if (parts && parts.length > 0) return parts[0]!.id
-  return undefined
+const isPreviewMode = computed(() => Boolean(video.value && video.value.status !== 1))
+const previewNotice = computed(() => {
+  if (!video.value) return ''
+  if (video.value.status === 2) {
+    return '当前稿件为私密预览，仅作者可见。已跳过公开弹幕、评论、推荐和播放统计请求。'
+  }
+  if (video.value.status === 4) {
+    return '当前稿件正在审核，仅作者可见。已跳过公开弹幕、评论、推荐和播放统计请求。'
+  }
+  return '当前稿件暂未公开，仅提供作者预览播放。'
 })
+
+const rawRoutePart = computed(() => {
+  const routePart = route.params.p
+  return Array.isArray(routePart) ? routePart[0] : routePart
+})
+
+const requestedPartNumber = computed(() => {
+  const routePart = rawRoutePart.value
+  if (!routePart) return undefined
+  const parsed = Number(routePart)
+  if (!Number.isInteger(parsed) || parsed <= 0) return undefined
+  return parsed
+})
+
+const videoParts = computed(() => video.value?.parts ?? [])
+const hasMultiParts = computed(() => videoParts.value.length > 1)
+const currentPart = computed(() => {
+  const parts = videoParts.value
+  if (!parts.length) return undefined
+
+  const requested = requestedPartNumber.value
+  if (requested !== undefined) {
+    const matched = parts.find((part) => part.sortOrder + 1 === requested)
+    if (matched) return matched
+  }
+
+  return parts[0]
+})
+
+const currentPartId = computed(() => {
+  return currentPart.value?.id
+})
+const currentPartNumber = computed(() => {
+  return currentPart.value ? currentPart.value.sortOrder + 1 : undefined
+})
+const playerInstanceKey = computed(() => `${videoId.value}-${currentPartId.value ?? 0}`)
 const descExpanded = ref(false)
 const currentPlayerTime = computed(() => videoStore.playerState.currentTime)
 const recentLocalDanmuIds = new Set<number>()
 const danmuSocketVideoId = computed(() => {
-  if (!video.value?.id) return 0
+  if (!video.value?.id || isPreviewMode.value) return 0
 
   const hasParts = (video.value.parts?.length ?? 0) > 0
   if (hasParts && currentPartId.value === undefined) {
@@ -326,33 +366,90 @@ const formatDate = (dateStr: string): string => {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
 }
 
+const syncPartRoute = async (replace = true) => {
+  const currentVideo = video.value
+  if (!currentVideo) return
+
+  if (hasMultiParts.value) {
+    const targetPart = String(currentPartNumber.value ?? 1)
+    if (rawRoutePart.value === targetPart) return
+
+    const navigationTarget = {
+      name: 'video-detail',
+      params: {
+        id: String(currentVideo.id),
+        p: targetPart,
+      },
+      query: route.query,
+      hash: route.hash,
+    }
+
+    if (replace) {
+      await router.replace(navigationTarget)
+    } else {
+      await router.push(navigationTarget)
+    }
+    return
+  }
+
+  if (rawRoutePart.value === undefined) return
+
+  const navigationTarget = {
+    name: 'video-detail',
+    params: {
+      id: String(currentVideo.id),
+    },
+    query: route.query,
+    hash: route.hash,
+  }
+
+  if (replace) {
+    await router.replace(navigationTarget)
+  } else {
+    await router.push(navigationTarget)
+  }
+}
+
 const loadVideo = async (id: number) => {
   if (!id) return
   const ok = await videoStore.fetchVideoDetail(id)
   if (ok) {
-    try {
-      await addVideoView(id)
-      videoStore.updateStats({ views: (video.value?.views ?? 0) + 1 })
-    } catch {
-      // Ignore view count errors
+    await syncPartRoute()
+
+    if (video.value?.status === 1) {
+      try {
+        await addVideoView(id)
+        videoStore.updateStats({ views: (video.value?.views ?? 0) + 1 })
+      } catch {
+        // Ignore view count errors
+      }
     }
 
     if (authStore.isLoggedIn && video.value) {
-      try {
-        videoStore.updatePlayerState({
-          currentTime: video.value.watchProgress ?? 0,
-          duration: video.value.duration,
-        })
-        await videoStore.saveProgress()
-      } catch {
-        // Ignore initial history save errors
-      }
+      videoStore.updatePlayerState({
+        currentTime: video.value.watchProgress ?? 0,
+        duration: video.value.duration,
+      })
     }
   }
 }
 
 const handlePartSelect = (partId: number) => {
-  manualPartId.value = partId
+  const selectedPart = videoParts.value.find((part) => part.id === partId)
+  if (!selectedPart || !video.value) return
+
+  const targetPart = String(selectedPart.sortOrder + 1)
+  if (rawRoutePart.value === targetPart) return
+
+  void router.push({
+    name: 'video-detail',
+    params: {
+      id: String(video.value.id),
+      p: targetPart,
+    },
+    query: route.query,
+    hash: route.hash,
+  })
 }
 
 const handleSeek = (time: number) => {
@@ -372,10 +469,17 @@ watch(videoId, (id) => {
   if (id) {
     videoStore.clearVideo()
     descExpanded.value = false
-    manualPartId.value = undefined
     void loadVideo(id)
   }
 })
+
+watch(
+  () => [video.value?.id, rawRoutePart.value] as const,
+  ([currentVideoId]) => {
+    if (!currentVideoId || !video.value) return
+    void syncPartRoute()
+  }
+)
 
 onBeforeUnmount(() => {
   videoStore.clearVideo()
@@ -433,14 +537,26 @@ onBeforeUnmount(() => {
         </span>
       </div>
 
+      <div
+        v-if="isPreviewMode"
+        class="mb-4 flex items-start gap-3 rounded-2xl border border-amber-500/20 bg-amber-500/8 px-4 py-3 text-sm text-amber-700 dark:text-amber-200"
+      >
+        <TriangleAlert :size="18" class="mt-0.5 shrink-0" />
+        <p class="leading-6">
+          {{ previewNotice }}
+        </p>
+      </div>
+
       <!-- Two Column Layout -->
       <div class="flex items-start gap-5">
         <!-- Left Column: Player + DanmuInput + Actions + Description -->
         <div class="min-w-0 flex-1">
           <!-- Video Player -->
           <VideoPlayer
+            :key="playerInstanceKey"
             ref="playerRef"
             :part-id="currentPartId"
+            :enable-danmu="!isPreviewMode"
             class="overflow-hidden rounded-lg bg-black"
             @danmu-hover="handleDanmuHover"
             @danmu-leave="handleDanmuLeave"
@@ -449,6 +565,8 @@ onBeforeUnmount(() => {
 
           <!-- Danmu Input Bar (directly below player, bilibili style) -->
           <DanmuInput
+            v-if="!isPreviewMode"
+            :key="playerInstanceKey"
             :video-id="video.id"
             :part-id="currentPartId"
             :current-time="currentPlayerTime"
@@ -457,7 +575,7 @@ onBeforeUnmount(() => {
           />
 
           <!-- Interaction Buttons (like bilibili: 点赞 投 收藏 分享) -->
-          <div class="mt-3 border-b border-border pb-3">
+          <div v-if="!isPreviewMode" class="mt-3 border-b border-border pb-3">
             <VideoActions />
           </div>
 
@@ -492,7 +610,11 @@ onBeforeUnmount(() => {
           </div>
 
           <!-- Comment Section -->
-          <CommentSection v-if="video.id" :video-id="video.id" :author-id="video.author?.id" />
+          <CommentSection
+            v-if="video.id && !isPreviewMode"
+            :video-id="video.id"
+            :author-id="video.author?.id"
+          />
         </div>
 
         <!-- Right Column: Author + DanmuList + PartList + Recommend -->
@@ -502,6 +624,8 @@ onBeforeUnmount(() => {
 
           <!-- Danmu List Panel (bilibili style) -->
           <DanmuList
+            v-if="!isPreviewMode"
+            :key="playerInstanceKey"
             ref="danmuListRef"
             :video-id="video.id"
             :part-id="currentPartId"
@@ -517,7 +641,7 @@ onBeforeUnmount(() => {
           />
 
           <!-- Recommendations -->
-          <VideoRecommend :video-id="video.id" />
+          <VideoRecommend v-if="!isPreviewMode" :video-id="video.id" />
         </div>
       </div>
     </div>

@@ -27,6 +27,7 @@ const isVerified = ref(false)
 // UI State
 const mousePos = ref({ x: 0, y: 0 })
 const isHovering = ref(false)
+const MIN_REQUIRED_POINTS = 2
 
 // Methods
 const loadCaptcha = async () => {
@@ -82,7 +83,7 @@ const handleImageClick = (event: MouseEvent) => {
 }
 
 const handleConfirmDots = () => {
-  if (clickedPoints.value.length === 0 || isVerified.value) return
+  if (clickedPoints.value.length < MIN_REQUIRED_POINTS || isVerified.value) return
   isVerified.value = true
 
   setTimeout(() => {
@@ -223,7 +224,10 @@ onMounted(() => {
                       'ring-2 ring-white/50': !isVerified,
                       'scale-110 bg-green-500': isVerified,
                     }"
-                    :style="{ left: `${point.x / (imageRef?.naturalWidth || 1) * 100}%`, top: `${point.y / (imageRef?.naturalHeight || 1) * 100}%` }"
+                    :style="{
+                      left: `${(point.x / (imageRef?.naturalWidth || 1)) * 100}%`,
+                      top: `${(point.y / (imageRef?.naturalHeight || 1)) * 100}%`,
+                    }"
                   >
                     <span class="text-sm">{{ index + 1 }}</span>
                     <div
@@ -251,7 +255,8 @@ onMounted(() => {
                   class="flex items-center justify-between border-t border-border/40 bg-muted/40 p-3 backdrop-blur-md"
                 >
                   <div class="flex items-center flex-wrap gap-3">
-                    <span class="text-xs shrink-0 font-semibold tracking-wider text-muted-foreground/80"
+                    <span
+                      class="text-xs shrink-0 font-semibold tracking-wider text-muted-foreground/80"
                       >点击:</span
                     >
                     <img
@@ -286,6 +291,7 @@ onMounted(() => {
                       variant="default"
                       size="sm"
                       class="h-7 px-3 text-xs font-semibold"
+                      :disabled="clickedPoints.length < MIN_REQUIRED_POINTS"
                       @click="handleConfirmDots"
                     >
                       确定
@@ -306,6 +312,7 @@ onMounted(() => {
 .fade-leave-active {
   transition: opacity 0.3s ease;
 }
+
 .fade-enter-from,
 .fade-leave-to {
   opacity: 0;

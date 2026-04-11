@@ -10,6 +10,7 @@ import { onClickOutside } from '@vueuse/core'
 import { toast } from 'vue-sonner'
 import CommentInput from './CommentInput.vue'
 import AppAvatar from '@/components/common/AppAvatar.vue'
+import ImageViewer from '@/components/common/ImageViewer.vue'
 
 const router = useRouter()
 
@@ -41,6 +42,14 @@ const moreMenuRef = ref<HTMLElement | null>(null)
 onClickOutside(moreMenuRef, () => {
   showMoreMenu.value = false
 })
+
+const previewImageUrl = ref('')
+const showPreview = ref(false)
+
+const openImagePreview = (url: string) => {
+  previewImageUrl.value = url
+  showPreview.value = true
+}
 
 const replies = ref<CommentItem[]>([])
 const repliesTotal = ref(props.comment.replyCount)
@@ -170,7 +179,7 @@ watch(
   { immediate: true }
 )
 
-const handleReplySubmit = async (content: string, atUserIds: number[]) => {
+const handleReplySubmit = async (content: string, atUserIds: number[], pictures: string[]) => {
   try {
     const { createComment } = await import('@/api/comment')
     const res = await createComment({
@@ -179,6 +188,7 @@ const handleReplySubmit = async (content: string, atUserIds: number[]) => {
       content,
       parentId: props.comment.id,
       atUserIds,
+      pictures,
     })
     toast.success('回复成功')
     showReplyInput.value = false
@@ -245,6 +255,18 @@ const handleReplyDeleted = (id: number) => {
           </template>
         </template>
       </p>
+
+      <!-- Pictures -->
+      <div v-if="comment.pictures?.length" class="mt-2 flex flex-wrap gap-2">
+        <div
+          v-for="(pic, idx) in comment.pictures"
+          :key="idx"
+          class="h-24 w-24 overflow-hidden rounded-md border border-border cursor-pointer hover:opacity-90 transition-opacity"
+          @click="openImagePreview(pic)"
+        >
+          <img :src="pic" class="h-full w-full object-cover" loading="lazy" />
+        </div>
+      </div>
 
       <!-- Actions -->
       <div class="mt-2 flex items-center gap-4 text-[13px] text-muted-foreground/80">
@@ -350,5 +372,8 @@ const handleReplyDeleted = (id: number) => {
         </div>
       </div>
     </div>
+
+    <!-- Image Preview Modal -->
+    <ImageViewer v-model="showPreview" :src="previewImageUrl" />
   </div>
 </template>

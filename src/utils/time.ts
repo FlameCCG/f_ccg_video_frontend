@@ -8,3 +8,20 @@ export function formatTimeAgo(timestamp: number): string {
   if (diff < 2592000000) return Math.floor(diff / 86400000) + '天前'
   return new Date(timestamp).toLocaleDateString()
 }
+
+export function formatDateTimeAgo(dateTime?: string | number | Date | null): string {
+  if (!dateTime) return '刚刚'
+
+  const timestamp =
+    dateTime instanceof Date
+      ? dateTime.getTime()
+      : typeof dateTime === 'number'
+        ? dateTime
+        : new Date(dateTime).getTime()
+
+  if (!Number.isFinite(timestamp) || timestamp <= 0) {
+    return '刚刚'
+  }
+
+  return formatTimeAgo(timestamp)
+}

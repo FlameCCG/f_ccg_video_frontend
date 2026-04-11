@@ -7,7 +7,7 @@ import {
 } from '@/api/notification'
 import AppAvatar from '@/components/common/AppAvatar.vue'
 import { useNotificationStore } from '@/stores/notification'
-import { formatTimeAgo } from '@/utils/time'
+import { formatDateTimeAgo } from '@/utils/time'
 import { useRouter } from 'vue-router'
 import {
   navigateToNotificationTarget,
@@ -60,6 +60,11 @@ const canOpenTarget = (item: NotificationItem) => !!resolveNotificationTarget(it
 const goReply = (item: NotificationItem) => {
   void navigateToNotificationTarget(router, item)
 }
+
+const goUserHome = (userId: number) => {
+  if (!userId) return
+  void router.push({ name: 'user-home', params: { id: userId } })
+}
 </script>
 
 <template>
@@ -95,12 +100,19 @@ const goReply = (item: NotificationItem) => {
         >
           <!-- Left Avatar -->
           <div class="shrink-0 pt-1">
-            <AppAvatar
-              :src="item.actionUserAvatar"
-              :name="item.actionUserName"
-              container-class="w-[46px] h-[46px] text-lg"
-              class="cursor-pointer transition-transform hover:scale-105"
-            />
+            <button
+              type="button"
+              class="cursor-pointer rounded-full"
+              :aria-label="`查看 ${item.actionUserName || '用户'} 的主页`"
+              @click="goUserHome(item.actionUserID)"
+            >
+              <AppAvatar
+                :src="item.actionUserAvatar"
+                :name="item.actionUserName"
+                container-class="w-[46px] h-[46px] text-lg"
+                class="transition-transform hover:scale-105"
+              />
+            </button>
           </div>
 
           <!-- Middle Content -->
@@ -129,12 +141,7 @@ const goReply = (item: NotificationItem) => {
             </div>
 
             <div class="flex items-center gap-4 text-xs text-muted-foreground">
-              <span>{{
-                formatTimeAgo(
-                  Date.now() - 1000 * 60
-                ) /* Temporary fallback if no timestamp in item */
-              }}</span>
-              <!-- Optionally we should use item created time if available -->
+              <span>{{ formatDateTimeAgo(item.createdAt) }}</span>
             </div>
           </div>
 

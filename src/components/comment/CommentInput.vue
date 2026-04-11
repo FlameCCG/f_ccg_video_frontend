@@ -4,8 +4,10 @@ import { useAuthStore } from '@/stores/auth'
 import { getMentionSuggest, type MentionUser } from '@/api/user'
 import EmojiPicker from '@/components/common/EmojiPicker.vue'
 import AppAvatar from '@/components/common/AppAvatar.vue'
-import { Smile, AtSign } from 'lucide-vue-next'
+import { Smile, AtSign, ImagePlus, X, Loader2 } from 'lucide-vue-next'
 import { useDebounceFn, onClickOutside } from '@vueuse/core'
+import { uploadImage } from '@/api/upload'
+import { toast } from 'vue-sonner'
 
 const props = defineProps<{
   placeholder?: string
@@ -14,7 +16,7 @@ const props = defineProps<{
 }>()
 
 const emit = defineEmits<{
-  (e: 'submit', content: string, atUserIds: number[]): void
+  (e: 'submit', content: string, atUserIds: number[], pictures: string[]): void
 }>()
 
 const authStore = useAuthStore()
@@ -28,9 +30,12 @@ const mentionUsers = ref<MentionUser[]>([])
 const atUserIds = ref<Set<number>>(new Set())
 const mentionCursorPos = ref(0)
 
-// Emoji
+// Emoji & Pictures
 const showEmoji = ref(false)
 const emojiPickerRef = ref<HTMLElement | null>(null)
+const pictures = ref<string[]>([])
+const fileInputRef = ref<HTMLInputElement | null>(null)
+const isUploading = ref(false)
 
 onClickOutside(emojiPickerRef, () => {
   showEmoji.value = false
@@ -109,11 +114,65 @@ const handleEmojiSelect = (emoji: string) => {
   })
 }
 
+const handleStickerSelect = (stickerUrl: string) => {
+  if (pictures.value.length >= 9) {
+    toast.error('最多只能发送9张图片')
+    return
+  }
+  pictures.value.push(stickerUrl)
+  showEmoji.value = false
+}
+
+const handleFileChange = async (event: Event) => {
+  const target = event.target as HTMLInputElement
+  const files = Array.from(target.files || [])
+  target.value = ''
+
+  if (!files.length) return
+  if (pictures.value.length + files.length > 9) {
+    toast.error('最多只能上传9张图片')
+    return
+  }
+
+  isUploading.value = true
+  try {
+    for (const file of files) {
+      if (!file.type.startsWith('image/')) {
+        toast.error('请选择图片文件')
+        continue
+      }
+
+      const buffer = await file.arrayBuffer()
+      const hashBuffer = await crypto.subtle.digest('SHA-256', buffer)
+      const fileHash = Array.from(new Uint8Array(hashBuffer))
+        .map((value) => value.toString(16).padStart(2, '0'))
+        .join('')
+
+      const res = await uploadImage(fileHash, file)
+      pictures.value.push(res.imageUrl)
+    }
+  } catch (error) {
+    console.error('Failed to upload image', error)
+    toast.error('上传图片失败')
+  } finally {
+    isUploading.value = false
+  }
+}
+
+const removePicture = (index: number) => {
+  pictures.value.splice(index, 1)
+}
+
+const triggerFileInput = () => {
+  fileInputRef.value?.click()
+}
+
 const handleSubmit = () => {
-  if (!content.value.trim() || !authStore.isLoggedIn) return
-  emit('submit', content.value, Array.from(atUserIds.value))
+  if ((!content.value.trim() && pictures.value.length === 0) || !authStore.isLoggedIn) return
+  emit('submit', content.value, Array.from(atUserIds.value), [...pictures.value])
   content.value = ''
   atUserIds.value.clear()
+  pictures.value = []
 }
 
 const handleAtClick = () => {
@@ -173,6 +232,23 @@ onMounted(() => {
         @keydown.enter.prevent="handleSubmit"
       ></textarea>
 
+      <!-- Pictures Preview -->
+      <div v-if="pictures.length > 0" class="mt-2 flex flex-wrap gap-2">
+        <div
+          v-for="(pic, idx) in pictures"
+          :key="idx"
+          class="group relative h-16 w-16 overflow-hidden rounded-md border border-border"
+        >
+          <img :src="pic" class="h-full w-full object-cover" />
+          <button
+            class="absolute right-1 top-1 rounded-full bg-black/50 p-0.5 text-white opacity-0 transition-opacity group-hover:opacity-100"
+            @click="removePicture(idx)"
+          >
+            <X class="h-3 w-3" />
+          </button>
+        </div>
+      </div>
+
       <!-- Mention Dropdown -->
       <div
         v-if="showMention && mentionUsers.length > 0"
@@ -216,7 +292,7 @@ onMounted(() => {
               <span>表情</span>
             </button>
             <div v-if="showEmoji" class="absolute left-0 top-full z-50 mt-1">
-              <EmojiPicker @select="handleEmojiSelect" />
+              <EmojiPicker @select="handleEmojiSelect" @select-sticker="handleStickerSelect" />
             </div>
           </div>
 
@@ -227,11 +303,31 @@ onMounted(() => {
           >
             <AtSign :size="16" />
           </button>
+
+          <button
+            class="flex items-center gap-1 rounded px-2 py-1 text-sm text-muted-foreground transition-colors hover:text-primary"
+            :disabled="!authStore.isLoggedIn || isUploading || pictures.length >= 9"
+            @click="triggerFileInput"
+          >
+            <Loader2 v-if="isUploading" class="h-4 w-4 animate-spin" />
+            <ImagePlus v-else :size="16" />
+            <span v-if="isUploading">上传中</span>
+          </button>
+          <input
+            ref="fileInputRef"
+            type="file"
+            accept="image/*"
+            multiple
+            class="hidden"
+            @change="handleFileChange"
+          />
         </div>
 
         <button
           class="rounded-md bg-primary px-4 py-1.5 text-sm text-primary-foreground transition-colors hover:bg-primary/80 disabled:cursor-not-allowed disabled:opacity-50"
-          :disabled="!authStore.isLoggedIn || !content.trim()"
+          :disabled="
+            !authStore.isLoggedIn || (!content.trim() && pictures.length === 0) || isUploading
+          "
           @click="handleSubmit"
         >
           发布

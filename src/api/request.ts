@@ -51,6 +51,36 @@ const onTokenRefreshed = (token: string | null): void => {
   refreshSubscribers = []
 }
 
+const normalizeApiMessage = (msg: unknown): string => {
+  return typeof msg === 'string' ? msg : ''
+}
+
+const isCaptchaBusinessError = (msg: string): boolean => {
+  const lowerMsg = msg.toLowerCase()
+  return lowerMsg.includes('验证码') || lowerMsg.includes('captcha')
+}
+
+const isTokenBusinessError = (msg: string): boolean => {
+  if (!msg) return false
+
+  const tokenKeywords = [
+    'token',
+    'Token',
+    'access token',
+    'refresh token',
+    'unauthorized',
+    'invalid token',
+    'expired token',
+    '登录已过期',
+  ]
+
+  if (tokenKeywords.some((keyword) => msg.includes(keyword))) {
+    return true
+  }
+
+  return /(登录|认证).*(过期|失效)/.test(msg)
+}
+
 // Refresh token function
 const refreshAccessToken = async (): Promise<string | null> => {
   const refreshToken = getRefreshToken()
@@ -120,15 +150,24 @@ const fixLocalhostUrls = (obj: unknown): unknown => {
 request.interceptors.response.use(
   async (response: AxiosResponse<ApiResponse>) => {
     const { code, msg, data } = response.data
+    const normalizedMsg = normalizeApiMessage(msg)
 
     // Success
     if (code === 0) {
       return fixLocalhostUrls(data) as AxiosResponse
     }
 
+    // Captcha business error
+    if (code === 1 && isCaptchaBusinessError(normalizedMsg)) {
+      const captchaErrorMsg = '验证码错误'
+      if (!response.config?.silent) {
+        toast.error(captchaErrorMsg)
+      }
+      return Promise.reject(new Error(captchaErrorMsg))
+    }
+
     // Token expired - check if msg contains token-related keywords
-    const tokenKeywords = ['token', 'Token', '登录', '认证', '过期', 'expired', 'unauthorized']
-    const isTokenError = tokenKeywords.some((keyword) => msg.includes(keyword))
+    const isTokenError = isTokenBusinessError(normalizedMsg)
 
     if (code === 1 && isTokenError) {
       const originalRequest = response.config
@@ -151,7 +190,7 @@ request.interceptors.response.use(
           onTokenRefreshed(null) // Reject pending requests
           clearTokens()
           window.dispatchEvent(new CustomEvent('auth:login-required'))
-          return Promise.reject(new Error(msg))
+          return Promise.reject(new Error(normalizedMsg || '登录已过期，请重新登录'))
         }
       } else {
         // Wait for token refresh
@@ -170,9 +209,9 @@ request.interceptors.response.use(
 
     // Business error - show toast unless caller opted into silent mode
     if (!response.config?.silent) {
-      toast.error(msg || '请求失败')
+      toast.error(normalizedMsg || '请求失败')
     }
-    return Promise.reject(new Error(msg))
+    return Promise.reject(new Error(normalizedMsg || '请求失败'))
   },
   (error) => {
     // Skip toast for silent requests

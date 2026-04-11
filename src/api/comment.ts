@@ -36,6 +36,7 @@ export interface CommentItem {
   atUserIds?: number[]
   parentId?: number
   rootId?: number
+  pictures?: string[]
   replyTo?: {
     userId: number
     username: string
@@ -67,6 +68,7 @@ export interface CreateCommentParams {
   content: string
   parentId?: number
   atUserIds?: number[]
+  pictures?: string[]
 }
 
 /**

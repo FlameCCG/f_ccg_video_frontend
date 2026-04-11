@@ -20,21 +20,35 @@ const isDragging = ref(false)
 const sliderX = ref(0)
 const startX = ref(0)
 const containerRef = ref<HTMLDivElement | null>(null)
+const imageRef = ref<HTMLImageElement | null>(null)
 const isVerified = ref(false)
+const imageScale = ref({ x: 1, y: 1 })
+
+const onImageLoad = () => {
+  if (imageRef.value && imageRef.value.naturalWidth > 0) {
+    imageScale.value = {
+      x: imageRef.value.clientWidth / imageRef.value.naturalWidth,
+      y: imageRef.value.clientHeight / imageRef.value.naturalHeight,
+    }
+  }
+}
 
 // Computed
 const sliderStyle = computed(() => ({
   transform: `translateX(${sliderX.value}px)`,
 }))
 
-const tileStyle = computed(() => ({
-  left: `${sliderX.value}px`,
-  top: `${captchaData.value?.thumbY ?? 0}px`,
-}))
+const tileStyle = computed(() => {
+  const thumbY = captchaData.value?.thumbY ?? 0
+  return {
+    left: `${sliderX.value}px`,
+    top: `${Math.round(thumbY * imageScale.value.y)}px`,
+  }
+})
 
 const currentValue = computed(() => ({
   token: captchaData.value?.token || '',
-  x: Math.round(sliderX.value),
+  x: Math.round(sliderX.value / imageScale.value.x),
   y: captchaData.value?.thumbY ?? 0,
 }))
 
@@ -144,23 +158,32 @@ defineExpose({
         </div>
 
         <!-- Captcha Image -->
-        <div v-else-if="captchaData" key="captcha" class="relative">
+        <div v-else-if="captchaData" key="captcha" class="relative overflow-hidden">
           <!-- Background Image -->
           <img
+            ref="imageRef"
             :src="captchaData.masterImage"
             alt="滑块验证码"
             class="w-full select-none"
             draggable="false"
+            @load="onImageLoad"
           />
 
           <!-- Tile Image (sliding piece) -->
-          <img
-            :src="captchaData.tileImage"
-            alt="滑块"
-            class="absolute h-auto w-[44px] select-none"
-            :style="tileStyle"
-            draggable="false"
-          />
+          <div
+            class="absolute origin-top-left"
+            :style="{
+              ...tileStyle,
+              transform: `scale(${imageScale.x}, ${imageScale.y})`,
+            }"
+          >
+            <img
+              :src="captchaData.tileImage"
+              alt="滑块"
+              class="h-auto select-none"
+              draggable="false"
+            />
+          </div>
         </div>
       </Transition>
     </div>
@@ -236,6 +259,7 @@ defineExpose({
 .fade-leave-active {
   transition: opacity 0.3s ease;
 }
+
 .fade-enter-from,
 .fade-leave-to {
   opacity: 0;

@@ -123,13 +123,14 @@ const handleSortChange = (sort: 'time' | 'hot') => {
   void loadComments(true)
 }
 
-const handleCreateComment = async (content: string, atUserIds: number[]) => {
+const handleCreateComment = async (content: string, atUserIds: number[], pictures: string[]) => {
   try {
     const res = await createComment({
       videoId: props.videoId || undefined,
       dynamicId: props.dynamicId || undefined,
       content,
       atUserIds,
+      pictures,
     })
     toast.success('发表成功')
     // Insert at the top

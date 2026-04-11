@@ -222,7 +222,7 @@ const stickers = [
   '饿殍表情包2_穗门.png',
   '饿殍表情包2_肘击！.png',
   '饿殍表情包2_良爷！.png',
-  '饿殍表情包2_被掐.png'
+  '饿殍表情包2_被掐.png',
 ]
 
 const emit = defineEmits<{
@@ -247,22 +247,33 @@ const handleSelectSticker = (sticker: string) => {
     <div class="flex border-b text-sm font-medium sticky top-0 bg-popover z-10 shrink-0">
       <button
         class="flex-1 py-2 text-center transition-colors"
-        :class="activeTab === 'emoji' ? 'text-primary border-b-2 border-primary bg-muted/30' : 'text-muted-foreground hover:bg-muted'"
+        :class="
+          activeTab === 'emoji'
+            ? 'text-primary border-b-2 border-primary bg-muted/30'
+            : 'text-muted-foreground hover:bg-muted'
+        "
         @click="activeTab = 'emoji'"
       >
         默认表情
       </button>
       <button
         class="flex-1 py-2 text-center transition-colors"
-        :class="activeTab === 'sticker' ? 'text-primary border-b-2 border-primary bg-muted/30' : 'text-muted-foreground hover:bg-muted'"
+        :class="
+          activeTab === 'sticker'
+            ? 'text-primary border-b-2 border-primary bg-muted/30'
+            : 'text-muted-foreground hover:bg-muted'
+        "
         @click="activeTab = 'sticker'"
       >
         表情包
       </button>
     </div>
-    
+
     <!-- Emoji Grid -->
-    <div v-show="activeTab === 'emoji'" class="flex-1 overflow-y-auto p-2 [&::-webkit-scrollbar-thumb]:rounded-[6px] [&::-webkit-scrollbar-thumb]:bg-muted-foreground/20 hover:[&::-webkit-scrollbar-thumb]:bg-muted-foreground/40 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar]:w-1.5">
+    <div
+      v-show="activeTab === 'emoji'"
+      class="flex-1 overflow-y-auto p-2 [&::-webkit-scrollbar-thumb]:rounded-[6px] [&::-webkit-scrollbar-thumb]:bg-muted-foreground/20 hover:[&::-webkit-scrollbar-thumb]:bg-muted-foreground/40 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar]:w-1.5"
+    >
       <div class="grid grid-cols-8 gap-1">
         <button
           v-for="emoji in emojis"
@@ -277,7 +288,10 @@ const handleSelectSticker = (sticker: string) => {
     </div>
 
     <!-- Sticker Grid -->
-    <div v-show="activeTab === 'sticker'" class="flex-1 overflow-y-auto p-2 [&::-webkit-scrollbar-thumb]:rounded-[6px] [&::-webkit-scrollbar-thumb]:bg-muted-foreground/20 hover:[&::-webkit-scrollbar-thumb]:bg-muted-foreground/40 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar]:w-1.5">
+    <div
+      v-show="activeTab === 'sticker'"
+      class="flex-1 overflow-y-auto p-2 [&::-webkit-scrollbar-thumb]:rounded-[6px] [&::-webkit-scrollbar-thumb]:bg-muted-foreground/20 hover:[&::-webkit-scrollbar-thumb]:bg-muted-foreground/40 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar]:w-1.5"
+    >
       <div class="grid grid-cols-4 gap-2">
         <button
           v-for="sticker in stickers"
@@ -285,7 +299,12 @@ const handleSelectSticker = (sticker: string) => {
           class="flex items-center justify-center p-1 rounded-md hover:bg-muted transition-colors focus:outline-none focus:ring-2 focus:ring-ring"
           @click="handleSelectSticker(sticker)"
         >
-          <img :src="`/表情包/${sticker}`" class="h-14 w-14 object-contain" :alt="sticker" loading="lazy" />
+          <img
+            :src="`/表情包/${sticker}`"
+            class="h-14 w-14 object-contain"
+            :alt="sticker"
+            loading="lazy"
+          />
         </button>
       </div>
     </div>

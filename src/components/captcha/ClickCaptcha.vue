@@ -22,6 +22,7 @@ const captchaData = ref<ClickCaptcha | null>(null)
 const isLoading = ref(false)
 const clickedPoints = ref<ClickCaptchaPoint[]>([])
 const imageRef = ref<HTMLImageElement | null>(null)
+const MIN_REQUIRED_POINTS = 2
 
 // Computed
 const currentValue = computed(() => ({
@@ -68,7 +69,7 @@ const handleImageClick = (event: MouseEvent) => {
 }
 
 const handleConfirmDots = () => {
-  if (clickedPoints.value.length > 0) {
+  if (clickedPoints.value.length >= MIN_REQUIRED_POINTS) {
     emit('verified', currentValue.value)
   }
 }
@@ -124,7 +125,10 @@ defineExpose({
               v-for="(point, index) in clickedPoints"
               :key="index"
               class="absolute flex h-6 w-6 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full bg-primary text-xs font-bold text-primary-foreground shadow-md transition-all animate-in zoom-in-50 duration-300"
-              :style="{ left: `${point.x / (imageRef?.naturalWidth || 1) * 100}%`, top: `${point.y / (imageRef?.naturalHeight || 1) * 100}%` }"
+              :style="{
+                left: `${(point.x / (imageRef?.naturalWidth || 1)) * 100}%`,
+                top: `${(point.y / (imageRef?.naturalHeight || 1)) * 100}%`,
+              }"
             >
               {{ index + 1 }}
             </div>
@@ -133,7 +137,11 @@ defineExpose({
           <!-- Thumb Image (hint) -->
           <div class="flex items-center flex-wrap gap-2 border-t bg-background/80 p-2">
             <span class="text-xs shrink-0 text-muted-foreground">请依次点击:</span>
-            <img :src="captchaData.thumbImage" alt="提示" class="h-8 w-auto min-w-0 object-contain rounded shrink-0" />
+            <img
+              :src="captchaData.thumbImage"
+              alt="提示"
+              class="h-8 w-auto min-w-0 object-contain rounded shrink-0"
+            />
           </div>
         </div>
       </Transition>
@@ -169,6 +177,7 @@ defineExpose({
           type="button"
           variant="default"
           size="sm"
+          :disabled="clickedPoints.length < MIN_REQUIRED_POINTS"
           @click="handleConfirmDots"
         >
           确定
@@ -183,6 +192,7 @@ defineExpose({
 .fade-leave-active {
   transition: opacity 0.3s ease;
 }
+
 .fade-enter-from,
 .fade-leave-to {
   opacity: 0;

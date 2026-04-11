@@ -52,7 +52,7 @@ const toggleTheme = () => {
 </script>
 
 <template>
-  <div class="user-hover-panel">
+  <div class="user-hover-panel text-popover-foreground bg-popover">
     <!-- Big Avatar -->
     <div class="panel-avatar-wrap" @click="navigate(`/user/${authStore.userId}`)">
       <AppAvatar

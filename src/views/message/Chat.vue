@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { onClickOutside } from '@vueuse/core'
 import { toast } from 'vue-sonner'
-import { ImagePlus, Loader2, MoreVertical, SmilePlus, X } from 'lucide-vue-next'
+import { ImagePlus, MoreVertical, SmilePlus } from 'lucide-vue-next'
 import { useRoute, useRouter } from 'vue-router'
 import {
   getConversationList,
@@ -17,7 +17,6 @@ import {
   type ChatSendTextEvent,
   type ChatSendEmojiEvent,
   type ChatWSEvent,
-  type MessageType,
 } from '@/api/chat'
 import { uploadImage } from '@/api/upload'
 import { getUserDetail, type UserDetail } from '@/api/user'
@@ -29,15 +28,12 @@ import { useAuthStore } from '@/stores/auth'
 import { useNotificationStore } from '@/stores/notification'
 import { formatTimeAgo } from '@/utils/time'
 
-type MediaMessageType = Extract<MessageType, 'image' | 'sticker'>
 type PeerProfile = Pick<UserDetail, 'id' | 'username' | 'avatar'>
 
 interface ChatTimelineMessage extends ChatMessage {
   clientMsgId?: string
   pending?: boolean
 }
-
-
 
 const route = useRoute()
 const router = useRouter()
@@ -52,7 +48,6 @@ const loadingConversations = ref(true)
 const loadingMessages = ref(false)
 const draftText = ref('')
 const showEmojiPicker = ref(false)
-const uploadingMedia = ref(false)
 const previewImageUrl = ref('')
 const showPreview = ref(false)
 
@@ -161,8 +156,6 @@ const scrollMessagesToBottom = async (behavior: ScrollBehavior = 'smooth') => {
     behavior,
   })
 }
-
-
 
 const appendOrReplaceMessage = (message: ChatMessage, clientMsgId?: string) => {
   const nextMessage: ChatTimelineMessage = { ...message }
@@ -416,12 +409,13 @@ const uploadAndSendFile = async (file: File, previewUrl: string) => {
   const clientMsgId = createClientMsgId()
   const msgType = 'image'
 
-  let width = 200, height = 200
+  let width = 200,
+    height = 200
   try {
     const dim = await readImageMeta(file)
     width = dim.width
     height = dim.height
-  } catch (e) {
+  } catch {
     // Ignore error, use default width/height
   }
 
@@ -450,7 +444,7 @@ const uploadAndSendFile = async (file: File, previewUrl: string) => {
   try {
     const fileHash = await computeFileHash(file)
     const result = await uploadImage(fileHash, file)
-    
+
     const payload: ChatSendMediaEvent = {
       type: 'send',
       to: currentPeerId.value,
@@ -468,16 +462,16 @@ const uploadAndSendFile = async (file: File, previewUrl: string) => {
     if (!sendEvent(payload)) {
       throw new Error('WebSocket not connected')
     }
-    
+
     // Update local preview to actual URL just in case
-    const targetMsg = messages.value.find(m => m.clientMsgId === clientMsgId)
+    const targetMsg = messages.value.find((m) => m.clientMsgId === clientMsgId)
     if (targetMsg && targetMsg.media) {
       targetMsg.media.url = result.imageUrl
     }
   } catch (error) {
     console.error('Failed to send image', error)
     toast.error('图片发送失败')
-    const index = messages.value.findIndex(m => m.clientMsgId === clientMsgId)
+    const index = messages.value.findIndex((m) => m.clientMsgId === clientMsgId)
     if (index >= 0) messages.value.splice(index, 1)
   } finally {
     URL.revokeObjectURL(previewUrl)
@@ -514,8 +508,6 @@ const openMediaPicker = () => {
   }
   fileInputRef.value?.click()
 }
-
-
 
 const handleWsMessage = (event: MessageEvent) => {
   try {
@@ -648,8 +640,6 @@ onClickOutside(emojiPickerRef, () => {
 onMounted(() => {
   void loadConversations()
 })
-
-
 </script>
 
 <template>
@@ -805,9 +795,14 @@ onMounted(() => {
                   <div
                     class="max-w-[65%] text-[14px] transition-opacity"
                     :class="[
-                      (message.type === 'emoji' || message.type === 'image' || message.type === 'sticker')
+                      message.type === 'emoji' ||
+                      message.type === 'image' ||
+                      message.type === 'sticker'
                         ? ''
-                        : 'chat-bubble ' + (message.senderId === currentUserId ? 'chat-bubble-self' : 'chat-bubble-peer')
+                        : 'chat-bubble ' +
+                          (message.senderId === currentUserId
+                            ? 'chat-bubble-self'
+                            : 'chat-bubble-peer'),
                     ]"
                     :style="{ opacity: message.pending ? '0.65' : '1' }"
                   >
@@ -922,7 +917,7 @@ onMounted(() => {
         </div>
       </template>
     </div>
-    
+
     <!-- Image Preview Modal -->
     <ImageViewer v-model="showPreview" :src="previewImageUrl" />
   </div>

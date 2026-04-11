@@ -687,7 +687,6 @@ const syncTabQuery = (tab: TabKey) => {
 
 const switchTab = (tab: TabKey, syncQuery = true) => {
   activeTab.value = tab
-  if (tab !== 'home') bannerPickerOpen.value = false
   if (syncQuery) syncTabQuery(tab)
   if (tab === 'home') {
     if (!homeVideos.value.length) void fetchHomeVideos()
@@ -886,33 +885,37 @@ const privacySettings = [
 
     <template v-else-if="user">
       <!-- Header & Banner -->
-      <div class="h-header relative h-[220px] overflow-hidden">
-        <div class="absolute inset-0 z-0">
+      <div class="h-header relative h-[220px]">
+        <div class="absolute inset-0 z-0 overflow-hidden">
           <img v-if="displayBannerUrl" :src="displayBannerUrl" class="h-full w-full object-cover" />
           <div v-else class="w-full h-full bg-gradient-to-r from-primary to-accent"></div>
         </div>
-        <div class="absolute top-0 left-0 right-0 z-50">
-          <Navbar class="text-white">
-            <template #after-actions="{ actionTextClass }">
-              <button
-                v-if="isSelf && activeTab === 'home'"
-                type="button"
-                class="ml-1 flex h-8 w-8 flex-shrink-0 items-center translate-x-[-80px] translate-y-[150px] justify-center rounded-full border border-white/12 bg-black/20 shadow-[0_18px_34px_-24px_rgba(0,0,0,0.72)] backdrop-blur-md sm:ml-2"
-                :class="[
-                  actionTextClass,
-                  bannerPickerOpen
-                    ? 'border-white/40 bg-black/36 text-white'
-                    : 'hover:border-white/35 hover:bg-black/30',
-                ]"
-                :aria-expanded="bannerPickerOpen"
-                :title="bannerPickerOpen ? '收起横幅面板' : '打开横幅面板'"
-                aria-label="切换横幅面板"
-                @click="toggleBannerPicker"
-              >
-                <Shirt class="h-4 w-4" />
-              </button>
-            </template>
-          </Navbar>
+        <div
+          class="absolute top-0 left-0 right-0 z-50 bg-gradient-to-b from-black/50 to-transparent pb-10 pointer-events-none"
+        >
+          <div class="pointer-events-auto">
+            <Navbar class="text-white">
+              <template #after-actions="{ actionTextClass }">
+                <button
+                  v-if="isSelf"
+                  type="button"
+                  class="ml-1 flex h-8 w-8 flex-shrink-0 items-center translate-x-[-80px] translate-y-[150px] justify-center rounded-full border border-white/12 bg-black/20 shadow-[0_18px_34px_-24px_rgba(0,0,0,0.72)] backdrop-blur-md sm:ml-2"
+                  :class="[
+                    actionTextClass,
+                    bannerPickerOpen
+                      ? 'border-white/40 bg-black/36 text-white'
+                      : 'hover:border-white/35 hover:bg-black/30',
+                  ]"
+                  :aria-expanded="bannerPickerOpen"
+                  :title="bannerPickerOpen ? '收起横幅面板' : '打开横幅面板'"
+                  aria-label="切换横幅面板"
+                  @click="toggleBannerPicker"
+                >
+                  <Shirt class="h-4 w-4" />
+                </button>
+              </template>
+            </Navbar>
+          </div>
         </div>
         <div
           class="absolute bottom-0 left-0 right-0 z-10 flex items-end pb-4 pt-24 bg-gradient-to-t from-black/60 to-transparent"
@@ -1983,7 +1986,7 @@ const privacySettings = [
         <Teleport to="body">
           <transition name="banner-sheet">
             <div
-              v-if="isSelf && activeTab === 'home' && bannerPickerOpen"
+              v-if="isSelf && bannerPickerOpen"
               class="fixed inset-x-0 bottom-0 z-[70] pointer-events-none"
             >
               <div

@@ -6,7 +6,7 @@ import {
   markNotificationsRead,
 } from '@/api/notification'
 import { useNotificationStore } from '@/stores/notification'
-import { formatTimeAgo } from '@/utils/time'
+import { formatDateTimeAgo } from '@/utils/time'
 import { Bell } from 'lucide-vue-next'
 
 const list = ref<NotificationItem[]>([])
@@ -124,7 +124,7 @@ const openLink = (url: string) => window.open(url, '_blank')
             </div>
 
             <div class="flex items-center gap-4 text-xs text-muted-foreground mt-1">
-              <span>{{ formatTimeAgo(Date.now() - 1000 * 60 * 60 * 24) }}</span>
+              <span>{{ formatDateTimeAgo(item.createdAt) }}</span>
             </div>
           </div>
         </div>

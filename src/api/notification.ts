@@ -39,6 +39,12 @@ export interface NotificationItem {
   dynamicID: number
   commentID: number
   isRead: boolean
+  createdAt: string
+}
+
+interface RawNotificationItem extends Omit<NotificationItem, 'createdAt'> {
+  createdAt?: string
+  createAt?: string
 }
 
 /**
@@ -55,6 +61,11 @@ export interface NotificationListParams {
  */
 export interface NotificationListResult {
   list: NotificationItem[]
+  total: number
+}
+
+interface RawNotificationListResult {
+  list: RawNotificationItem[]
   total: number
 }
 
@@ -97,7 +108,21 @@ export interface MarkReadParams {
 export const getNotificationList = (
   params?: NotificationListParams
 ): Promise<NotificationListResult> => {
-  return request.get('/common/notification', { params })
+  return request
+    .get('/common/notification', { params })
+    .then((result: unknown): NotificationListResult => {
+      const raw = result as RawNotificationListResult
+      return {
+        total: raw.total ?? 0,
+        list: (raw.list ?? []).map((item): NotificationItem => {
+          const { createdAt, createAt, ...rest } = item
+          return {
+            ...rest,
+            createdAt: createdAt ?? createAt ?? '',
+          }
+        }),
+      }
+    })
 }
 
 /**

@@ -21,14 +21,28 @@ const isDragging = ref(false)
 const sliderX = ref(0)
 const startX = ref(0)
 const containerRef = ref<HTMLDivElement | null>(null)
+const imageRef = ref<HTMLImageElement | null>(null)
 const isVerified = ref(false)
 const hasError = ref(false)
+const imageScale = ref({ x: 1, y: 1 }) // rendered / natural
+
+const onImageLoad = () => {
+  if (imageRef.value && imageRef.value.naturalWidth > 0) {
+    imageScale.value = {
+      x: imageRef.value.clientWidth / imageRef.value.naturalWidth,
+      y: imageRef.value.clientHeight / imageRef.value.naturalHeight,
+    }
+  }
+}
 
 // Computed
-const tileStyle = computed(() => ({
-  left: `${sliderX.value}px`,
-  top: `${captchaData.value?.thumbY ?? 0}px`,
-}))
+const tileStyle = computed(() => {
+  const thumbY = captchaData.value?.thumbY ?? 0
+  return {
+    left: `${sliderX.value}px`,
+    top: `${Math.round(thumbY * imageScale.value.y)}px`,
+  }
+})
 
 // Methods
 const loadCaptcha = async () => {
@@ -100,10 +114,13 @@ const verifySlide = () => {
   if (sliderX.value > 10) {
     isVerified.value = true
 
+    // Scale sliderX from rendered size to original image coordinates
+    const scaledX = Math.round(sliderX.value / imageScale.value.x)
+
     setTimeout(() => {
       emit('verified', {
         token: captchaData.value?.token || '',
-        x: Math.round(sliderX.value),
+        x: scaledX,
         y: captchaData.value?.thumbY ?? 0,
       })
       emit('update:open', false)
@@ -191,22 +208,30 @@ onMounted(() => {
               </div>
 
               <!-- Captcha Image -->
-              <div v-else-if="captchaData" key="captcha" class="relative">
+              <div v-else-if="captchaData" key="captcha" class="relative overflow-hidden">
                 <!-- Background Image -->
                 <img
+                  ref="imageRef"
                   :src="captchaData.masterImage"
                   alt="滑块验证码"
                   class="w-full select-none"
                   draggable="false"
+                  @load="onImageLoad"
                 />
 
                 <!-- Tile Image (sliding piece) -->
-                <!-- Add subtle drop shadow to it so it separates nicely from the master -->
-                <div class="absolute drop-shadow-[0_2px_8px_rgba(0,0,0,0.4)]" :style="tileStyle">
+                <!-- Scale via CSS transform to match rendered image size -->
+                <div
+                  class="absolute origin-top-left drop-shadow-[0_2px_8px_rgba(0,0,0,0.4)]"
+                  :style="{
+                    ...tileStyle,
+                    transform: `scale(${imageScale.x}, ${imageScale.y})`,
+                  }"
+                >
                   <img
                     :src="captchaData.tileImage"
                     alt="滑块"
-                    class="h-auto w-[44px] select-none"
+                    class="h-auto select-none"
                     draggable="false"
                   />
                   <!-- Inner sleek border to give it a glass cut effect -->
@@ -322,6 +347,7 @@ onMounted(() => {
     transform: translateX(100%);
   }
 }
+
 @keyframes dash {
   to {
     stroke-dashoffset: 0;
@@ -332,6 +358,7 @@ onMounted(() => {
 .fade-leave-active {
   transition: opacity 0.3s ease;
 }
+
 .fade-enter-from,
 .fade-leave-to {
   opacity: 0;

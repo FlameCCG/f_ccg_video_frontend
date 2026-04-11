@@ -500,12 +500,12 @@ watch(searchKeyword, (val) => {
   background-color: var(--color-card);
   border-radius: 12px;
   border: 1px solid var(--color-border);
-  box-shadow: var(--shadow-sm, 0 2px 8px rgba(0, 0, 0, 0.05));
+  box-shadow: var(--shadow-sm, 0 2px 8px rgb(0, 0, 0, 0.05));
   transition: all 0.2s;
 }
 
 html.dark .hist-batch-bar {
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+  box-shadow: 0 4px 12px rgb(0, 0, 0, 0.2);
 }
 
 .hist-batch-count {
@@ -650,12 +650,12 @@ html.dark .hist-batch-bar {
   top: 10px;
   left: 10px;
   z-index: 3;
-  background-color: rgba(0, 0, 0, 0.6);
+  background-color: rgb(0, 0, 0, 0.6);
   border-radius: 6px;
-  border: 1px solid rgba(255, 255, 255, 0.2);
+  border: 1px solid rgb(255, 255, 255, 0.2);
   cursor: pointer;
   padding: 4px;
-  color: rgba(255, 255, 255, 0.7);
+  color: rgb(255, 255, 255, 0.7);
   backdrop-filter: blur(4px);
   transition: all 0.2s;
   display: flex;
@@ -670,7 +670,7 @@ html.dark .hist-batch-bar {
 }
 
 .hist-checkbox:hover {
-  background-color: rgba(0, 0, 0, 0.8);
+  background-color: rgb(0, 0, 0, 0.8);
   color: white;
 }
 
@@ -725,7 +725,7 @@ html.dark .hist-batch-bar {
   left: 0;
   right: 0;
   height: 4px;
-  background: rgba(128, 128, 128, 0.4);
+  background: rgb(128, 128, 128, 0.4);
   z-index: 2;
   backdrop-filter: blur(2px);
 }
@@ -735,7 +735,7 @@ html.dark .hist-batch-bar {
   background: rgb(220, 40, 70);
   border-radius: 0 2px 2px 0;
   transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-  box-shadow: 0 0 4px rgba(220, 40, 70, 0.4);
+  box-shadow: 0 0 4px rgb(220, 40, 70, 0.4);
 }
 
 .hist-item-play-overlay {

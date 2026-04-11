@@ -76,6 +76,25 @@ const groupedHistory = computed<TimeGroup[]>(() => {
   return order.map((label) => ({ label, items: groups[label]! }))
 })
 
+const selectableVideoIds = computed(() => historyItems.value.map((item) => item.videoId))
+
+const hasSelectableItems = computed(() => selectableVideoIds.value.length > 0)
+
+const allVisibleSelected = computed(
+  () =>
+    hasSelectableItems.value &&
+    selectableVideoIds.value.every((videoId) => selectedIds.value.has(videoId))
+)
+
+const syncSelectedIds = () => {
+  const visibleIds = new Set(selectableVideoIds.value)
+  for (const videoId of Array.from(selectedIds.value)) {
+    if (!visibleIds.has(videoId)) {
+      selectedIds.value.delete(videoId)
+    }
+  }
+}
+
 const fetchHistory = async (page = 1) => {
   historyLoading.value = true
   try {
@@ -85,6 +104,7 @@ const fetchHistory = async (page = 1) => {
       keyword: searchKeyword.value.trim() || undefined,
     })
     historyItems.value = page === 1 ? res.list : [...historyItems.value, ...res.list]
+    syncSelectedIds()
     historyTotal.value = res.total
     historyPage.value = page
     historyInitLoaded.value = true
@@ -97,6 +117,7 @@ const fetchHistory = async (page = 1) => {
 }
 
 const handleSearch = () => {
+  selectedIds.value.clear()
   historyItems.value = []
   historyPage.value = 1
   void fetchHistory(1)
@@ -105,6 +126,7 @@ const handleSearch = () => {
 const clearSearch = () => {
   searchKeyword.value = ''
   searchActive.value = false
+  selectedIds.value.clear()
   historyItems.value = []
   void fetchHistory(1)
 }
@@ -126,6 +148,36 @@ const toggleSelect = (videoId: number) => {
   } else {
     selectedIds.value.add(videoId)
   }
+}
+
+const handleItemClick = (videoId: number) => {
+  if (!batchMode.value) return
+  toggleSelect(videoId)
+}
+
+const handleVideoClick = (videoId: number) => {
+  if (batchMode.value) {
+    toggleSelect(videoId)
+    return
+  }
+  goVideo(videoId)
+}
+
+const handleAuthorClick = (authorId: number, videoId: number) => {
+  if (batchMode.value) {
+    toggleSelect(videoId)
+    return
+  }
+  void router.push(`/user/${authorId}`)
+}
+
+const toggleSelectAll = () => {
+  if (!hasSelectableItems.value) return
+  if (allVisibleSelected.value) {
+    selectedIds.value.clear()
+    return
+  }
+  selectedIds.value = new Set(selectableVideoIds.value)
 }
 
 const isSelected = (videoId: number) => selectedIds.value.has(videoId)
@@ -150,6 +202,7 @@ const deleteSingle = async (videoId: number) => {
   try {
     await deletePlayHistory({ videoIds: [videoId] })
     historyItems.value = historyItems.value.filter((i) => i.videoId !== videoId)
+    syncSelectedIds()
     historyTotal.value = Math.max(0, historyTotal.value - 1)
     toast.success('已删除')
   } catch {
@@ -201,14 +254,25 @@ watch(searchKeyword, (val) => {
       <!-- Batch Action Bar -->
       <div v-if="batchMode" class="hist-batch-bar">
         <span class="hist-batch-count">已选择 {{ selectedIds.size }} 项</span>
-        <button
-          class="hist-batch-delete"
-          :disabled="selectedIds.size === 0"
-          @click="deleteSelected"
-        >
-          <Trash2 :size="14" />
-          删除所选
-        </button>
+        <div class="hist-batch-actions">
+          <button
+            class="hist-batch-select-all"
+            :disabled="!hasSelectableItems"
+            @click="toggleSelectAll"
+          >
+            <CheckSquare v-if="allVisibleSelected" :size="16" />
+            <Square v-else :size="16" />
+            {{ allVisibleSelected ? '取消全选' : '全选' }}
+          </button>
+          <button
+            class="hist-batch-delete"
+            :disabled="selectedIds.size === 0"
+            @click="deleteSelected"
+          >
+            <Trash2 :size="16" />
+            删除所选
+          </button>
+        </div>
       </div>
 
       <!-- Timeline Content -->
@@ -225,17 +289,22 @@ watch(searchKeyword, (val) => {
                   v-for="item in group.items"
                   :key="item.videoId"
                   class="hist-item"
-                  :class="{ 'hist-item-selected': isSelected(item.videoId) }"
+                  :class="{
+                    'hist-item-selected': isSelected(item.videoId),
+                    'hist-item-batch': batchMode,
+                  }"
+                  @click="handleItemClick(item.videoId)"
                 >
                   <button
                     v-if="batchMode"
                     class="hist-checkbox"
+                    :class="{ 'hist-checkbox-checked': isSelected(item.videoId) }"
                     @click.stop="toggleSelect(item.videoId)"
                   >
-                    <CheckSquare v-if="isSelected(item.videoId)" :size="18" class="text-primary" />
-                    <Square v-else :size="18" class="text-muted-foreground" />
+                    <CheckSquare v-if="isSelected(item.videoId)" :size="18" />
+                    <Square v-else :size="18" />
                   </button>
-                  <div class="hist-item-cover" @click="goVideo(item.videoId)">
+                  <div class="hist-item-cover" @click.stop="handleVideoClick(item.videoId)">
                     <img :src="item.cover" />
                     <span class="hist-item-dur">{{ fmtDuration(item.duration) }}</span>
                     <div class="hist-item-progress-bar">
@@ -249,11 +318,14 @@ watch(searchKeyword, (val) => {
                     </div>
                   </div>
                   <div class="hist-item-info">
-                    <h4 class="hist-item-title" @click="goVideo(item.videoId)">
+                    <h4 class="hist-item-title" @click.stop="handleVideoClick(item.videoId)">
                       {{ item.title }}
                     </h4>
                     <div class="hist-item-meta">
-                      <span class="hist-item-author" @click="router.push(`/user/${item.authorId}`)">
+                      <span
+                        class="hist-item-author"
+                        @click.stop="handleAuthorClick(item.authorId, item.videoId)"
+                      >
                         {{ item.author }}
                       </span>
                     </div>
@@ -420,40 +492,79 @@ watch(searchKeyword, (val) => {
 .hist-batch-bar {
   display: flex;
   align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
   gap: 16px;
-  padding: 10px 16px;
-  margin-bottom: 12px;
-  background: oklch(var(--primary) / 0.08);
-  border-radius: 8px;
-  border: 1px solid oklch(var(--primary) / 0.15);
+  padding: 12px 20px;
+  margin-bottom: 20px;
+  background-color: var(--color-card);
+  border-radius: 12px;
+  border: 1px solid var(--color-border);
+  box-shadow: var(--shadow-sm, 0 2px 8px rgba(0, 0, 0, 0.05));
+  transition: all 0.2s;
+}
+
+html.dark .hist-batch-bar {
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
 }
 
 .hist-batch-count {
-  font-size: 13px;
-  color: var(--color-primary);
-  font-weight: 500;
+  font-size: 15px;
+  color: var(--color-foreground);
+  font-weight: 600;
 }
 
+.hist-batch-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.hist-batch-select-all,
 .hist-batch-delete {
   display: flex;
   align-items: center;
-  gap: 4px;
-  padding: 5px 14px;
-  border-radius: 6px;
-  font-size: 13px;
-  color: var(--color-primary-foreground);
-  background-color: var(--color-accent);
-  border: none;
+  gap: 6px;
+  padding: 8px 16px;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 500;
   cursor: pointer;
-  transition: background 0.15s;
+  transition: all 0.2s ease;
+}
+
+.hist-batch-select-all {
+  color: var(--color-foreground);
+  background-color: transparent;
+  border: 1px solid var(--color-border);
+}
+
+.hist-batch-select-all:hover:not(:disabled) {
+  background-color: var(--color-secondary);
+  border-color: var(--color-foreground);
+}
+
+.hist-batch-select-all:active:not(:disabled) {
+  transform: scale(0.97);
+}
+
+.hist-batch-delete {
+  color: var(--color-background);
+  background-color: var(--color-foreground);
+  border: 1px solid var(--color-foreground);
 }
 
 .hist-batch-delete:hover:not(:disabled) {
-  background: var(--color-accent);
+  opacity: 0.85;
 }
 
+.hist-batch-delete:active:not(:disabled) {
+  transform: scale(0.97);
+}
+
+.hist-batch-select-all:disabled,
 .hist-batch-delete:disabled {
-  opacity: 0.5;
+  opacity: 0.4;
   cursor: not-allowed;
 }
 
@@ -530,17 +641,50 @@ watch(searchKeyword, (val) => {
   outline-offset: -2px;
 }
 
+.hist-item-batch {
+  cursor: pointer;
+}
+
 .hist-checkbox {
   position: absolute;
-  top: 8px;
-  left: 8px;
+  top: 10px;
+  left: 10px;
   z-index: 3;
-  background-color: var(--color-card);
-  border-radius: 4px;
-  border: none;
+  background-color: rgba(0, 0, 0, 0.6);
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
   cursor: pointer;
-  padding: 2px;
-  box-shadow: var(--shadow-raised);
+  padding: 4px;
+  color: rgba(255, 255, 255, 0.7);
+  backdrop-filter: blur(4px);
+  transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.hist-checkbox-checked {
+  background-color: var(--color-foreground);
+  color: var(--color-background);
+  border-color: var(--color-foreground);
+}
+
+.hist-checkbox:hover {
+  background-color: rgba(0, 0, 0, 0.8);
+  color: white;
+}
+
+.hist-checkbox-checked:hover {
+  background-color: var(--color-foreground);
+  color: var(--color-background);
+  opacity: 0.9;
+}
+
+.hist-item-batch .hist-item-cover,
+.hist-item-batch .hist-item-title,
+.hist-item-batch .hist-item-author,
+.hist-item-batch .hist-item-progress-text {
+  cursor: pointer;
 }
 
 .hist-item-cover {
@@ -580,16 +724,18 @@ watch(searchKeyword, (val) => {
   bottom: 0;
   left: 0;
   right: 0;
-  height: 3px;
-  background: rgb(255 255 255 / 0.3);
+  height: 4px;
+  background: rgba(128, 128, 128, 0.4);
   z-index: 2;
+  backdrop-filter: blur(2px);
 }
 
 .hist-item-progress-fill {
   height: 100%;
-  background-color: var(--color-accent);
+  background: rgb(220, 40, 70);
   border-radius: 0 2px 2px 0;
-  transition: width 0.3s;
+  transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: 0 0 4px rgba(220, 40, 70, 0.4);
 }
 
 .hist-item-play-overlay {
@@ -606,6 +752,10 @@ watch(searchKeyword, (val) => {
 
 .hist-item:hover .hist-item-play-overlay {
   opacity: 1;
+}
+
+.hist-item-batch .hist-item-play-overlay {
+  display: none;
 }
 
 .hist-item-info {
@@ -634,6 +784,10 @@ watch(searchKeyword, (val) => {
   color: var(--color-primary);
 }
 
+.hist-item-batch:hover .hist-item-title {
+  color: var(--color-foreground);
+}
+
 .hist-item-meta {
   display: flex;
   align-items: center;
@@ -649,6 +803,10 @@ watch(searchKeyword, (val) => {
 
 .hist-item-author:hover {
   color: var(--color-primary);
+}
+
+.hist-item-batch .hist-item-author:hover {
+  color: var(--color-muted-foreground);
 }
 
 .hist-item-progress-text {

@@ -10,7 +10,7 @@ const MessageLayout = () => import('@/layouts/MessageLayout.vue')
 const routes: RouteRecordRaw[] = [
   // Routes with VideoLayout (compact header, no banner, no channel nav)
   {
-    path: '/video/:id',
+    path: '/video/:id/:p?',
     component: VideoLayout,
     children: [
       {

@@ -352,6 +352,32 @@ const sendEmojiMessage = (emoji: string) => {
   pushPendingMessage(payload)
 }
 
+const sendStickerMessage = (stickerUrl: string) => {
+  if (!currentPeerId.value) {
+    toast.error('先选择一个会话')
+    return
+  }
+
+  const payload: ChatSendMediaEvent = {
+    type: 'send',
+    to: currentPeerId.value,
+    msgType: 'sticker',
+    media: {
+      url: stickerUrl,
+      mime: stickerUrl.endsWith('.webp') ? 'image/webp' : 'image/png',
+      width: 200,
+      height: 200,
+      size: 0,
+    },
+    clientMsgId: createClientMsgId(),
+  }
+
+  if (!sendEvent(payload)) return
+
+  showEmojiPicker.value = false
+  pushPendingMessage(payload)
+}
+
 const computeFileHash = async (file: File): Promise<string> => {
   const buffer = await file.arrayBuffer()
   const hashBuffer = await crypto.subtle.digest('SHA-256', buffer)
@@ -453,12 +479,6 @@ const handleFileChange = (event: Event) => {
     file,
     previewUrl: URL.createObjectURL(file),
     msgType: 'image',
-  }
-}
-
-const updatePendingMediaType = (msgType: MediaMessageType) => {
-  if (pendingMedia.value) {
-    pendingMedia.value.msgType = msgType
   }
 }
 
@@ -819,32 +839,7 @@ onBeforeUnmount(() => {
                 </button>
               </div>
 
-              <div class="flex items-center justify-between gap-3">
-                <div class="flex items-center gap-1.5">
-                  <button
-                    class="rounded-full px-2.5 py-1 text-[11px] transition-colors"
-                    :class="
-                      pendingMedia.msgType === 'image'
-                        ? 'bg-primary text-primary-foreground'
-                        : 'bg-muted text-muted-foreground hover:text-foreground'
-                    "
-                    @click="updatePendingMediaType('image')"
-                  >
-                    图片
-                  </button>
-                  <button
-                    class="rounded-full px-2.5 py-1 text-[11px] transition-colors"
-                    :class="
-                      pendingMedia.msgType === 'sticker'
-                        ? 'bg-primary text-primary-foreground'
-                        : 'bg-muted text-muted-foreground hover:text-foreground'
-                    "
-                    @click="updatePendingMediaType('sticker')"
-                  >
-                    表情包
-                  </button>
-                </div>
-
+              <div class="flex items-center justify-end gap-3">
                 <button
                   class="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-[12px] text-primary-foreground transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
                   :disabled="uploadingMedia || !connected"
@@ -869,7 +864,7 @@ onBeforeUnmount(() => {
                 </button>
 
                 <div v-if="showEmojiPicker" class="absolute bottom-[calc(100%+8px)] left-0 z-20">
-                  <EmojiPicker @select="sendEmojiMessage" />
+                  <EmojiPicker @select="sendEmojiMessage" @select-sticker="sendStickerMessage" />
                 </div>
               </div>
 

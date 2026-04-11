@@ -19,6 +19,9 @@ node_modules
 dist
 dist-ssr
 *.local
+
+# Live2D models (large binary assets)
+public/live2d-models/
 .playwright-mcp
 
 # Test artifacts

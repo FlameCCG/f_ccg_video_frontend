@@ -45,8 +45,8 @@ const avatarBorderClass = computed(() =>
 
 const searchBgClass = computed(() =>
   props.light
-    ? 'glass-panel text-foreground focus-visible:ring-primary/50'
-    : 'bg-background/20 backdrop-blur-md text-white placeholder:text-white/70 focus-visible:ring-primary/50 ring-1 ring-white/20'
+    ? 'bg-secondary/60 hover:bg-secondary/90 focus-visible:bg-background text-foreground placeholder:text-muted-foreground/70 border border-transparent focus-visible:border-primary/40 focus-visible:ring-[3px] focus-visible:ring-primary/20 shadow-[inset_0_1px_2px_rgba(0,0,0,0.05)] dark:shadow-none backdrop-blur-sm transition-all duration-300'
+    : 'bg-white/20 hover:bg-white/30 dark:bg-black/40 dark:hover:bg-black/60 focus-visible:bg-background text-white placeholder:text-white/70 focus-visible:text-foreground focus-visible:placeholder:text-muted-foreground/70 border border-white/20 dark:border-white/10 focus-visible:border-primary/40 focus-visible:ring-[3px] focus-visible:ring-primary/20 backdrop-blur-md shadow-sm transition-all duration-300'
 )
 
 const router = useRouter()
@@ -214,14 +214,14 @@ const navActions = [
       v-if="!isSearchPage"
       class="absolute left-1/2 top-1/2 z-10 w-full max-w-[500px] -translate-x-1/2 -translate-y-1/2 px-4"
     >
-      <div class="relative w-full">
-        <div class="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-4">
-          <Search class="h-4 w-4 text-muted-foreground" />
+      <div class="relative w-full group">
+        <div class="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-4 z-10 transition-colors duration-300">
+          <Search class="h-4 w-4" :class="[searchQuery ? 'text-primary' : (props.light ? 'text-muted-foreground/80' : 'text-white/80 group-focus-within:text-muted-foreground/80')]" />
         </div>
         <input
           v-model="searchQuery"
           type="text"
-          class="flex h-10 w-full rounded-full border-0 px-4 py-2 pl-10 pr-4 text-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 transition-all"
+          class="flex h-10 w-full rounded-full border-0 px-4 py-2 pl-10 pr-4 text-sm focus-visible:outline-none"
           :class="searchBgClass"
           placeholder="搜索视频、UP主..."
           @input="handleSearchInput"

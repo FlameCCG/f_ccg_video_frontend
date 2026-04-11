@@ -22,6 +22,7 @@ import {
 import { uploadImage } from '@/api/upload'
 import { getUserDetail, type UserDetail } from '@/api/user'
 import EmojiPicker from '@/components/common/EmojiPicker.vue'
+import ImageViewer from '@/components/common/ImageViewer.vue'
 import AppAvatar from '@/components/common/AppAvatar.vue'
 import { useWebSocket } from '@/composables/useWebSocket'
 import { useAuthStore } from '@/stores/auth'
@@ -52,6 +53,15 @@ const loadingMessages = ref(false)
 const draftText = ref('')
 const showEmojiPicker = ref(false)
 const uploadingMedia = ref(false)
+const previewImageUrl = ref('')
+const showPreview = ref(false)
+
+const openImagePreview = (url?: string) => {
+  if (!url) return
+  previewImageUrl.value = url
+  showPreview.value = true
+}
+
 const emojiPickerRef = ref<HTMLElement | null>(null)
 const fileInputRef = ref<HTMLInputElement | null>(null)
 const messageScrollerRef = ref<HTMLElement | null>(null)
@@ -809,12 +819,13 @@ onMounted(() => {
                       <img
                         :src="message.media?.url"
                         :alt="message.type === 'sticker' ? '表情包消息' : '图片消息'"
-                        class="rounded-xl object-cover"
+                        class="rounded-xl object-cover cursor-pointer hover:opacity-90 transition-opacity"
                         :class="
                           message.type === 'sticker'
                             ? 'max-h-[200px] max-w-[200px]'
                             : 'max-h-[280px] max-w-full'
                         "
+                        @click="openImagePreview(message.media?.url)"
                       />
                     </div>
 
@@ -911,6 +922,9 @@ onMounted(() => {
         </div>
       </template>
     </div>
+    
+    <!-- Image Preview Modal -->
+    <ImageViewer v-model="showPreview" :src="previewImageUrl" />
   </div>
 </template>
 

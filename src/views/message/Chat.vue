@@ -36,11 +36,7 @@ interface ChatTimelineMessage extends ChatMessage {
   pending?: boolean
 }
 
-interface PendingMediaState {
-  file: File
-  previewUrl: string
-  msgType: MediaMessageType
-}
+
 
 const route = useRoute()
 const router = useRouter()
@@ -56,7 +52,6 @@ const loadingMessages = ref(false)
 const draftText = ref('')
 const showEmojiPicker = ref(false)
 const uploadingMedia = ref(false)
-const pendingMedia = ref<PendingMediaState | null>(null)
 const emojiPickerRef = ref<HTMLElement | null>(null)
 const fileInputRef = ref<HTMLInputElement | null>(null)
 const messageScrollerRef = ref<HTMLElement | null>(null)
@@ -157,12 +152,7 @@ const scrollMessagesToBottom = async (behavior: ScrollBehavior = 'smooth') => {
   })
 }
 
-const clearPendingMedia = () => {
-  if (pendingMedia.value) {
-    URL.revokeObjectURL(pendingMedia.value.previewUrl)
-  }
-  pendingMedia.value = null
-}
+
 
 const appendOrReplaceMessage = (message: ChatMessage, clientMsgId?: string) => {
   const nextMessage: ChatTimelineMessage = { ...message }
@@ -404,47 +394,99 @@ const readImageMeta = (file: File): Promise<Pick<ChatMessageMedia, 'width' | 'he
     image.src = previewUrl
   })
 
-const sendPendingMedia = async () => {
-  if (!currentPeerId.value || !pendingMedia.value) return
+const uploadAndSendFile = async (file: File, previewUrl: string) => {
+  if (!currentPeerId.value) return
 
   if (!connected.value) {
     toast.error('消息连接中，请稍后再试')
+    URL.revokeObjectURL(previewUrl)
     return
   }
 
-  const mediaToSend = pendingMedia.value
-  uploadingMedia.value = true
+  const clientMsgId = createClientMsgId()
+  const msgType = 'image'
+
+  let width = 200, height = 200
+  try {
+    const dim = await readImageMeta(file)
+    width = dim.width
+    height = dim.height
+  } catch (e) {
+    // Ignore error, use default width/height
+  }
+
+  const pendingMessage: ChatTimelineMessage = {
+    id: clientMsgId,
+    clientMsgId,
+    pending: true,
+    conversationId: buildConversationId(currentPeerId.value),
+    senderId: currentUserId.value,
+    receiverId: currentPeerId.value,
+    type: msgType,
+    media: {
+      url: previewUrl,
+      mime: file.type || 'image/png',
+      width,
+      height,
+      size: file.size,
+    },
+    createdAt: new Date().toISOString(),
+  }
+
+  messages.value.push(pendingMessage)
+  updateConversationByMessage(pendingMessage, false)
+  void scrollMessagesToBottom()
 
   try {
-    const [fileHash, dimensions] = await Promise.all([
-      computeFileHash(mediaToSend.file),
-      readImageMeta(mediaToSend.file),
-    ])
-    const result = await uploadImage(fileHash, mediaToSend.file)
+    const fileHash = await computeFileHash(file)
+    const result = await uploadImage(fileHash, file)
+    
     const payload: ChatSendMediaEvent = {
       type: 'send',
       to: currentPeerId.value,
-      msgType: mediaToSend.msgType,
+      msgType: 'image',
       media: {
         url: result.imageUrl,
-        mime: mediaToSend.file.type || 'image/png',
-        width: dimensions.width,
-        height: dimensions.height,
-        size: mediaToSend.file.size,
+        mime: file.type || 'image/png',
+        width,
+        height,
+        size: file.size,
       },
-      clientMsgId: createClientMsgId(),
+      clientMsgId,
     }
 
-    if (!sendEvent(payload)) return
-
-    pushPendingMessage(payload)
-    clearPendingMedia()
+    if (!sendEvent(payload)) {
+      throw new Error('WebSocket not connected')
+    }
+    
+    // Update local preview to actual URL just in case
+    const targetMsg = messages.value.find(m => m.clientMsgId === clientMsgId)
+    if (targetMsg && targetMsg.media) {
+      targetMsg.media.url = result.imageUrl
+    }
   } catch (error) {
-    console.error('Failed to send media message', error)
-    toast.error('图片/表情包发送失败')
+    console.error('Failed to send image', error)
+    toast.error('图片发送失败')
+    const index = messages.value.findIndex(m => m.clientMsgId === clientMsgId)
+    if (index >= 0) messages.value.splice(index, 1)
   } finally {
-    uploadingMedia.value = false
+    URL.revokeObjectURL(previewUrl)
   }
+}
+
+const handleFileChange = (event: Event) => {
+  const target = event.target as HTMLInputElement
+  const file = target.files?.[0]
+  target.value = ''
+
+  if (!file) return
+  if (!file.type.startsWith('image/')) {
+    toast.error('仅支持发送图片文件')
+    return
+  }
+
+  const previewUrl = URL.createObjectURL(file)
+  void uploadAndSendFile(file, previewUrl)
 }
 
 const selectConversation = (peerId: number) => {
@@ -463,24 +505,7 @@ const openMediaPicker = () => {
   fileInputRef.value?.click()
 }
 
-const handleFileChange = (event: Event) => {
-  const target = event.target as HTMLInputElement
-  const file = target.files?.[0]
-  target.value = ''
 
-  if (!file) return
-  if (!file.type.startsWith('image/')) {
-    toast.error('仅支持发送图片或表情包文件')
-    return
-  }
-
-  clearPendingMedia()
-  pendingMedia.value = {
-    file,
-    previewUrl: URL.createObjectURL(file),
-    msgType: 'image',
-  }
-}
 
 const handleWsMessage = (event: MessageEvent) => {
   try {
@@ -596,12 +621,10 @@ watch(
     if (!nextPeerId) {
       currentPeerId.value = null
       messages.value = []
-      clearPendingMedia()
       return
     }
 
     currentPeerId.value = Number(nextPeerId)
-    clearPendingMedia()
     void ensurePeerProfile(currentPeerId.value)
     void loadMessages(currentPeerId.value)
   },
@@ -616,9 +639,7 @@ onMounted(() => {
   void loadConversations()
 })
 
-onBeforeUnmount(() => {
-  clearPendingMedia()
-})
+
 </script>
 
 <template>
@@ -772,10 +793,12 @@ onBeforeUnmount(() => {
                   </button>
 
                   <div
-                    class="chat-bubble max-w-[65%] text-[14px] transition-opacity"
-                    :class="
-                      message.senderId === currentUserId ? 'chat-bubble-self' : 'chat-bubble-peer'
-                    "
+                    class="max-w-[65%] text-[14px] transition-opacity"
+                    :class="[
+                      (message.type === 'emoji' || message.type === 'image' || message.type === 'sticker')
+                        ? ''
+                        : 'chat-bubble ' + (message.senderId === currentUserId ? 'chat-bubble-self' : 'chat-bubble-peer')
+                    ]"
                     :style="{ opacity: message.pending ? '0.65' : '1' }"
                   >
                     <div v-if="message.type === 'emoji'" class="text-[30px] leading-none">
@@ -810,47 +833,6 @@ onBeforeUnmount(() => {
 
           <!-- Composer -->
           <div class="shrink-0 border-t border-border/40 bg-card px-4 py-3">
-            <!-- Pending Media Preview -->
-            <div
-              v-if="pendingMedia"
-              class="mb-3 rounded-xl border border-border/50 bg-muted/30 p-3"
-            >
-              <div class="mb-2 flex items-start justify-between gap-3">
-                <div class="flex items-center gap-3">
-                  <img
-                    :src="pendingMedia.previewUrl"
-                    alt="待发送图片预览"
-                    class="h-14 w-14 rounded-lg object-cover"
-                  />
-                  <div>
-                    <div class="text-[13px] font-medium text-foreground">
-                      {{ pendingMedia.file.name }}
-                    </div>
-                    <div class="mt-0.5 text-[11px] text-muted-foreground">
-                      {{ Math.max(1, Math.round(pendingMedia.file.size / 1024)) }} KB
-                    </div>
-                  </div>
-                </div>
-                <button
-                  class="rounded-full p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-                  @click="clearPendingMedia"
-                >
-                  <X class="h-4 w-4" />
-                </button>
-              </div>
-
-              <div class="flex items-center justify-end gap-3">
-                <button
-                  class="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-[12px] text-primary-foreground transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
-                  :disabled="uploadingMedia || !connected"
-                  @click="sendPendingMedia"
-                >
-                  <Loader2 v-if="uploadingMedia" class="h-3.5 w-3.5 animate-spin" />
-                  <span>{{ uploadingMedia ? '上传中...' : '发送' }}</span>
-                </button>
-              </div>
-            </div>
-
             <!-- Tool bar -->
             <div class="mb-2 flex items-center gap-1">
               <div ref="emojiPickerRef" class="relative">

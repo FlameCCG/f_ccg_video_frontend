@@ -8,9 +8,15 @@ import { getDanmuList, type DanmuItem, type PlayerDanmuPayload } from '@/api/dan
 import type { VideoResourceItem } from '@/api/video'
 import { toast } from 'vue-sonner'
 
-const props = defineProps<{
-  partId?: number
-}>()
+const props = withDefaults(
+  defineProps<{
+    partId?: number
+    enableDanmu?: boolean
+  }>(),
+  {
+    enableDanmu: true,
+  }
+)
 
 const emit = defineEmits<{
   ready: [instance: Artplayer]
@@ -90,8 +96,8 @@ const primaryUrl = computed(() => {
   return defaultResource.value?.fileUrl ?? resources.value[0]?.fileUrl ?? ''
 })
 
-let progressSaveTimer: ReturnType<typeof setInterval> | null = null
-const PROGRESS_SAVE_INTERVAL = 10000
+let progressSaveTimer: ReturnType<typeof setTimeout> | null = null
+const PROGRESS_SAVE_INTERVAL = 15000
 
 let qualitySwitchTime = 0
 let qualitySwitchTimer: ReturnType<typeof setTimeout> | null = null
@@ -138,6 +144,7 @@ const getDanmuPlugin = (art: Artplayer | null | undefined = artRef.value) => {
 const loadDanmuList = async (): Promise<
   { id?: string; text: string; time: number; color: string; mode: 0 | 1 | 2 }[]
 > => {
+  if (!props.enableDanmu) return []
   const vid = videoStore.currentVideo?.id
   if (!vid) return []
   const hasParts = (videoStore.currentVideo?.parts?.length ?? 0) > 0
@@ -590,21 +597,23 @@ const initPlayer = () => {
     playsInline: true,
     layers: [],
     settings,
-    plugins: [
-      artplayerPluginDanmuku({
-        danmuku: loadDanmuList,
-        speed: 5,
-        opacity: 1,
-        fontSize: 18,
-        color: '#ffffff',
-        mode: 0,
-        antiOverlap: true,
-        synchronousPlayback: true,
-        emitter: false,
-        heatmap: true,
-        maxLength: 200,
-      }),
-    ],
+    plugins: props.enableDanmu
+      ? [
+          artplayerPluginDanmuku({
+            danmuku: loadDanmuList,
+            speed: 5,
+            opacity: 1,
+            fontSize: 18,
+            color: '#ffffff',
+            mode: 0,
+            antiOverlap: true,
+            synchronousPlayback: true,
+            emitter: false,
+            heatmap: true,
+            maxLength: 200,
+          }),
+        ]
+      : [],
   }
 
   const art = new Artplayer(option)
@@ -628,11 +637,30 @@ const initPlayer = () => {
   })
 
   art.on('video:play', () => {
-    videoStore.updatePlayerState({ playing: true })
+    videoStore.updatePlayerState({
+      currentTime: art.currentTime,
+      duration: art.duration,
+      playing: true,
+    })
+    resetProgressSaveCycle(art, { immediate: true })
   })
 
   art.on('video:pause', () => {
-    videoStore.updatePlayerState({ playing: false })
+    videoStore.updatePlayerState({
+      currentTime: art.currentTime,
+      duration: art.duration,
+      playing: false,
+    })
+    resetProgressSaveCycle(art, { immediate: true })
+  })
+
+  art.on('video:ended', () => {
+    videoStore.updatePlayerState({
+      currentTime: art.currentTime,
+      duration: art.duration,
+      playing: false,
+    })
+    resetProgressSaveCycle(art, { immediate: true })
   })
 
   art.on('video:seeking', () => {
@@ -660,10 +688,6 @@ const initPlayer = () => {
   })
 
   artRef.value = art
-  // 唯一进度保存注册点：等 ready 后调，保证 art 已可播放
-  art.on('ready', () => {
-    if (artRef.value) setupProgressSave(artRef.value)
-  })
   emit('ready', art)
 
   const danmuPlugin = getDanmuPlugin(art)
@@ -671,37 +695,58 @@ const initPlayer = () => {
     emit('danmuPlugin', danmuPlugin)
   }
 
-  setupDanmuVisibleObserver()
+  if (props.enableDanmu) {
+    setupDanmuVisibleObserver()
 
-  const container = containerRef.value
-  if (container) {
-    setupDanmuHover(container)
+    const container = containerRef.value
+    if (container) {
+      setupDanmuHover(container)
+    }
   }
 }
 
-const setupProgressSave = (art: Artplayer) => {
-  if (!authStore.isLoggedIn) return
-  // 幂等：先清旧 timer，避免重复创建
+const clearProgressSaveTimer = () => {
   if (progressSaveTimer) {
-    clearInterval(progressSaveTimer)
+    clearTimeout(progressSaveTimer)
     progressSaveTimer = null
   }
-  progressSaveTimer = setInterval(() => {
-    if (videoStore.videoId && art.playing) {
-      videoStore.updatePlayerState({
-        currentTime: art.currentTime,
-        duration: art.duration,
-      })
-      void videoStore.saveProgress()
-    }
+}
+
+const saveCurrentProgress = (art: Artplayer) => {
+  if (!authStore.isLoggedIn || !videoStore.videoId) return
+
+  videoStore.updatePlayerState({
+    currentTime: art.currentTime,
+    duration: art.duration,
+    playing: art.playing,
+  })
+  void videoStore.saveProgress()
+}
+
+const scheduleProgressSave = (art: Artplayer) => {
+  clearProgressSaveTimer()
+  if (!authStore.isLoggedIn || !videoStore.videoId || !art.playing) return
+
+  progressSaveTimer = setTimeout(() => {
+    saveCurrentProgress(art)
+    scheduleProgressSave(art)
   }, PROGRESS_SAVE_INTERVAL)
 }
 
-const destroyPlayer = () => {
-  if (progressSaveTimer) {
-    clearInterval(progressSaveTimer)
-    progressSaveTimer = null
+const resetProgressSaveCycle = (art: Artplayer, options?: { immediate?: boolean }) => {
+  clearProgressSaveTimer()
+
+  if (options?.immediate) {
+    saveCurrentProgress(art)
   }
+
+  if (art.playing) {
+    scheduleProgressSave(art)
+  }
+}
+
+const destroyPlayer = () => {
+  clearProgressSaveTimer()
   heldDanmu = null
   currentHoverEl = null
   danmuMetaMap.clear()
@@ -722,7 +767,7 @@ const destroyPlayer = () => {
 }
 
 watch(
-  () => [primaryUrl.value, videoStore.currentVideo?.id],
+  () => [primaryUrl.value, videoStore.currentVideo?.id, props.partId, props.enableDanmu],
   () => {
     destroyPlayer()
     if (primaryUrl.value) {

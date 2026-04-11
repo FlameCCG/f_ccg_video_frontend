@@ -575,7 +575,7 @@ const navActions = [
 .search-bar-solid {
   background-color: color-mix(in oklch, var(--color-secondary) 60%, transparent);
   color: var(--color-foreground);
-  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.05);
+  box-shadow: inset 0 1px 2px rgb(0, 0, 0, 0.05);
 }
 
 :global(.dark) .search-bar-solid {
@@ -592,28 +592,28 @@ const navActions = [
 
 /* 2. Glass variant (for homepage / banner overlay headers) */
 .search-bar-glass {
-  background-color: rgba(255, 255, 255, 0.2);
-  border-color: rgba(255, 255, 255, 0.2);
+  background-color: rgb(255, 255, 255, 0.2);
+  border-color: rgb(255, 255, 255, 0.2);
   color: #ffffff;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+  box-shadow: 0 1px 2px rgb(0, 0, 0, 0.05);
   backdrop-filter: blur(12px);
 }
 
 .search-bar-glass:hover:not(:focus-visible) {
-  background-color: rgba(255, 255, 255, 0.3);
+  background-color: rgb(255, 255, 255, 0.3);
 }
 
 .search-bar-glass::placeholder {
-  color: rgba(255, 255, 255, 0.7);
+  color: rgb(255, 255, 255, 0.7);
 }
 
 /* Dark mode overrides for glass variant */
 :global(.dark) .search-bar-glass {
-  background-color: rgba(0, 0, 0, 0.4);
-  border-color: rgba(255, 255, 255, 0.1);
+  background-color: rgb(0, 0, 0, 0.4);
+  border-color: rgb(255, 255, 255, 0.1);
 }
 
 :global(.dark) .search-bar-glass:hover:not(:focus-visible) {
-  background-color: rgba(0, 0, 0, 0.6);
+  background-color: rgb(0, 0, 0, 0.6);
 }
 </style>

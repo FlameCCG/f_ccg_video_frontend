@@ -4,15 +4,23 @@ import { Activity, Flame } from 'lucide-vue-next'
 import { getPartitions, type Partition } from '@/api/video'
 
 const partitions = ref<Partition[]>([])
+const failed = ref(false)
+const loading = ref(false)
 
-onMounted(async () => {
+const loadPartitions = async () => {
+  if (loading.value) return
+  loading.value = true
+  failed.value = false
   try {
     const data = await getPartitions()
     partitions.value = data
-  } catch (error) {
-    console.error('Failed to fetch partitions:', error)
+  } catch {
+    failed.value = true
+  } finally {
+    loading.value = false
   }
-})
+}
+onMounted(loadPartitions)
 
 const fixedLinks = [
   {
@@ -27,7 +35,9 @@ const fixedLinks = [
 
 <template>
   <div class="w-full bg-background py-3">
-    <div class="mx-auto flex max-w-[1800px] items-center px-4 sm:px-6 lg:px-8">
+    <div
+      class="mx-auto flex max-w-[1800px] flex-col gap-3 px-4 sm:px-6 lg:flex-row lg:items-center lg:gap-0 lg:px-8"
+    >
       <!-- Fixed Links (Dynamic, Hot) -->
       <div class="flex shrink-0 items-center gap-6">
         <router-link
@@ -52,16 +62,26 @@ const fixedLinks = [
 
       <!-- Partitions - Two rows -->
       <div
-        class="grid flex-1 grid-cols-[repeat(11,minmax(0,1fr))] gap-y-3 gap-x-2.5 pl-6 border-l border-border/50 ml-6"
+        class="flex min-w-0 gap-2 overflow-x-auto pb-1 lg:ml-6 lg:grid lg:flex-1 lg:grid-cols-[repeat(11,minmax(0,1fr))] lg:gap-x-2.5 lg:gap-y-3 lg:border-l lg:border-border/50 lg:pb-0 lg:pl-6"
+        aria-label="视频分区"
       >
         <router-link
           v-for="partition in partitions"
           :key="partition.id"
           :to="`/partition/${partition.id}`"
-          class="flex h-[26px] items-center justify-center rounded-md bg-secondary px-2 text-[13px] tracking-wide text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground cursor-pointer"
+          class="flex min-h-11 shrink-0 items-center justify-center whitespace-nowrap rounded-md bg-secondary px-3 text-[13px] tracking-wide text-muted-foreground hover:bg-accent hover:text-accent-foreground lg:min-h-8 lg:px-2"
         >
           {{ partition.name }}
         </router-link>
+        <button
+          v-if="failed"
+          type="button"
+          class="min-h-11 shrink-0 px-3 text-sm text-muted-foreground"
+          :disabled="loading"
+          @click="loadPartitions"
+        >
+          分区加载失败，点击重试
+        </button>
       </div>
     </div>
   </div>

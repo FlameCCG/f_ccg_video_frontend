@@ -6,6 +6,7 @@ import { useThemeStore } from '@/stores/theme'
 import { User, LogOut, FileVideo, Sun, Moon } from 'lucide-vue-next'
 import AppAvatar from '@/components/common/AppAvatar.vue'
 import { levelColor, formatCount } from '@/utils/format'
+import { getThemeTransitionOrigin } from '@/utils/theme-transition'
 
 const emit = defineEmits<{
   (e: 'close'): void
@@ -15,7 +16,7 @@ const router = useRouter()
 const authStore = useAuthStore()
 const themeStore = useThemeStore()
 
-const isDark = computed(() => themeStore.theme === 'dark')
+const isDark = computed(() => themeStore.isDark)
 
 const navigate = (target: RouteLocationRaw) => {
   emit('close')
@@ -35,8 +36,8 @@ const handleLogout = () => {
   void router.push('/')
 }
 
-const toggleTheme = () => {
-  themeStore.setTheme(isDark.value ? 'light' : 'dark')
+const toggleTheme = (event: MouseEvent) => {
+  themeStore.toggleTheme(getThemeTransitionOrigin(event))
 }
 </script>
 
@@ -67,8 +68,8 @@ const toggleTheme = () => {
       </div>
       <div class="coin-row">
         <div class="coin-item">
-          硬币: <span class="font-medium mr-3">{{ authStore.coinCount }}</span> B币:
-          <span class="font-medium">0</span>
+          硬币: <span class="tabular mr-3 font-medium">{{ authStore.coinCount }}</span> B币:
+          <span class="tabular font-medium">0</span>
         </div>
       </div>
     </div>
@@ -76,15 +77,15 @@ const toggleTheme = () => {
     <!-- Stats -->
     <div class="panel-stats">
       <div class="stat-item" @click="navigateToUserTab('following')">
-        <span class="stat-value">{{ formatCount(authStore.user?.followCount ?? 0) }}</span>
+        <span class="stat-value tabular">{{ formatCount(authStore.user?.followCount ?? 0) }}</span>
         <span class="stat-label">关注</span>
       </div>
       <div class="stat-item" @click="navigateToUserTab('fans')">
-        <span class="stat-value">{{ formatCount(authStore.user?.fansCount ?? 0) }}</span>
+        <span class="stat-value tabular">{{ formatCount(authStore.user?.fansCount ?? 0) }}</span>
         <span class="stat-label">粉丝</span>
       </div>
       <div class="stat-item" @click="navigateToUserTab('dynamic')">
-        <span class="stat-value">{{ formatCount(authStore.user?.dynamicCount ?? 0) }}</span>
+        <span class="stat-value tabular">{{ formatCount(authStore.user?.dynamicCount ?? 0) }}</span>
         <span class="stat-label">动态</span>
       </div>
     </div>
@@ -130,7 +131,7 @@ const toggleTheme = () => {
   color: var(--color-popover-foreground);
   box-shadow: var(--shadow-overlay);
   border: 1px solid var(--color-border);
-  animation: panel-enter 0.25s cubic-bezier(0.22, 1, 0.36, 1);
+  animation: panel-enter var(--duration-normal) var(--ease-out-quint) both;
 }
 
 .panel-avatar-wrap {
@@ -140,7 +141,7 @@ const toggleTheme = () => {
   margin-left: -40px;
   z-index: 20;
   cursor: pointer;
-  animation: avatar-enter 0.4s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+  animation: avatar-enter var(--duration-slow) var(--ease-out-expo) both;
 }
 
 :deep(.panel-avatar) {
@@ -171,7 +172,7 @@ const toggleTheme = () => {
   font-weight: 700;
   cursor: pointer;
   color: var(--color-foreground);
-  transition: color 0.15s;
+  transition: color var(--duration-fast) linear;
 
   &-row {
     display: flex;
@@ -198,7 +199,7 @@ const toggleTheme = () => {
   font-size: 10px;
   line-height: 1;
   font-weight: 800;
-  color: white;
+  color: var(--signal-foreground);
   letter-spacing: 0.05em;
   font-style: italic;
 }
@@ -221,8 +222,8 @@ const toggleTheme = () => {
   align-items: center;
   cursor: pointer;
   padding: 6px 0;
-  border-radius: 6px;
-  transition: background 0.15s;
+  border-radius: var(--radius-sm, 0.375rem);
+  transition: background-color var(--duration-fast) var(--ease-out-quart);
 
   &:hover {
     background-color: var(--color-muted);
@@ -272,7 +273,7 @@ const toggleTheme = () => {
   border-radius: 4px;
   font-weight: 500;
   cursor: pointer;
-  transition: opacity 0.2s;
+  transition: opacity var(--duration-fast) linear;
 
   &:hover {
     opacity: 0.9;
@@ -293,8 +294,8 @@ const toggleTheme = () => {
   font-size: 14px;
   cursor: pointer;
   transition:
-    background 0.15s,
-    color 0.15s;
+    background-color var(--duration-fast) var(--ease-out-quart),
+    color var(--duration-fast) linear;
   color: var(--color-foreground);
 
   &:hover {
@@ -328,11 +329,10 @@ const toggleTheme = () => {
   }
 }
 
-/* User Info Section */
-
-/* Stats Section */
-
-/* VIP Banner Section */
-
-/* Menu Section */
+@media (prefers-reduced-motion: reduce) {
+  .user-hover-panel,
+  .panel-avatar-wrap {
+    animation: none;
+  }
+}
 </style>

@@ -2,60 +2,42 @@
 import { ref, onMounted, computed, onBeforeUnmount, defineAsyncComponent } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useRouter, useRoute } from 'vue-router'
-import {
-  Search,
-  Mail,
-  Upload,
-  Crown,
-  Zap,
-  Star,
-  History,
-  Lightbulb,
-  X,
-  Trash2,
-} from 'lucide-vue-next'
+import { Menu, Mail, Upload, Crown, Zap, Star, History, Lightbulb } from 'lucide-vue-next'
 import { Button } from '@/components/ui/button'
-import {
-  getSearchSuggest,
-  getHotSearchKeywords,
-  type SearchSuggestItem,
-  type HotKeywordItem,
-} from '@/api/video'
 import { getDynamicCounts } from '@/api/dynamic'
-import { useAuthStore } from '@/stores/auth'
+import { useSubmissionAccess, SUBMISSION_DISABLED_MESSAGE } from '@/composables/useSubmissionAccess'
 import { useNotificationStore } from '@/stores/notification'
-import { useSearchHistory } from '@/composables/useSearchHistory'
-import { useDebounceFn } from '@vueuse/core'
+import SearchBox from '@/components/search/SearchBox.vue'
 import UserHoverPanel from '@/components/layout/UserHoverPanel.vue'
 import AppAvatar from '@/components/common/AppAvatar.vue'
-import DOMPurify from 'dompurify'
+import { toast } from 'vue-sonner'
 
 /** 登录 Dialog 按需加载，避免首屏同步打包 Lain/验证码等重依赖 */
 const AuthDialog = defineAsyncComponent(() => import('@/components/auth/AuthDialog.vue'))
 
 const props = withDefaults(defineProps<{ light?: boolean }>(), { light: false })
 
+/**
+ * 顶栏叠在 banner 视频上时使用 --media-overlay-text，由明暗主题变量提供文字颜色。
+ */
 const navActionTextClass = computed(() =>
   props.light
-    ? 'text-muted-foreground transition-colors hover:text-foreground'
-    : 'text-white/90 transition-colors hover:text-white'
+    ? 't-tint text-muted-foreground hover:text-foreground'
+    : 't-tint text-[color-mix(in_oklch,var(--media-overlay-text)_88%,transparent)] hover:text-[var(--media-overlay-text)]'
 )
 
 const avatarBorderClass = computed(() =>
   props.light
     ? 'border-border group-hover:border-primary'
-    : 'border-white/50 group-hover:border-white'
+    : 'border-[color-mix(in_oklch,var(--media-overlay-text)_50%,transparent)] group-hover:border-[var(--media-overlay-text)]'
 )
-
-const searchContainerClass = computed(() => (props.light ? 'search-bar-solid' : 'search-bar-glass'))
 
 const router = useRouter()
 const route = useRoute()
-const authStore = useAuthStore()
+const { authStore, submissionBlocked } = useSubmissionAccess()
 const isSearchPage = computed(() => route.name === 'search')
 const notificationStore = useNotificationStore()
 const { counts } = storeToRefs(notificationStore)
-const { history, addHistory, removeHistoryItem, clearHistory } = useSearchHistory()
 
 // Auth dialog state — 首次打开后再挂载，关闭保留实例以便二次打开即时
 const authDialogOpen = ref(false)
@@ -72,9 +54,6 @@ const openLoginDialog = () => openAuthDialog('login')
 
 // State
 const searchQuery = ref('')
-const searchSuggestions = ref<SearchSuggestItem[]>([])
-const showSuggestions = ref(false)
-const hotKeywords = ref<HotKeywordItem[]>([])
 const dynamicUnreadCount = ref(0)
 const totalMessageUnread = computed(() => {
   const c = counts.value
@@ -96,20 +75,8 @@ const scheduleCloseMessagePanel = () => {
   }, 200)
 }
 
-// Fetch hot keywords on mount (no auth required)
-const fetchHotKeywords = async () => {
-  try {
-    hotKeywords.value = await getHotSearchKeywords()
-  } catch {
-    /* noop */
-  }
-}
-
 // Fetch Data
 onMounted(async () => {
-  // Hot keywords (public, no auth needed)
-  void fetchHotKeywords()
-
   if (!authStore.isLoggedIn) return
   try {
     const [, dynResult] = await Promise.allSettled([
@@ -124,62 +91,9 @@ onMounted(async () => {
   }
 })
 
-// Search Logic
-// 短防抖：输入即联想，同时合并连打请求；用序号丢弃过期响应
-let suggestSeq = 0
-const fetchSuggestions = useDebounceFn(async (prefix: string) => {
-  const q = prefix.trim()
-  if (!q) {
-    searchSuggestions.value = []
-    return
-  }
-  const seq = ++suggestSeq
-  try {
-    const list = await getSearchSuggest({ prefix: q })
-    if (seq !== suggestSeq) return
-    searchSuggestions.value = list.map((item) => ({
-      ...item,
-      highlight: ensureSuggestHighlight(item, q),
-    }))
-  } catch (error) {
-    if (seq !== suggestSeq) return
-    console.error('Failed to fetch suggestions:', error)
-  }
-}, 100)
-
-/** 后端未返回 <em> 时前端兜底高亮字面匹配段 */
-const ensureSuggestHighlight = (item: SearchSuggestItem, query: string) => {
-  if (item.highlight?.includes('<em>')) return item.highlight
-  const value = item.value || ''
-  if (!query || !value) return value
-  const idx = value.toLowerCase().indexOf(query.toLowerCase())
-  if (idx < 0) return value
-  return value.slice(0, idx) + '<em>' + value.slice(idx, idx + query.length) + '</em>' + value.slice(idx + query.length)
-}
-
-const handleSearchInput = () => {
-  showSuggestions.value = true
-  const q = searchQuery.value.trim()
-  // 单字也实时联想（中文「毛」、英/数「c」）
-  if (!q) {
-    searchSuggestions.value = []
-    return
-  }
-  void fetchSuggestions(searchQuery.value)
-}
-
 const handleSearch = (query: string) => {
-  if (!query.trim()) return
-  addHistory(query)
-  showSuggestions.value = false
   searchQuery.value = query
   void router.push({ name: 'search', query: { keyword: query } })
-}
-
-const handleBlur = () => {
-  setTimeout(() => {
-    showSuggestions.value = false
-  }, 200)
 }
 
 // Avatar hover panel
@@ -215,147 +129,71 @@ onMounted(() => {
 onBeforeUnmount(() => {
   document.removeEventListener('click', handleClickOutside)
   if (hoverTimer) clearTimeout(hoverTimer)
+  if (messageHoverTimer) clearTimeout(messageHoverTimer)
 })
-
-const sanitizeHighlight = (html: string) => {
-  return DOMPurify.sanitize(html, {
-    ALLOWED_TAGS: ['em'],
-    ALLOWED_ATTR: [],
-  })
-}
 
 // Nav action items
 const navActions = [
-  { name: '大会员', icon: Crown, path: '/vip', mobileHidden: true },
+  { name: '大会员', icon: Crown, path: '/vip', mobileHidden: true, comingSoon: true },
   { name: '消息', icon: Mail, path: '/message', badge: 'message' as const, isMessage: true },
   { name: '动态', icon: Zap, path: '/dynamic', badge: 'dynamic' as const },
   { name: '收藏', icon: Star, path: '/favorites' },
   { name: '历史', icon: History, path: '/history', mobileHidden: true },
   { name: '创作中心', icon: Lightbulb, path: '/creator', mobileHidden: true },
 ]
+
+/** 未开放的功能入口（大会员等）：点击只提示不跳转，/vip 路由并不存在 */
+const handleNavActionClick = (action: (typeof navActions)[number], e?: MouseEvent) => {
+  if (!action.comingSoon) return
+  e?.preventDefault()
+  toast.info(`${action.name}功能即将上线`)
+}
+const closeMobileMenu = (event: MouseEvent) => {
+  ;(event.currentTarget as HTMLElement).closest('details')?.removeAttribute('open')
+}
+const handleMobileAction = (action: (typeof navActions)[number], event: MouseEvent) => {
+  closeMobileMenu(event)
+  // 未登录时这组入口一律先弹登录框，包括尚未开放的大会员
+  if (!authStore.isLoggedIn) {
+    openLoginDialog()
+    return
+  }
+  if (action.comingSoon) handleNavActionClick(action)
+  else void router.push(action.path)
+}
+const handleMobileUpload = (event: MouseEvent) => {
+  closeMobileMenu(event)
+  if (authStore.isLoggedIn) void router.push('/upload')
+  else openLoginDialog()
+}
 </script>
 
 <template>
+  <!-- 全站顶栏版心固定使用 --container-page，独立于各 layout 的 --shell-max，保持跨页面导航入口位置稳定。 -->
+  <!--
+  三段式 flex 布局左右两侧使用相同的 flex-1，使中间搜索框居中。
+  空间不足时搜索框作为 flex item 自行收窄，避免与右侧入口重叠。
+  -->
   <nav
-    class="relative mx-auto flex h-14 max-w-[1800px] items-center justify-between gap-1 px-3 sm:gap-2 sm:px-6 lg:px-8"
+    class="app-navbar relative mx-auto flex h-14 w-full max-w-[var(--container-page,1800px)] items-center gap-2 px-4 sm:px-6 lg:px-8"
   >
     <!-- Left: Logo -->
-    <div class="flex items-center gap-3 sm:gap-6">
-      <router-link to="/" class="flex items-center gap-2">
+    <div class="navbar-logo flex min-w-0 flex-1 items-center gap-3 sm:gap-6">
+      <router-link to="/" class="flex shrink-0 items-center gap-2">
         <img src="/logo.png" alt="Logo" class="h-10 w-auto object-contain drop-shadow-md" />
       </router-link>
     </div>
 
-    <!-- Center: Search (hidden on search result page) -->
-    <div
+    <SearchBox
       v-if="!isSearchPage"
-      class="absolute left-1/2 top-1/2 z-10 w-full max-w-[500px] -translate-x-1/2 -translate-y-1/2 px-4"
-    >
-      <div class="relative w-full group">
-        <div
-          class="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-4 z-10 transition-colors duration-300"
-        >
-          <Search
-            class="h-4 w-4"
-            :class="[
-              searchQuery
-                ? 'text-primary'
-                : props.light
-                  ? 'text-muted-foreground/80'
-                  : 'text-white/80 group-focus-within:text-muted-foreground/80',
-            ]"
-          />
-        </div>
-        <input
-          v-model="searchQuery"
-          type="text"
-          class="flex h-10 w-full rounded-full px-4 py-2 pl-10 pr-4 text-sm focus-visible:outline-none search-input-base"
-          :class="searchContainerClass"
-          placeholder="搜索视频、UP主..."
-          @input="handleSearchInput"
-          @keydown.enter="handleSearch(searchQuery)"
-          @blur="handleBlur"
-          @focus="handleSearchInput"
-        />
-        <!-- Suggestions / History / Hot Search Dropdown -->
-        <div
-          v-if="
-            showSuggestions &&
-            (searchSuggestions.length > 0 ||
-              (!searchQuery.trim() && (history.length > 0 || hotKeywords.length > 0)))
-          "
-          class="absolute left-0 right-0 top-full z-[100] mt-1 max-h-[480px] overflow-y-auto overflow-x-hidden rounded-lg border bg-popover text-popover-foreground shadow-lg"
-        >
-          <!-- Suggestions (when typing) -->
-          <template v-if="searchQuery.trim() && searchSuggestions.length > 0">
-            <div
-              v-for="(item, index) in searchSuggestions"
-              :key="index"
-              class="search-suggestion-item cursor-pointer px-4 py-2.5 text-sm hover:bg-accent hover:text-accent-foreground flex items-center gap-2"
-              @mousedown.prevent="handleSearch(item.value)"
-            >
-              <span class="truncate" v-html="sanitizeHighlight(item.highlight)"></span>
-            </div>
-          </template>
-
-          <!-- History + Hot Search (when empty) -->
-          <template v-else-if="!searchQuery.trim()">
-            <!-- Search History -->
-            <template v-if="history.length > 0">
-              <div
-                class="flex items-center justify-between px-4 pt-3 pb-2 text-sm text-muted-foreground"
-              >
-                <span class="font-medium">搜索历史</span>
-                <button
-                  class="hover:text-primary flex items-center gap-1 transition-colors"
-                  @mousedown.prevent="clearHistory"
-                >
-                  <Trash2 class="h-3.5 w-3.5" />清空
-                </button>
-              </div>
-              <div class="flex flex-wrap gap-2 px-4 pb-3">
-                <div
-                  v-for="item in history"
-                  :key="item"
-                  class="group flex items-center gap-1 rounded-md bg-secondary text-secondary-foreground px-2.5 py-1.5 text-xs cursor-pointer hover:bg-accent hover:text-accent-foreground transition-colors"
-                  @mousedown.prevent="handleSearch(item)"
-                >
-                  <span class="truncate max-w-[140px]">{{ item }}</span>
-                  <X
-                    class="h-3.5 w-3.5 rounded-full p-0.5 text-muted-foreground opacity-0 transition-all hover:bg-black/10 group-hover:opacity-100"
-                    @mousedown.prevent.stop="removeHistoryItem(item)"
-                  />
-                </div>
-              </div>
-            </template>
-
-            <!-- Hot Search Keywords -->
-            <template v-if="hotKeywords.length > 0">
-              <div class="px-4 pt-3 pb-2 text-sm font-medium text-muted-foreground">CCG热搜</div>
-              <div class="grid grid-cols-2 gap-x-2 px-2 pb-3">
-                <div
-                  v-for="(kw, idx) in hotKeywords.slice(0, 10)"
-                  :key="kw.keyword"
-                  class="hot-keyword-item flex cursor-pointer items-center gap-2.5 rounded-md px-2 py-2 text-sm transition-colors hover:bg-accent"
-                  @mousedown.prevent="handleSearch(kw.keyword)"
-                >
-                  <span
-                    class="hot-rank inline-flex h-[18px] w-[18px] flex-shrink-0 items-center justify-center rounded text-xs font-bold"
-                    :class="idx < 3 ? 'bg-primary/10 text-primary' : 'text-muted-foreground'"
-                  >
-                    {{ idx + 1 }}
-                  </span>
-                  <span class="truncate text-foreground">{{ kw.keyword }}</span>
-                </div>
-              </div>
-            </template>
-          </template>
-        </div>
-      </div>
-    </div>
+      v-model="searchQuery"
+      class="navbar-search"
+      :overlay="!props.light"
+      @submit="handleSearch"
+    />
 
     <!-- Right: User Actions -->
-    <div class="flex min-w-0 items-center gap-0.5 sm:gap-1">
+    <div class="flex min-w-max flex-1 items-center justify-end gap-0.5 sm:gap-1">
       <!-- User Avatar (when logged in) / Login Button -->
       <template v-if="authStore.isLoggedIn">
         <div
@@ -373,7 +211,7 @@ const navActions = [
               :src="authStore.user?.avatar"
               :name="authStore.user?.username"
               alt="Avatar"
-              :container-class="`h-8 w-8 border-2 transition-colors duration-300 ${showAvatarPanel ? 'border-transparent bg-transparent' : avatarBorderClass}`"
+              :container-class="`h-8 w-8 border-2 t-tint ${showAvatarPanel ? 'border-transparent bg-transparent' : avatarBorderClass}`"
               text-class="text-xs font-bold"
             />
           </div>
@@ -393,7 +231,7 @@ const navActions = [
         <Button
           variant="default"
           size="sm"
-          class="mr-1 h-8 cursor-pointer rounded-full bg-primary px-4 text-white hover:bg-primary/90 sm:mr-2 sm:px-5"
+          class="mr-1 h-8 cursor-pointer rounded-full bg-primary px-4 text-primary-foreground hover:bg-primary/90 sm:mr-2 sm:px-5"
           @click="openLoginDialog"
         >
           登录
@@ -407,95 +245,99 @@ const navActions = [
           <div
             v-if="authStore.isLoggedIn"
             class="relative"
-            :class="action.mobileHidden ? 'hidden sm:flex' : 'flex'"
+            :class="
+              action.mobileHidden ? 'hidden lg:flex' : action.isMessage ? 'flex' : 'hidden sm:flex'
+            "
             @mouseenter="action.isMessage ? openMessagePanel() : undefined"
             @mouseleave="action.isMessage ? scheduleCloseMessagePanel() : undefined"
           >
             <router-link
               :to="action.path"
+              :aria-label="action.name"
               class="group relative flex cursor-pointer flex-col items-center justify-center px-2 py-1 sm:px-3"
               :class="navActionTextClass"
+              @click="handleNavActionClick(action, $event)"
             >
               <div class="relative">
                 <component :is="action.icon" class="h-5 w-5" />
                 <!-- Badge -->
                 <span
                   v-if="action.badge === 'message' && totalMessageUnread > 0"
-                  class="absolute -right-1 -top-1 flex h-4 min-w-[16px] items-center justify-center rounded-full bg-destructive shadow-[0_0_10px_rgba(var(--color-destructive)/0.6)] px-1 text-[10px] text-destructive-foreground"
+                  class="signal-unread-message tabular absolute -right-1 -top-1 flex h-4 min-w-[16px] items-center justify-center rounded-full px-1 text-2xs font-semibold"
                 >
                   {{ totalMessageUnread > 99 ? '99+' : totalMessageUnread }}
                 </span>
                 <span
                   v-if="action.badge === 'dynamic' && dynamicUnreadCount > 0"
-                  class="absolute -right-1 -top-1 flex h-4 min-w-[16px] items-center justify-center rounded-full bg-destructive shadow-[0_0_10px_rgba(var(--color-destructive)/0.6)] px-1 text-[10px] text-destructive-foreground"
+                  class="signal-unread-dynamic tabular absolute -right-1 -top-1 flex h-4 min-w-[16px] items-center justify-center rounded-full px-1 text-2xs font-semibold"
                 >
                   {{ dynamicUnreadCount > 99 ? '99+' : dynamicUnreadCount }}
                 </span>
               </div>
-              <span class="mt-0.5 hidden text-[10px] font-medium sm:block">{{ action.name }}</span>
+              <span class="mt-0.5 hidden text-2xs font-medium sm:block">{{ action.name }}</span>
             </router-link>
 
             <!-- Message Hover Dropdown -->
             <Transition name="panel-fade">
               <div
                 v-if="action.isMessage && showMessagePanel"
-                class="absolute left-1/2 top-full z-[200] mt-1 -translate-x-1/2 rounded-lg border bg-popover py-2 text-popover-foreground shadow-lg w-32"
+                class="absolute left-1/2 top-full z-[200] mt-1 w-32 -translate-x-1/2 rounded-lg border bg-popover py-2 text-popover-foreground shadow-overlay"
                 @mouseenter="openMessagePanel"
                 @mouseleave="scheduleCloseMessagePanel"
               >
                 <div class="flex flex-col text-sm">
                   <router-link
                     to="/message/reply"
-                    class="flex items-center justify-between px-4 py-2 hover:bg-accent transition-colors"
+                    class="t-tint flex items-center justify-between px-4 py-2 hover:bg-accent"
                   >
                     <span>回复我的</span>
                     <span
                       v-if="counts.reply > 0"
-                      class="rounded-full bg-destructive px-1.5 py-0.5 text-[10px] text-destructive-foreground"
+                      class="tabular rounded-full bg-destructive px-1.5 py-0.5 text-2xs text-destructive-foreground"
                       >{{ counts.reply }}</span
                     >
                   </router-link>
                   <router-link
                     to="/message/at"
-                    class="flex items-center justify-between px-4 py-2 hover:bg-accent transition-colors"
+                    class="t-tint flex items-center justify-between px-4 py-2 hover:bg-accent"
                   >
                     <span>@ 我的</span>
                     <span
                       v-if="counts.at > 0"
-                      class="rounded-full bg-destructive px-1.5 py-0.5 text-[10px] text-destructive-foreground"
+                      class="tabular rounded-full bg-destructive px-1.5 py-0.5 text-2xs text-destructive-foreground"
                       >{{ counts.at }}</span
                     >
                   </router-link>
                   <router-link
                     to="/message/love"
-                    class="flex items-center justify-between px-4 py-2 hover:bg-accent transition-colors"
+                    class="t-tint flex items-center justify-between px-4 py-2 hover:bg-accent"
                   >
                     <span>收到的赞</span>
                     <span
                       v-if="counts.like > 0"
-                      class="rounded-full bg-destructive px-1.5 py-0.5 text-[10px] text-destructive-foreground"
+                      class="tabular rounded-full bg-destructive px-1.5 py-0.5 text-2xs text-destructive-foreground"
                       >{{ counts.like }}</span
                     >
                   </router-link>
                   <router-link
                     to="/message/system"
-                    class="flex items-center justify-between px-4 py-2 hover:bg-accent transition-colors"
+                    class="t-tint flex items-center justify-between px-4 py-2 hover:bg-accent"
                   >
                     <span>系统通知</span>
                     <span
                       v-if="counts.system > 0"
-                      class="rounded-full bg-destructive px-1.5 py-0.5 text-[10px] text-destructive-foreground"
+                      class="tabular rounded-full bg-destructive px-1.5 py-0.5 text-2xs text-destructive-foreground"
                       >{{ counts.system }}</span
                     >
                   </router-link>
                   <router-link
                     to="/message/chat"
-                    class="flex items-center justify-between px-4 py-2 hover:bg-accent transition-colors"
+                    class="t-tint flex items-center justify-between px-4 py-2 hover:bg-accent"
                   >
                     <span>我的消息</span>
                     <span
                       v-if="counts.message > 0"
-                      class="rounded-full bg-destructive px-1.5 py-0.5 text-[10px] text-destructive-foreground"
+                      class="tabular rounded-full bg-destructive px-1.5 py-0.5 text-2xs text-destructive-foreground"
                       >{{ counts.message }}</span
                     >
                   </router-link>
@@ -504,17 +346,22 @@ const navActions = [
             </Transition>
           </div>
           <!-- Not logged in items -->
-          <div
+          <button
             v-else
+            type="button"
+            :aria-label="action.name"
             class="group relative cursor-pointer flex-col items-center justify-center px-1 py-1 sm:px-3"
-            :class="[navActionTextClass, action.mobileHidden ? 'hidden sm:flex' : 'flex']"
+            :class="[
+              navActionTextClass,
+              action.mobileHidden ? 'hidden lg:flex' : action.isMessage ? 'flex' : 'hidden sm:flex',
+            ]"
             @click="openLoginDialog"
           >
             <div class="relative">
               <component :is="action.icon" class="h-5 w-5" />
             </div>
-            <span class="mt-0.5 hidden text-[10px] font-medium sm:block">{{ action.name }}</span>
-          </div>
+            <span class="mt-0.5 hidden text-2xs font-medium sm:block">{{ action.name }}</span>
+          </button>
         </template>
       </div>
 
@@ -525,22 +372,57 @@ const navActions = [
         v-if="authStore.isLoggedIn"
         as-child
         size="sm"
-        class="ml-1 h-8 rounded-lg border-0 bg-primary px-2 text-primary-foreground hover:bg-primary/90 shadow-[0_0_15px_rgba(var(--color-primary)/0.3)] sm:ml-3 sm:px-4 transition-all"
+        class="ml-1 hidden h-8 rounded-lg sm:flex border-0 bg-primary px-2 text-primary-foreground shadow-raised hover:bg-primary/90 sm:ml-3 sm:px-4"
       >
-        <router-link to="/upload" class="flex items-center gap-1.5">
+        <router-link
+          to="/upload"
+          class="flex items-center gap-1.5"
+          :title="submissionBlocked ? SUBMISSION_DISABLED_MESSAGE : '投稿'"
+        >
           <Upload class="h-4 w-4" />
-          <span class="hidden sm:inline">投稿</span>
+          <span class="hidden sm:inline">{{ submissionBlocked ? '投稿已暂停' : '投稿' }}</span>
         </router-link>
       </Button>
       <Button
         v-else
         size="sm"
-        class="ml-1 h-8 cursor-pointer rounded-lg border-0 bg-primary px-2 text-primary-foreground hover:bg-primary/90 shadow-[0_0_15px_rgba(var(--color-primary)/0.3)] sm:ml-3 sm:px-4 transition-all"
+        class="ml-1 hidden h-8 cursor-pointer rounded-lg sm:flex border-0 bg-primary px-2 text-primary-foreground shadow-raised hover:bg-primary/90 sm:ml-3 sm:px-4"
         @click="openLoginDialog"
       >
         <Upload class="h-4 w-4" />
-        <span class="hidden sm:inline">投稿</span>
+        <span class="hidden sm:inline">{{ submissionBlocked ? '投稿已暂停' : '投稿' }}</span>
       </Button>
+      <details class="navbar-more relative ml-1 sm:ml-2 lg:hidden">
+        <summary
+          class="flex h-11 w-11 cursor-pointer list-none items-center justify-center rounded-lg"
+          :class="navActionTextClass"
+          aria-label="更多导航"
+        >
+          <Menu class="h-5 w-5" aria-hidden="true" />
+        </summary>
+        <div
+          class="absolute right-0 top-full z-[220] mt-2 w-44 rounded-xl border border-border bg-popover p-2 text-popover-foreground shadow-overlay"
+        >
+          <button
+            v-for="action in navActions"
+            :key="action.name"
+            type="button"
+            class="flex min-h-11 w-full items-center gap-3 rounded-lg px-3 text-sm hover:bg-accent"
+            @click="handleMobileAction(action, $event)"
+          >
+            <component :is="action.icon" class="h-4 w-4" aria-hidden="true" />{{ action.name }}
+          </button>
+          <button
+            type="button"
+            class="flex min-h-11 w-full items-center gap-3 rounded-lg px-3 text-sm hover:bg-accent"
+            @click="handleMobileUpload"
+          >
+            <Upload class="h-4 w-4" aria-hidden="true" />{{
+              submissionBlocked ? '投稿已暂停' : '投稿'
+            }}
+          </button>
+        </div>
+      </details>
     </div>
   </nav>
 
@@ -553,64 +435,141 @@ const navActions = [
 </template>
 
 <style scoped lang="scss">
+.navbar-search {
+  width: 100%;
+  min-width: 0;
+  max-width: 500px;
+  margin-inline: 8px;
+}
+
+@media (width < 1024px) {
+  .app-navbar {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 8px;
+    height: auto;
+    padding-block: 8px;
+  }
+  .navbar-logo img {
+    width: clamp(84px, 26vw, 134px);
+    height: 34px;
+  }
+  .navbar-search {
+    grid-row: 2;
+    grid-column: 1 / -1;
+    max-width: none;
+    margin-inline: 0;
+  }
+}
+
 /* Search suggestion highlight */
 .search-suggestion-item :deep(em) {
-  color: var(--brand-blue, oklch(var(--primary)));
+  color: var(--color-primary, var(--brand-blue));
   font-style: normal;
   font-weight: 700;
-  background: oklch(var(--primary) / 0.12);
+  background: color-mix(in oklch, var(--color-primary) 12%, transparent);
   border-radius: 2px;
   padding: 0 1px;
 }
 
+/*
+ * 头像、消息面板和搜索联想下拉共享浮层入退场过渡。
+ */
 .panel-fade-enter-active {
   transition:
-    opacity 0.18s ease,
-    transform 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+    opacity var(--duration-fast) linear,
+    transform var(--duration-fast) var(--ease-out-expo);
 }
 
 .panel-fade-leave-active {
   transition:
-    opacity 0.12s ease,
-    transform 0.12s ease;
+    opacity var(--duration-fast) linear,
+    transform var(--duration-fast) var(--ease-out-quart);
 }
 
 .panel-fade-enter-from,
 .panel-fade-leave-to {
   opacity: 0;
-  transform: translateY(-4px);
+  transform: translate3d(0, -4px, 0);
 }
 
-.nav-avatar-wrapper {
-  will-change: transform;
+/* 联想条目：key 用 value，同一批里没变的词原地不动，
+   新词做 18ms 阶梯入场（高频输入场景的上限，再大就有迟钝感），
+   -move 让下拉高度变化时条目滑过去而不是跳过去。 */
+.sug-move {
+  transition: transform var(--duration-normal) var(--ease-out-quart);
+}
+
+.sug-enter-active {
+  transition:
+    opacity var(--duration-fast) linear,
+    transform var(--duration-fast) var(--ease-out-expo);
+  transition-delay: calc(min(var(--sug-i, 0), 6) * 18ms);
+}
+
+.sug-leave-active {
+  position: absolute;
+  left: 0;
+  right: 0;
+  transition: opacity var(--duration-fast) linear;
+}
+
+.sug-enter-from {
+  opacity: 0;
+  transform: translate3d(0, -6px, 0);
+}
+
+.sug-leave-to {
+  opacity: 0;
 }
 
 .avatar-normal {
   transform: scale(1) translateY(0);
   opacity: 1;
   transition:
-    transform 0.3s cubic-bezier(0.22, 1, 0.36, 1),
-    opacity 0.2s ease 0.05s;
+    transform var(--duration-normal) var(--ease-out-quint),
+    opacity var(--duration-fast) linear var(--duration-fast);
 }
 
 .avatar-expanded {
   transform: scale(2.5) translateY(0);
   opacity: 0;
+  /* will-change 只在真正会动的那一态挂上，不常驻占合成层 */
+  will-change: transform;
   transition:
-    transform 0.35s cubic-bezier(0.22, 1, 0.36, 1),
-    opacity 0.2s ease;
+    transform var(--duration-normal) var(--ease-out-quint),
+    opacity var(--duration-fast) linear;
+}
+
+.history-chip-close {
+  opacity: 0;
+  transition:
+    opacity var(--duration-fast) linear,
+    background-color var(--duration-fast) var(--ease-out-quart);
+
+  &:hover {
+    background-color: color-mix(in oklch, var(--color-foreground) 12%, transparent);
+  }
 }
 
 .search-input-base {
   border: 1px solid transparent;
-  transition: all 0.3s ease;
-  backdrop-filter: blur(8px);
+  /*
+   * 显式列出过渡属性并使用动效 token；焦点阴影不参与插值，避免聚焦时持续重绘。
+   */
+  transition:
+    background-color var(--duration-normal) var(--ease-out-quart),
+    border-color var(--duration-normal) var(--ease-out-quart),
+    color var(--duration-fast) linear;
+  backdrop-filter: blur(var(--blur-scrim, 8px));
 
   &:focus-visible {
     background-color: var(--color-background);
     color: var(--color-foreground);
     border-color: color-mix(in oklch, var(--color-primary) 40%, transparent);
-    box-shadow: 0 0 0 3px color-mix(in oklch, var(--color-primary) 20%, transparent);
+    /* 光晕使用 outline，不参与过渡，并与全站焦点指示同源。 */
+    outline: 3px solid color-mix(in oklch, var(--color-primary) 20%, transparent);
+    outline-offset: 0;
 
     &::placeholder {
       color: color-mix(in oklch, var(--color-muted-foreground) 70%, transparent);
@@ -621,7 +580,7 @@ const navActions = [
 .search-bar-solid {
   background-color: color-mix(in oklch, var(--color-secondary) 60%, transparent);
   color: var(--color-foreground);
-  box-shadow: inset 0 1px 2px rgb(0, 0, 0, 0.05);
+  box-shadow: var(--shadow-surface) inset;
 
   &:hover:not(:focus-visible) {
     background-color: color-mix(in oklch, var(--color-secondary) 90%, transparent);
@@ -632,40 +591,21 @@ const navActions = [
   }
 }
 
-:global(.dark) .search-bar-solid {
-  box-shadow: none;
-}
-
+/*
+ * 玻璃态使用 media-overlay 语义颜色，文字取 --media-overlay-text，由明暗主题变量统一提供。
+ */
 .search-bar-glass {
-  background-color: rgb(255, 255, 255, 0.2);
-  border-color: rgb(255, 255, 255, 0.2);
-  color: #ffffff;
-  box-shadow: 0 1px 2px rgb(0, 0, 0, 0.05);
-  backdrop-filter: blur(12px);
+  background-color: color-mix(in oklch, var(--media-overlay-text) 18%, transparent);
+  border-color: color-mix(in oklch, var(--media-overlay-text) 22%, transparent);
+  color: var(--media-overlay-text);
+  backdrop-filter: blur(var(--blur-glass, 22px));
 
   &:hover:not(:focus-visible) {
-    background-color: rgb(255, 255, 255, 0.3);
+    background-color: color-mix(in oklch, var(--media-overlay-text) 28%, transparent);
   }
 
   &::placeholder {
-    color: rgb(255, 255, 255, 0.7);
+    color: color-mix(in oklch, var(--media-overlay-text) 68%, transparent);
   }
 }
-
-:global(.dark) .search-bar-glass {
-  background-color: rgb(0, 0, 0, 0.4);
-  border-color: rgb(255, 255, 255, 0.1);
-
-  &:hover:not(:focus-visible) {
-    background-color: rgb(0, 0, 0, 0.6);
-  }
-}
-
-/* Bulletproof CSS for search bar to evade Tailwind JIT cache bugs */
-
-/* 1. Solid variant (for video detail page / solid headers) */
-
-/* 2. Glass variant (for homepage / banner overlay headers) */
-
-/* Dark mode overrides for glass variant */
 </style>

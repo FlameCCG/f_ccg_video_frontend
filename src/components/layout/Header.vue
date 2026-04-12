@@ -3,6 +3,7 @@ import { ref, onMounted } from 'vue'
 import Navbar from '@/components/layout/Navbar.vue'
 import { getTopBanners, type BannerItem } from '@/api/banner'
 import { BannerDisplay } from '@/constants/banner'
+import { resolveMediaUrl } from '@/utils/media'
 
 const banner = ref<BannerItem | null>(null)
 
@@ -29,7 +30,7 @@ onMounted(async () => {
     <div class="absolute inset-0 z-0 w-full overflow-hidden" :style="topBannerStyle">
       <img
         v-if="banner"
-        :src="banner.cover"
+        :src="resolveMediaUrl(banner.cover)"
         alt="Banner"
         class="h-full w-full object-cover object-center"
       />

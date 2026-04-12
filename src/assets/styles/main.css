@@ -1,5 +1,7 @@
 @import 'tailwindcss';
 
+@custom-variant dark (&:where(.dark, .dark *));
+
 @theme {
   --color-brand-blue: var(--brand-blue);
   --color-brand-pink: var(--brand-pink);
@@ -55,8 +57,6 @@
 }
 
 @layer base {
-  @custom-variant dark (&:where(.dark, .dark *));
-  
   :root {
     color-scheme: light;
 

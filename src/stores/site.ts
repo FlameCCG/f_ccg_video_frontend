@@ -5,7 +5,8 @@ import { getSiteConfig, normalizeStorageConfig, type SiteConfig } from '@/api/si
 export const useSiteStore = defineStore('site', () => {
   // State
   const config = ref<SiteConfig | null>(null)
-  const isLoading = ref(false)
+  const loadingCount = ref(0)
+  const isLoading = computed(() => loadingCount.value > 0)
   const isLoaded = ref(false)
 
   // Getters - Login
@@ -50,7 +51,7 @@ export const useSiteStore = defineStore('site', () => {
   const fetchConfig = async (): Promise<boolean> => {
     if (isLoaded.value) return true
 
-    isLoading.value = true
+    loadingCount.value += 1
     try {
       const result = await getSiteConfig()
       config.value = result.site
@@ -59,7 +60,7 @@ export const useSiteStore = defineStore('site', () => {
     } catch {
       return false
     } finally {
-      isLoading.value = false
+      loadingCount.value -= 1
     }
   }
 
@@ -68,7 +69,7 @@ export const useSiteStore = defineStore('site', () => {
    * 保留旧 config / isLoaded，避免 UI（如 OAuth 按钮区）在刷新瞬间被拆掉导致闪烁。
    */
   const refreshConfig = async (requireFresh = false): Promise<boolean> => {
-    isLoading.value = true
+    loadingCount.value += 1
     try {
       const result = await getSiteConfig()
       config.value = result.site
@@ -78,7 +79,7 @@ export const useSiteStore = defineStore('site', () => {
       // 失败时保留旧配置，不把 isLoaded 打回 false
       return requireFresh ? false : isLoaded.value
     } finally {
-      isLoading.value = false
+      loadingCount.value -= 1
     }
   }
 

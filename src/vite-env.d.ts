@@ -24,5 +24,7 @@ declare module 'axios' {
     silent?: boolean
     /** 瞬时网络/代理失败已重试次数（内部使用） */
     _retryCount?: number
+    /** 认证失败后已经重放过一次（内部使用） */
+    _authRetry?: boolean
   }
 }

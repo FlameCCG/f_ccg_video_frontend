@@ -30,7 +30,25 @@ export default defineConfig({
             height: 300,
           },
         },
+{
+    path: "https://registry.npmmirror.com/oml2d-models/latest/files/models/Senko_Normals/senko.model3.json",  // 仙狐娘（动作非常丰富）
+    scale: 0.12,
+    position: [0, 50]
+  }
       ],
+      menus: {
+        items: (defaultItems: unknown[]) => [
+          {
+            id: 'Chat',
+            icon: 'icon-chat',
+            title: '聊天',
+            onClick: () => {
+              ;(globalThis as unknown as EventTarget).dispatchEvent(new CustomEvent('oml2d:open-chat'))
+            },
+          },
+          ...(defaultItems as { id: string; icon: string; title: string }[]).filter((i) => i.id !== 'About'),
+        ],
+      },
       tips: {
         idleTips: {
           wordTheDay: true,

@@ -11,6 +11,9 @@
     "prettier": "prettier --write \"src/**/*.{vue,ts,tsx,js,jsx,css,scss}\"",
     "lint:fix": "eslint . --fix",
     "typecheck": "vue-tsc --noEmit --project tsconfig.app.json",
+    "test:ai-stream": "node --test scripts/ai-stream.test.mjs",
+    "test:auth": "node --test scripts/auth-session.test.mjs",
+    "test:auth-captcha": "node --test scripts/auth-captcha.test.mjs",
     "stylelint": "stylelint \"src/**/*.{css,scss,vue}\" --max-warnings 0",
     "stylelint:fix": "stylelint \"src/**/*.{css,scss,vue}\" --fix",
     "check:commit": "pnpm -s lint && pnpm -s typecheck && pnpm -s stylelint"

@@ -36,6 +36,24 @@ export default tseslint.config(
     },
   },
   {
+    files: ['scripts/*.test.mjs'],
+    rules: {
+      // 传输替身保留异步接口，部分分支直接返回固定响应。
+      '@typescript-eslint/require-await': 'off',
+    },
+    languageOptions: {
+      parserOptions: {
+        projectService: {
+          allowDefaultProject: ['scripts/ai-stream.test.mjs', 'scripts/auth-session.test.mjs'],
+        },
+      },
+    },
+  },
+  {
+    ...tseslint.configs.disableTypeChecked,
+    files: ['scripts/auth-captcha.test.mjs'],
+  },
+  {
     plugins: {
       prettier: eslintPluginPrettier,
     },

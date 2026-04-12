@@ -226,7 +226,7 @@ const scheduleAfterFirstPaint = (task: () => void) => {
 
 const loadLive2d = async () => {
   const clientWindow = getClientWindow()
-  if (!clientWindow) return
+  if (!clientWindow || !shouldDisplayLive2d()) return
 
   loadIconfontSymbol()
   const restoreFetch = guardOml2dVersionCheck()
@@ -254,10 +254,16 @@ const loadLive2d = async () => {
 
 export const initLive2d = () => {
   const clientWindow = getClientWindow()
-  if (!clientWindow || clientWindow.__bilibiliLive2dBooted) return
+  if (!clientWindow || !shouldDisplayLive2d() || clientWindow.__bilibiliLive2dBooted) return
 
   clientWindow.__bilibiliLive2dBooted = true
   scheduleAfterFirstPaint(() => {
     void loadLive2d()
   })
 }
+
+/** 在分包和图标字体下载前判断；延迟启动时再次检查，兼顾窗口尺寸变化。 */
+const shouldDisplayLive2d = () =>
+  live2dOptions.mobileDisplay !== false ||
+  (!window.matchMedia('(max-width: 767px), (pointer: coarse)').matches &&
+    !/Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent))

@@ -1,4 +1,4 @@
-import { marked, type MarkedOptions, type Tokens } from 'marked'
+import { Marked, type Tokens } from 'marked'
 import DOMPurify from 'dompurify'
 import hljs from 'highlight.js'
 import { resolveAiAssetUrl } from '@/api/ai'
@@ -71,6 +71,10 @@ const normalizeLangId = (lang?: string | null): string => {
 const highlightCode = (text: string, lang?: string | null) => {
   const resolved = normalizeLangId(lang)
 
+  if (resolved === 'plaintext' || text.length > 12000) {
+    return { html: escapeHtml(text), language: resolved || 'plaintext' }
+  }
+
   if (resolved && resolved !== 'plaintext' && hljs.getLanguage(resolved)) {
     try {
       return {
@@ -97,22 +101,19 @@ const highlightCode = (text: string, lang?: string | null) => {
   return { html: escapeHtml(text), language: resolved || 'plaintext' }
 }
 
-let markedConfigured = false
-
-const configureMarked = () => {
-  if (markedConfigured) return
-  markedConfigured = true
-
-  marked.setOptions({
+const createMarkdownParser = (streaming: boolean) => {
+  const parser = new Marked({
     breaks: true,
     gfm: true,
-  } satisfies MarkedOptions)
+  })
 
-  marked.use({
+  parser.use({
     renderer: {
       code(token: Tokens.Code) {
         const { text, lang } = token
-        const { html: highlighted, language } = highlightCode(text, lang)
+        const { html: highlighted, language } = streaming
+          ? { html: escapeHtml(text), language: normalizeLangId(lang) }
+          : highlightCode(text, lang)
         const safeLanguage = (language || 'plaintext').replace(/[^\w-]/g, '') || 'plaintext'
         const languageLabel = safeLanguage === 'plaintext' ? 'TEXT' : safeLanguage.toUpperCase()
         const encodedPayload = encodeCopyPayload(text)
@@ -120,14 +121,23 @@ const configureMarked = () => {
         return `
         <div class="ai-code-block">
           <div class="ai-code-toolbar">
-            <span class="ai-code-language">${escapeHtml(languageLabel)}</span>
+            <span class="ai-code-language">
+              <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m16 18 6-6-6-6M8 6l-6 6 6 6m6-14-4 16"/></svg>
+              <span>${escapeHtml(languageLabel)}</span>
+            </span>
             <button
               type="button"
-              class="ai-code-copy flex items-center justify-center rounded-md p-1.5 hover:bg-[var(--glass-border)] transition-colors group/copy"
+              class="ai-code-copy"
               data-copy-code="${encodedPayload}"
               title="复制代码"
               aria-label="复制代码"
-            ><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="group-hover/copy:text-[var(--brand-blue)] transition-colors"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg></button>
+            >
+              <span class="ai-code-copy-icons" aria-hidden="true">
+                <svg class="ai-code-copy-icon" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect width="14" height="14" x="8" y="8" rx="2"/><path d="M4 16a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2"/></svg>
+                <svg class="ai-code-check-icon" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12 4 4L19 6"/></svg>
+              </span>
+              <span class="ai-code-copy-label" aria-live="polite">复制</span>
+            </button>
           </div>
           <pre><code class="hljs language-${safeLanguage}">${highlighted}</code></pre>
         </div>
@@ -136,23 +146,26 @@ const configureMarked = () => {
       image(token: Tokens.Image) {
         const { href, title, text } = token
         const resolved = resolveAiAssetUrl(href || '')
-        let out = `<img src="${resolved}" alt="${text || ''}"`
+        let out = `<img src="${escapeHtml(resolved)}" alt="${escapeHtml(text || '')}"`
         if (title) {
-          out += ` title="${title}"`
+          out += ` title="${escapeHtml(title)}"`
         }
         out += ` referrerpolicy="no-referrer" loading="lazy" decoding="async" />`
         return out
       },
     },
   })
+  return parser
 }
 
-export const renderMarkdownHtml = (text: string, _options?: { streaming?: boolean }): string => {
+const streamingParser = createMarkdownParser(true)
+const completeParser = createMarkdownParser(false)
+
+export const renderMarkdownHtml = (text: string, options?: { streaming?: boolean }): string => {
   if (!text) return ''
-  configureMarked()
 
   try {
-    const rawHtml = marked.parse(text)
+    const rawHtml = (options?.streaming ? streamingParser : completeParser).parse(text)
     return DOMPurify.sanitize(rawHtml as string, markdownSanitizeOptions)
   } catch {
     return escapeHtml(text).replace(/\n/g, '<br>')

@@ -1,9 +1,9 @@
 <script setup lang="ts">
-import { defineAsyncComponent, ref, onMounted, onUnmounted } from 'vue'
-import { RouterView } from 'vue-router'
+import { defineAsyncComponent, onMounted, onUnmounted, ref } from 'vue'
 import { toast } from 'vue-sonner'
 import { Toaster } from '@/components/ui/sonner'
 import { Toaster as ToastToaster } from '@/components/ui/toast'
+import InitialRouteView from '@/components/common/InitialRouteView.vue'
 import { getAccessToken } from '@/api/request'
 import { useAuthStore } from '@/stores/auth'
 import { useNotificationStore } from '@/stores/notification'
@@ -63,6 +63,49 @@ const handleChatOpenChange = (open: boolean) => {
   if (open) chatDialogMounted.value = true
 }
 
+/**
+ * 主题切换使用短时过渡窗口。
+ * 检测 html.dark 类变化时挂载 theme-switching，动画结束后移除，避免常驻通配过渡影响 hover 与滚动。
+ * 手机端优先使用 theme-revealing 快照扩散，桌面及不支持快照的浏览器使用颜色渐变。
+ * 过渡规则位于 main.scss，并处理 reduced-motion 与播放器豁免。
+ * MutationObserver 可同时捕获手动和系统配色变化；回调在样式重算前执行，使变量更新与窗口标记同时生效。
+ */
+const THEME_TRANSITION_WINDOW = 360
+const MOBILE_THEME_TRANSITION_WINDOW = 680
+let themeSwitchTimer: ReturnType<typeof setTimeout> | undefined
+let themeObserver: MutationObserver | undefined
+
+const observeThemeSwitch = () => {
+  const root = document.documentElement
+  let wasDark = root.classList.contains('dark')
+
+  themeObserver = new MutationObserver(() => {
+    const isDark = root.classList.contains('dark')
+    if (isDark === wasDark) return
+    wasDark = isDark
+
+    // 手机端由整页快照扩散接管；颜色补间会使新快照捕获到半亮半暗的状态。
+    if (root.classList.contains('theme-revealing')) {
+      if (themeSwitchTimer) clearTimeout(themeSwitchTimer)
+      themeSwitchTimer = undefined
+      root.classList.remove('theme-switching')
+      return
+    }
+
+    root.classList.add('theme-switching')
+    if (themeSwitchTimer) clearTimeout(themeSwitchTimer)
+    const transitionWindow = window.matchMedia('(max-width: 767px), (pointer: coarse)').matches
+      ? MOBILE_THEME_TRANSITION_WINDOW
+      : THEME_TRANSITION_WINDOW
+    themeSwitchTimer = setTimeout(() => {
+      root.classList.remove('theme-switching')
+      themeSwitchTimer = undefined
+    }, transitionWindow)
+  })
+
+  themeObserver.observe(root, { attributes: true, attributeFilter: ['class'] })
+}
+
 onMounted(() => {
   void authStore.initAuth()
   // 预拉站点配置，登录 Dialog 首次打开即可展示完整 OAuth 开关
@@ -70,6 +113,7 @@ onMounted(() => {
   window.addEventListener('auth:session-expired', handleSessionExpired as EventListener)
   window.addEventListener('auth:login-required', handleLoginRequired as EventListener)
   window.addEventListener('oml2d:open-chat', handleOpenChat)
+  observeThemeSwitch()
   initLive2d()
 })
 
@@ -77,11 +121,17 @@ onUnmounted(() => {
   window.removeEventListener('auth:session-expired', handleSessionExpired as EventListener)
   window.removeEventListener('auth:login-required', handleLoginRequired as EventListener)
   window.removeEventListener('oml2d:open-chat', handleOpenChat)
+  themeObserver?.disconnect()
+  themeObserver = undefined
+  if (themeSwitchTimer) clearTimeout(themeSwitchTimer)
+  document.documentElement.classList.remove('theme-switching')
 })
 </script>
 
 <template>
-  <RouterView />
+  <!-- 顶层 layout 直接交接。Vue Router 先解析异步组件再更新当前路由，分包加载期间保留当前页面，解析完成后一次切换。各 layout 管理自己的内容区转场。 -->
+  <InitialRouteView />
+
   <AuthDialog v-if="showAuthDialog" :open="showAuthDialog" @update:open="showAuthDialog = $event" />
 
   <AiChatDialog

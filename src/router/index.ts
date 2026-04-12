@@ -1,4 +1,6 @@
 import { createRouter, createWebHistory, type RouteRecordRaw } from 'vue-router'
+import { nextTick } from 'vue'
+import { useAuthStore } from '@/stores/auth'
 
 // Layout components
 const MainLayout = () => import('@/layouts/MainLayout.vue')
@@ -94,8 +96,22 @@ const routes: RouteRecordRaw[] = [
       {
         path: 'favorites',
         name: 'favorites',
-        component: () => import('@/views/favorites/Favorites.vue'),
-        meta: { requiresAuth: true },
+        /**
+         * 收藏入口通过路由 redirect 指向用户空间的收藏 Tab，在导航确认前解析目标，不挂载中转页面，全程仅交接一次。
+         * 匹配器在 beforeEach 之前处理 redirect，全局 requiresAuth 守卫看不到 /favorites，因此此入口自行检查登录状态；未登录时回到首页。
+         */
+        redirect: (to) => {
+          const auth = useAuthStore()
+          if (!auth.isLoggedIn || !auth.userId) return { name: 'home' }
+
+          const query: Record<string, string> = { tab: 'favorites' }
+          const folderId = Array.isArray(to.query.folderId)
+            ? to.query.folderId[0]
+            : to.query.folderId
+          if (folderId) query.folderId = folderId
+
+          return { path: `/user/${auth.userId}`, query }
+        },
       },
     ],
   },
@@ -235,16 +251,45 @@ const routes: RouteRecordRaw[] = [
     path: '/auth/x/callback',
     redirect: '/oauth/x',
   },
+  {
+    path: '/:pathMatch(.*)*',
+    component: VideoLayout,
+    children: [{ path: '', name: 'not-found', component: () => import('@/views/NotFound.vue') }],
+  },
 ]
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
   routes,
-  scrollBehavior(_to, _from, savedPosition) {
+  /**
+   * 置顶要等离场动画播完再做，否则用户看到的是「页面一边淡出、一边被拽回顶部」。
+   * .route-leave-active 是 140ms（var(--duration-fast)），这里留 150ms 余量。
+   * 返回上一页时等待 DOM 与列表高度就绪后恢复 savedPosition，不额外等待离场动画。
+   */
+  async scrollBehavior(to, from, savedPosition) {
+    // 同一视频切分 P 不应改变评论阅读位置。
+    if (
+      to.name === 'video-detail' &&
+      from.name === 'video-detail' &&
+      to.params.id === from.params.id
+    ) {
+      return false
+    }
     if (savedPosition) {
+      // 等缓存列表重新挂载、虚拟网格完成测量，避免在空页面上恢复时被浏览器截断。
+      await nextTick()
+      await new Promise<void>((resolve) =>
+        requestAnimationFrame(() => requestAnimationFrame(() => resolve()))
+      )
       return savedPosition
     }
-    return { top: 0 }
+    const reduced =
+      typeof window !== 'undefined' &&
+      window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
+    if (reduced) return { top: 0 }
+    return new Promise((resolve) => {
+      setTimeout(() => resolve({ top: 0 }), 150)
+    })
   },
 })
 
@@ -266,6 +311,25 @@ router.beforeEach((to, _from, next) => {
   }
 
   next()
+})
+
+router.afterEach((to) => {
+  const titles: Record<string, string> = {
+    home: '首页',
+    hot: '热门视频',
+    rank: '排行榜',
+    partition: '分区',
+    search: '搜索',
+    'video-detail': '视频',
+    'user-home': '用户空间',
+    settings: '设置',
+    history: '观看历史',
+    dynamic: '动态',
+    'not-found': '页面未找到',
+  }
+  const keyword = typeof to.query.keyword === 'string' ? to.query.keyword.trim() : ''
+  const title = to.name === 'search' && keyword ? `${keyword} - 搜索` : titles[String(to.name)]
+  document.title = title ? `${title} | CCG 视频` : 'CCG 视频'
 })
 
 export default router

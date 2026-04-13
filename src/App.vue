@@ -34,13 +34,10 @@ const syncLoggedOutUi = () => {
  * 仅 clearTokens 不够——Navbar 看的是 authStore.isLoggedIn / user。
  */
 const handleSessionExpired = (event?: Event) => {
-  const wasLoggedIn = authStore.isLoggedIn || !!authStore.user
-  if (wasLoggedIn) {
-    // clearAuth 无「已退出登录」toast，避免与过期提示重复
-    syncLoggedOutUi()
-    const detail = (event as CustomEvent<{ message?: string }> | undefined)?.detail
-    toast.error(detail?.message || '登录已过期，请重新登录')
-  }
+  // 会话模块已同步清除 Token；事件仅在持有的凭据失效时发送一次。
+  syncLoggedOutUi()
+  const detail = (event as CustomEvent<{ message?: string }> | undefined)?.detail
+  toast.error(detail?.message || '登录已过期，请重新登录')
   showAuthDialog.value = true
 }
 

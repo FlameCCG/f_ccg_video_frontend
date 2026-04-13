@@ -22,6 +22,7 @@ export function useDanmuWebSocket(videoId: () => number, partId?: () => number |
   }
 
   const { connected, disconnect, connect } = useWebSocket(buildUrl, {
+    auth: 'optional',
     heartbeat: {
       message: { type: 'ping' },
       interval: 30000,

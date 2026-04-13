@@ -24,6 +24,8 @@ export interface ClickCaptchaPoint {
 export interface LoginPwdParams {
   username: string
   password: string
+  captchaID?: string
+  captchaCode?: string
   captchaToken?: string
   captchaDots?: ClickCaptchaPoint[]
   slideCaptchaToken?: string
@@ -332,6 +334,7 @@ export interface CreateTagParams {
  * 依赖接口: 点选或滑块验证码接口（启用时）
  * 接口说明: 使用用户名/邮箱和密码登录，按后端选定的类型完成验证码
  * 重要说明: /common/captcha/type?scene=login 返回 click/slide/none，提交对应的一组验证数据
+ * site.login.textGraphicCaptcha 开启时还须提交 captchaID/captchaCode，与注册图形验证码开关独立
  */
 export const loginByPassword = (
   params: LoginPwdParams,

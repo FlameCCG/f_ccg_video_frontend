@@ -777,60 +777,77 @@ onMounted(() => {
 
                 <!-- Message Bubble -->
                 <div
-                  class="flex items-end gap-2"
-                  :class="message.senderId === currentUserId ? 'flex-row-reverse' : ''"
+                  class="chat-message-row"
+                  :class="message.senderId === currentUserId ? 'chat-message-row-self' : ''"
                 >
                   <button
                     type="button"
-                    class="shrink-0 self-start"
+                    class="shrink-0 self-start rounded-full"
                     @click="openUserHome(message.senderId)"
                   >
                     <AppAvatar
                       :src="resolveMessageAvatar(message)"
                       :name="resolveMessageName(message)"
-                      container-class="h-[34px] w-[34px] shrink-0 text-xs"
+                      :container-class="
+                        message.senderId === currentUserId
+                          ? 'h-[38px] w-[38px] shrink-0 bg-transparent ring-1 ring-border/60 shadow-none'
+                          : 'h-[38px] w-[38px] shrink-0 ring-1 ring-border/50 shadow-[0_10px_22px_-18px_rgba(15,15,15,0.55)]'
+                      "
                     />
                   </button>
 
-                  <div
-                    class="max-w-[65%] text-[14px] transition-opacity"
-                    :class="[
-                      message.type === 'emoji' ||
-                      message.type === 'image' ||
-                      message.type === 'sticker'
-                        ? ''
-                        : 'chat-bubble ' +
-                          (message.senderId === currentUserId
-                            ? 'chat-bubble-self'
-                            : 'chat-bubble-peer'),
-                    ]"
-                    :style="{ opacity: message.pending ? '0.65' : '1' }"
-                  >
-                    <div v-if="message.type === 'emoji'" class="text-[30px] leading-none">
-                      {{ message.emoji || message.text }}
+                  <div class="min-w-0 max-w-[72%]">
+                    <div
+                      class="mb-1 px-1 text-[11px] tracking-[0.08em] text-muted-foreground/70"
+                      :class="message.senderId === currentUserId ? 'text-right' : ''"
+                    >
+                      {{ resolveMessageName(message) }}
                     </div>
 
-                    <div v-else-if="message.type === 'image' || message.type === 'sticker'">
-                      <img
-                        :src="message.media?.url"
-                        :alt="message.type === 'sticker' ? '表情包消息' : '图片消息'"
-                        class="rounded-xl object-cover cursor-pointer hover:opacity-90 transition-opacity"
-                        :class="
-                          message.type === 'sticker'
-                            ? 'max-h-[200px] max-w-[200px]'
-                            : 'max-h-[280px] max-w-full'
-                        "
-                        @click="openImagePreview(message.media?.url)"
-                      />
-                    </div>
+                    <div
+                      class="text-[14px] transition-opacity"
+                      :class="[
+                        message.type === 'emoji'
+                          ? 'chat-emoji-bubble'
+                          : message.type === 'image' || message.type === 'sticker'
+                            ? 'chat-media-bubble'
+                            : 'chat-bubble ' +
+                              (message.senderId === currentUserId
+                                ? 'chat-bubble-self'
+                                : 'chat-bubble-peer'),
+                      ]"
+                      :style="{ opacity: message.pending ? '0.65' : '1' }"
+                    >
+                      <div v-if="message.type === 'emoji'" class="text-[32px] leading-none">
+                        {{ message.emoji || message.text }}
+                      </div>
 
-                    <div v-else class="whitespace-pre-wrap break-words leading-relaxed">
-                      {{ message.text }}
-                    </div>
+                      <div v-else-if="message.type === 'image' || message.type === 'sticker'">
+                        <img
+                          :src="message.media?.url"
+                          :alt="message.type === 'sticker' ? '表情包消息' : '图片消息'"
+                          class="rounded-[20px] object-cover cursor-pointer border border-border/50 bg-card transition duration-200 hover:-translate-y-0.5 hover:opacity-95"
+                          :class="
+                            message.type === 'sticker'
+                              ? 'max-h-[200px] max-w-[200px]'
+                              : 'max-h-[280px] max-w-full'
+                          "
+                          @click="openImagePreview(message.media?.url)"
+                        />
+                      </div>
 
-                    <span v-if="message.pending" class="mt-1 block text-[11px] opacity-60">
-                      发送中...
-                    </span>
+                      <div v-else class="whitespace-pre-wrap break-words leading-relaxed">
+                        {{ message.text }}
+                      </div>
+
+                      <span
+                        v-if="message.pending"
+                        class="mt-1 block px-1 text-[11px] tracking-[0.08em] text-muted-foreground/65"
+                        :class="message.senderId === currentUserId ? 'text-right' : ''"
+                      >
+                        发送中...
+                      </span>
+                    </div>
                   </div>
                 </div>
               </template>
@@ -924,20 +941,53 @@ onMounted(() => {
 </template>
 
 <style scoped>
+.chat-message-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 0.75rem;
+}
+
+.chat-message-row-self {
+  flex-direction: row-reverse;
+}
+
 .chat-bubble {
-  border-radius: 18px;
-  padding: 10px 16px;
+  position: relative;
+  border-radius: 22px;
+  padding: 12px 16px;
+  border: 1px solid transparent;
+  box-shadow: 0 18px 40px -32px rgba(15, 15, 15, 0.4);
+  backdrop-filter: blur(12px);
 }
 
 .chat-bubble-self {
-  background-color: var(--color-primary);
-  color: var(--color-primary-foreground);
-  border-top-right-radius: 4px;
+  background: var(--color-foreground);
+  color: var(--color-background);
+  border-color: color-mix(in oklab, var(--color-foreground) 88%, transparent);
+  border-bottom-right-radius: 8px;
 }
 
 .chat-bubble-peer {
-  background-color: var(--color-muted);
+  background: color-mix(in oklab, var(--color-card) 90%, var(--color-background));
   color: var(--color-foreground);
-  border-top-left-radius: 4px;
+  border-color: color-mix(in oklab, var(--color-border) 88%, transparent);
+  border-bottom-left-radius: 8px;
+}
+
+.chat-media-bubble,
+.chat-emoji-bubble {
+  display: inline-flex;
+  max-width: 100%;
+}
+
+@media (max-width: 768px) {
+  .chat-message-row {
+    gap: 0.6rem;
+  }
+
+  .chat-bubble {
+    padding: 11px 14px;
+    border-radius: 20px;
+  }
 }
 </style>

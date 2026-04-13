@@ -1,17 +1,7 @@
 <script setup lang="ts">
-import { ref, reactive, nextTick, watch, onBeforeUnmount } from 'vue'
-import {
-  Send,
-  X,
-  Image as ImageIcon,
-  Film,
-  MessageSquare,
-  Download,
-  Loader2,
-  Bot,
-  User,
-  Settings2,
-} from 'lucide-vue-next'
+import { ref, reactive, nextTick, watch, onBeforeUnmount, computed } from 'vue'
+import { useRouter } from 'vue-router'
+import { Send, X, Download, Loader2, Bot, Settings2, UploadCloud } from 'lucide-vue-next'
 import {
   fetchXaiChatStream,
   resolveXaiAssetUrl,
@@ -27,14 +17,41 @@ import { toast } from 'vue-sonner'
 import { marked } from 'marked'
 import DOMPurify from 'dompurify'
 import hljs from 'highlight.js'
-import 'highlight.js/styles/github-dark-dimmed.css'
+import ImageViewer from '@/components/common/ImageViewer.vue'
+import { useCreatorBridgeStore } from '@/stores/creatorBridge'
+import { useAuthStore } from '@/stores/auth'
+import { buildXaiSuggestedTitle, fetchXaiAssetAsFile } from '@/utils/xai-assets'
 
-const props = defineProps<{ open: boolean }>()
-const emit = defineEmits<{ (e: 'update:open', val: boolean): void }>()
+const props = withDefaults(
+  defineProps<{
+    open: boolean
+    mode?: 'default' | 'cover-picker'
+    initialModel?: ModelType
+    initialPrompt?: string
+  }>(),
+  {
+    mode: 'default',
+    initialModel: 'text',
+    initialPrompt: '',
+  }
+)
+const emit = defineEmits<{
+  (e: 'update:open', val: boolean): void
+  (
+    e: 'cover-pick',
+    payload: { file: File; sourceUrl: string; prompt: string; mimeType?: string }
+  ): void
+}>()
+
+const router = useRouter()
+const creatorBridgeStore = useCreatorBridgeStore()
+const authStore = useAuthStore()
 
 // Model Types
 type ModelType = 'text' | 'image' | 'video'
 const activeModel = ref<ModelType>('text')
+const isCoverPickerMode = computed(() => props.mode === 'cover-picker')
+const showVideoSubmitAction = computed(() => props.mode === 'default')
 
 // Chat history
 export interface ChatMessage {
@@ -42,6 +59,7 @@ export interface ChatMessage {
   role: 'user' | 'assistant'
   type: 'text' | 'image_gen' | 'video_gen'
   content?: string
+  sourcePrompt?: string
   reasoningContent?: string
   images?: string[] // pasted image urls
   // Placeholder/Result fields
@@ -51,18 +69,38 @@ export interface ChatMessage {
   error?: string
 }
 
+interface VideoResultItem {
+  title: string
+  href: string
+  description: string
+}
+
 const messages = ref<ChatMessage[]>([
   {
     id: 'init-1',
     role: 'assistant',
     type: 'text',
-    content: '你好，我是一个全能助手，我能帮你找视频和聊天等。',
+    content: '',
+    isLoading: true,
   },
 ])
 
 const inputContent = ref('')
 const isSending = ref(false)
 const chatScrollRef = ref<HTMLElement | null>(null)
+const previewImageUrl = ref('')
+const showPreviewImage = ref(false)
+const activeAssetActionKey = ref<string | null>(null)
+const hasStreamedIntro = ref(false)
+let introStreamTimer: number | null = null
+
+const INITIAL_GREETING =
+  '你好，我可以帮你找站内视频、整理灵感、生成图像与视频提示，也可以直接继续聊天。'
+
+const markdownSanitizeOptions = {
+  ADD_ATTR: ['referrerpolicy', 'data-copy-code', 'aria-label', 'type'],
+  ADD_TAGS: ['button'],
+}
 
 // Pasted media
 const pastedImages = ref<{ url: string; file: File }[]>([])
@@ -90,6 +128,24 @@ const videoDurationMax = () => (isReferenceVideoMode() ? 10 : 15)
 const handleClose = () => {
   emit('update:open', false)
 }
+
+const openImagePreview = (url: string) => {
+  if (!url) return
+  previewImageUrl.value = url
+  showPreviewImage.value = true
+}
+
+const beginAssetAction = (key: string) => {
+  activeAssetActionKey.value = key
+}
+
+const endAssetAction = (key: string) => {
+  if (activeAssetActionKey.value === key) {
+    activeAssetActionKey.value = null
+  }
+}
+
+const isAssetActionBusy = (key: string) => activeAssetActionKey.value === key
 
 // --- Throttled auto-scroll (RAF-based, ~60 fps) ---
 let scrollRafId: number | null = null
@@ -122,13 +178,11 @@ const scheduleRender = (msgId: string, rawContent: string) => {
   pendingRenderIds.add(msgId)
   requestAnimationFrame(() => {
     pendingRenderIds.delete(msgId)
-    const text = pendingRenderRaw[msgId] ?? ''
+    const text = extractVideoResults(pendingRenderRaw[msgId] ?? '').content
     delete pendingRenderRaw[msgId]
     try {
       const rawHtml = marked.parse(text)
-      renderedHtmlMap[msgId] = DOMPurify.sanitize(rawHtml as string, {
-        ADD_ATTR: ['referrerpolicy'],
-      })
+      renderedHtmlMap[msgId] = DOMPurify.sanitize(rawHtml as string, markdownSanitizeOptions)
     } catch {
       renderedHtmlMap[msgId] = text
     }
@@ -137,9 +191,55 @@ const scheduleRender = (msgId: string, rawContent: string) => {
 }
 const pendingRenderRaw: Record<string, string> = {}
 
+const VIDEO_RESULTS_BLOCK_RE = /\[video_results\]([\s\S]*?)\[\/video_results\]/gi
+const VIDEO_RESULT_LINE_RE = /-\s*\[([^\]]+)\]\((\/video\/[^)]+)\)\s*[：:]\s*(.+)$/i
+
+const extractVideoResults = (content: string) => {
+  const items: VideoResultItem[] = []
+  const cleaned = content.replace(VIDEO_RESULTS_BLOCK_RE, (_, block: string) => {
+    const lines = block
+      .split('\n')
+      .map((line) => line.trim())
+      .filter(Boolean)
+
+    for (const line of lines) {
+      const matched = line.match(VIDEO_RESULT_LINE_RE)
+      if (!matched) continue
+      items.push({
+        title: matched[1]!.trim(),
+        href: matched[2]!.trim(),
+        description: matched[3]!.trim(),
+      })
+    }
+
+    return ''
+  })
+
+  const normalized = cleaned.replace(/\n{3,}/g, '\n\n').replace(/^\s+|\s+$/g, '')
+
+  return {
+    content: normalized,
+    items,
+  }
+}
+
+const getVideoResults = (msg: ChatMessage) => {
+  return extractVideoResults(msg.content ?? '').items
+}
+
+const getPrimaryContent = (msg: ChatMessage) => {
+  return extractVideoResults(msg.content ?? '').content
+}
+
+const goToVideoResult = async (href: string) => {
+  if (!href) return
+  emit('update:open', false)
+  await router.push(href)
+}
+
 // Render helper used in template — returns cached HTML or triggers async render
 const getRenderedHtml = (msg: ChatMessage) => {
-  const text = msg.content ?? ''
+  const text = getPrimaryContent(msg)
   if (!text) return '<span class="inline-block animate-pulse w-2 h-4 bg-zinc-400"></span>'
   // If we have a cached version, return it (may be slightly stale during streaming)
   if (renderedHtmlMap[msg.id] !== undefined) {
@@ -148,11 +248,83 @@ const getRenderedHtml = (msg: ChatMessage) => {
   // First render — do it synchronously so there's no blank flash
   try {
     const rawHtml = marked.parse(text)
-    const html = DOMPurify.sanitize(rawHtml as string, { ADD_ATTR: ['referrerpolicy'] })
+    const html = DOMPurify.sanitize(rawHtml as string, markdownSanitizeOptions)
     renderedHtmlMap[msg.id] = html
     return html
   } catch {
     return text
+  }
+}
+
+const encodeCopyPayload = (content: string) => encodeURIComponent(content)
+
+const decodeCopyPayload = (content: string) => decodeURIComponent(content)
+
+const escapeHtml = (content: string) =>
+  content
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
+
+const clearIntroStream = () => {
+  if (introStreamTimer !== null) {
+    window.clearInterval(introStreamTimer)
+    introStreamTimer = null
+  }
+}
+
+const streamInitialGreeting = () => {
+  if (hasStreamedIntro.value) return
+  const introMessage = messages.value.find((msg) => msg.id === 'init-1')
+  if (!introMessage) return
+
+  const chars = Array.from(INITIAL_GREETING)
+  let cursor = 0
+
+  introMessage.content = ''
+  introMessage.isLoading = true
+  scheduleRender(introMessage.id, '')
+  clearIntroStream()
+
+  introStreamTimer = window.setInterval(() => {
+    cursor = Math.min(chars.length, cursor + (cursor < 10 ? 2 : 3))
+    introMessage.content = chars.slice(0, cursor).join('')
+    scheduleRender(introMessage.id, introMessage.content)
+
+    if (cursor >= chars.length) {
+      introMessage.isLoading = false
+      hasStreamedIntro.value = true
+      clearIntroStream()
+      scheduleRender(introMessage.id, introMessage.content)
+    }
+  }, 42)
+}
+
+const handleAssistantMarkupClick = async (event: MouseEvent) => {
+  const target = event.target as HTMLElement | null
+  const copyButton = target?.closest<HTMLButtonElement>('[data-copy-code]')
+  if (!copyButton) return
+
+  event.preventDefault()
+  event.stopPropagation()
+
+  const encoded = copyButton.dataset.copyCode
+  if (!encoded) return
+
+  try {
+    await navigator.clipboard.writeText(decodeCopyPayload(encoded))
+    copyButton.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-[var(--status-success-ink)]"><path d="M20 6 9 17l-5-5"/></svg>`
+    copyButton.dataset.copied = 'true'
+    toast.success('代码已复制')
+    window.setTimeout(() => {
+      if (!document.contains(copyButton)) return
+      copyButton.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="group-hover/copy:text-[var(--brand-blue)] transition-colors"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>`
+      copyButton.dataset.copied = 'false'
+    }, 1400)
+  } catch {
+    toast.error('复制失败')
   }
 }
 
@@ -166,13 +338,27 @@ watch(
 
 onBeforeUnmount(() => {
   if (scrollRafId !== null) cancelAnimationFrame(scrollRafId)
+  clearIntroStream()
 })
 
 watch(
   () => props.open,
   (val) => {
     if (val) {
+      activeModel.value = props.initialModel
+      if (props.initialPrompt) {
+        inputContent.value = props.initialPrompt
+      }
+      if (isCoverPickerMode.value) {
+        activeModel.value = 'image'
+      }
+      if (!hasStreamedIntro.value) {
+        streamInitialGreeting()
+      }
       void scrollToBottom()
+    } else {
+      showPreviewImage.value = false
+      previewImageUrl.value = ''
     }
   }
 )
@@ -206,15 +392,32 @@ marked.use({
   renderer: {
     code(token: { text: string; lang?: string }) {
       const { text, lang } = token
+      const safeLanguage = (lang || 'plaintext').replace(/[^\w-]/g, '') || 'plaintext'
+      const languageLabel = safeLanguage === 'plaintext' ? 'TEXT' : safeLanguage.toUpperCase()
+      const encodedPayload = encodeCopyPayload(text)
+      let highlighted = escapeHtml(text)
       if (lang && hljs.getLanguage(lang)) {
         try {
-          const highlighted = hljs.highlight(text, { language: lang }).value
-          return `<pre><code class="hljs language-${lang}">${highlighted}</code></pre>`
+          highlighted = hljs.highlight(text, { language: lang }).value
         } catch {
           // Fallback to plain code on highlight error
         }
       }
-      return `<pre><code>${text}</code></pre>`
+      return `
+        <div class="xai-code-block">
+          <div class="xai-code-toolbar">
+            <span class="xai-code-language">${escapeHtml(languageLabel)}</span>
+            <button
+              type="button"
+              class="xai-code-copy flex items-center justify-center rounded-md p-1.5 hover:bg-[var(--glass-border)] transition-colors group/copy"
+              data-copy-code="${encodedPayload}"
+              title="复制代码"
+              aria-label="复制代码"
+            ><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="group-hover/copy:text-[var(--brand-blue)] transition-colors"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg></button>
+          </div>
+          <pre><code class="hljs language-${safeLanguage}">${highlighted}</code></pre>
+        </div>
+      `
     },
     image(token: { href: string; title: string | null; text: string }) {
       const { href, title, text } = token
@@ -327,6 +530,63 @@ const sleep = (ms: number) => new Promise((res) => setTimeout(res, ms))
 const openExternal = (url: string) => {
   if (!url) return
   window.open(url, '_blank', 'noopener,noreferrer')
+}
+
+const makeAssetActionKey = (messageId: string, resultIndex: number, kind: string) => {
+  return `${messageId}:${resultIndex}:${kind}`
+}
+
+const handleOneClickSubmit = async (
+  messageId: string,
+  resultIndex: number,
+  resultUrl: string,
+  prompt: string
+) => {
+  const actionKey = makeAssetActionKey(messageId, resultIndex, 'submit')
+  beginAssetAction(actionKey)
+  try {
+    const title = buildXaiSuggestedTitle(prompt || 'AI 视频作品', 'AI 视频作品')
+    const file = await fetchXaiAssetAsFile(resultUrl, title, 'mp4')
+    creatorBridgeStore.setPendingVideoImport({
+      id: `xai-video-${Date.now()}`,
+      file,
+      title,
+      prompt,
+      sourceUrl: resultUrl,
+    })
+    emit('update:open', false)
+    await router.push({ name: 'creator-upload' })
+    toast.success('已跳转投稿页并开始准备上传')
+  } catch (error) {
+    console.error('One-click creator submit failed', error)
+    toast.error('一键投稿失败')
+  } finally {
+    endAssetAction(actionKey)
+  }
+}
+
+const handleCoverPick = async (
+  messageId: string,
+  resultIndex: number,
+  resultUrl: string,
+  prompt: string,
+  mimeType?: string
+) => {
+  const actionKey = makeAssetActionKey(messageId, resultIndex, 'cover')
+  beginAssetAction(actionKey)
+  try {
+    const file = await fetchXaiAssetAsFile(
+      resultUrl,
+      buildXaiSuggestedTitle(prompt || 'AI 封面', 'AI 封面'),
+      mimeType?.includes('png') ? 'png' : 'jpg'
+    )
+    emit('cover-pick', { file, sourceUrl: resultUrl, prompt, mimeType })
+  } catch (error) {
+    console.error('AI cover pick failed', error)
+    toast.error('封面导入失败')
+  } finally {
+    endAssetAction(actionKey)
+  }
 }
 
 const MEDIA_URL_KEYS = [
@@ -572,12 +832,13 @@ const sendRequest = async () => {
         () => {
           reactiveAsstMsg.isLoading = false
           // Final render — ensure the completed content is fully parsed
-          const finalContent = reactiveAsstMsg.content ?? ''
+          const finalContent = extractVideoResults(reactiveAsstMsg.content ?? '').content
           try {
             const rawHtml = marked.parse(finalContent)
-            renderedHtmlMap[assistantMsgId] = DOMPurify.sanitize(rawHtml as string, {
-              ADD_ATTR: ['referrerpolicy'],
-            })
+            renderedHtmlMap[assistantMsgId] = DOMPurify.sanitize(
+              rawHtml as string,
+              markdownSanitizeOptions
+            )
           } catch {
             renderedHtmlMap[assistantMsgId] = finalContent
           }
@@ -594,6 +855,7 @@ const sendRequest = async () => {
         id: assistantMsgId,
         role: 'assistant',
         type: 'image_gen',
+        sourcePrompt: userText,
         isLoading: true,
         results: [], // placeholder array
       }
@@ -662,6 +924,7 @@ const sendRequest = async () => {
         id: assistantMsgId,
         role: 'assistant',
         type: 'video_gen',
+        sourcePrompt: userText,
         isLoading: true,
         progress: 0,
         results: [],
@@ -759,254 +1022,172 @@ const handleSend = () => {
 
 <template>
   <Teleport to="body">
-    <transition name="fade-bounce">
+    <transition name="zen-modal">
       <div
         v-if="open"
-        class="fixed inset-0 z-[99999] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4"
+        class="fixed inset-0 z-[99999] flex items-center justify-center p-4 sm:p-6"
         @click.self="handleClose"
       >
+        <!-- Cinematic Dark/Light Blur Backdrop using theme variables -->
         <div
-          class="relative flex flex-col w-full max-w-[800px] h-[85vh] rounded-3xl shadow-2xl overflow-hidden border border-zinc-200/20 dark:border-zinc-800/60"
-          style="background: var(--bg-surface-1)"
+          class="absolute inset-0 bg-[var(--page-wash-3)] backdrop-blur-[var(--glass-blur)] pointer-events-none transition-all duration-700"
+        ></div>
+
+        <!-- The Monolithic Canvas -->
+        <div
+          class="relative flex flex-col w-full max-w-[1024px] h-[92vh] bg-[var(--bg-surface-0)] rounded-[2.5rem] shadow-cinematic ring-1 ring-[var(--glass-border)] overflow-hidden"
         >
-          <!-- Header (Draggable feeling) -->
+          <!-- Absolute minimal top header / Draggable zone -->
           <div
-            class="shrink-0 flex items-center justify-between px-6 py-4 border-b border-zinc-200/50 dark:border-zinc-800/80"
+            class="shrink-0 flex items-center justify-between px-8 py-6 z-10 border-b border-[var(--border-color)] border-opacity-30"
           >
-            <div class="flex items-center gap-2 text-[var(--text-1)]">
-              <Bot class="w-6 h-6" />
-              <h2 class="text-xl font-bold tracking-tight">xAI Assistant</h2>
+            <div class="flex items-center gap-3">
+              <div
+                class="w-9 h-9 rounded-full bg-[var(--bg-surface-2)] border border-[var(--border-color)] flex items-center justify-center text-[var(--text-1)] shadow-sm"
+              >
+                <Bot class="w-5 h-5" />
+              </div>
+              <h2
+                class="text-xs font-bold tracking-[0.2em] text-[var(--text-1)] uppercase font-mono"
+              >
+                全能视频助手
+              </h2>
             </div>
             <button
-              class="rounded-full p-2 text-[var(--text-2)] hover:text-red-500 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
+              class="group w-10 h-10 flex items-center justify-center rounded-full bg-[var(--bg-surface-1)] hover:bg-[var(--bg-surface-2)] border border-transparent hover:border-[var(--border-color)] text-[var(--text-2)] hover:text-[var(--text-1)] transition-all duration-300"
               @click="handleClose"
             >
-              <X class="w-5 h-5" />
-            </button>
-          </div>
-
-          <!-- Model Switcher Tabs -->
-          <div
-            class="shrink-0 px-6 py-3 flex items-center gap-4 border-b border-zinc-200/30 dark:border-zinc-800/50 bg-[var(--bg-surface-2)]"
-          >
-            <button
-              class="flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium transition-all"
-              :class="
-                activeModel === 'text'
-                  ? 'bg-zinc-900 text-white dark:bg-white dark:text-zinc-900 shadow-md scale-105'
-                  : 'text-[var(--text-2)] hover:bg-black/5 dark:hover:bg-white/5'
-              "
-              @click="activeModel = 'text'"
-            >
-              <MessageSquare class="w-4 h-4" /> 文本与找视频
-              <span class="text-xs opacity-60">grok-4.20</span>
-            </button>
-            <button
-              class="flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium transition-all"
-              :class="
-                activeModel === 'image'
-                  ? 'bg-zinc-900 text-white dark:bg-white dark:text-zinc-900 shadow-md scale-105'
-                  : 'text-[var(--text-2)] hover:bg-black/5 dark:hover:bg-white/5'
-              "
-              @click="activeModel = 'image'"
-            >
-              <ImageIcon class="w-4 h-4" /> 图像创作
-            </button>
-            <button
-              class="flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium transition-all"
-              :class="
-                activeModel === 'video'
-                  ? 'bg-zinc-900 text-white dark:bg-white dark:text-zinc-900 shadow-md scale-105'
-                  : 'text-[var(--text-2)] hover:bg-black/5 dark:hover:bg-white/5'
-              "
-              @click="activeModel = 'video'"
-            >
-              <Film class="w-4 h-4" /> 视频探索
-            </button>
-
-            <!-- Advanced Config Toggle for Image/Video -->
-            <button
-              v-if="activeModel !== 'text'"
-              class="ml-auto flex items-center p-2 rounded-full transition-colors text-[var(--text-2)] hover:bg-black/5 dark:hover:bg-white/5"
-              :class="{ 'text-blue-500': showSettings }"
-              title="高级配置"
-              @click="showSettings = !showSettings"
-            >
-              <Settings2 class="w-5 h-5" />
-            </button>
-          </div>
-
-          <!-- Advanced Settings Panel -->
-          <div
-            v-if="showSettings && activeModel === 'image'"
-            class="shrink-0 px-6 py-3 flex gap-4 bg-zinc-50 dark:bg-zinc-900/50 border-b border-zinc-200/30 dark:border-zinc-800/50 text-sm"
-          >
-            <label class="flex items-center gap-2 text-[var(--text-1)]">
-              数量:
-              <input
-                v-model="imgCount"
-                type="number"
-                min="1"
-                max="10"
-                class="w-16 p-1 rounded bg-white dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-700 outline-none"
+              <X
+                class="w-4 h-4 group-hover:rotate-90 transition-transform duration-500 ease-out-expo"
               />
-            </label>
-            <label class="flex items-center gap-2 text-[var(--text-1)]">
-              比例:
-              <select
-                v-model="imgRatio"
-                :disabled="isSingleImageEdit()"
-                class="p-1 rounded bg-white dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-700 outline-none"
-              >
-                <option v-for="ratio in IMAGE_RATIO_OPTIONS" :key="ratio" :value="ratio">
-                  {{ ratio }}
-                </option>
-              </select>
-            </label>
-            <label class="flex items-center gap-2 text-[var(--text-1)]">
-              分辨率:
-              <select
-                v-model="imgResolution"
-                class="p-1 rounded bg-white dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-700 outline-none"
-              >
-                <option
-                  v-for="resolution in IMAGE_RESOLUTION_OPTIONS"
-                  :key="resolution"
-                  :value="resolution"
-                >
-                  {{ resolution.toUpperCase() }}
-                </option>
-              </select>
-            </label>
-            <span v-if="isSingleImageEdit()" class="self-center text-xs text-[var(--text-2)]">
-              单图编辑会继承输入图比例
-            </span>
+            </button>
           </div>
 
-          <div
-            v-if="showSettings && activeModel === 'video'"
-            class="shrink-0 px-6 py-3 flex gap-4 bg-zinc-50 dark:bg-zinc-900/50 border-b border-zinc-200/30 dark:border-zinc-800/50 text-sm"
-          >
-            <label class="flex items-center gap-2 text-[var(--text-1)]">
-              秒数:
-              <input
-                v-model="vidDuration"
-                type="number"
-                min="1"
-                :max="videoDurationMax()"
-                class="w-16 p-1 rounded bg-white dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-700 outline-none"
-              />
-            </label>
-            <label class="flex items-center gap-2 text-[var(--text-1)]">
-              比例:
-              <select
-                v-model="vidRatio"
-                class="p-1 rounded bg-white dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-700 outline-none"
-              >
-                <option v-for="ratio in VIDEO_RATIO_OPTIONS" :key="ratio" :value="ratio">
-                  {{ ratio }}
-                </option>
-              </select>
-            </label>
-            <label class="flex items-center gap-2 text-[var(--text-1)]">
-              分辨率:
-              <select
-                v-model="vidResolution"
-                class="p-1 rounded bg-white dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-700 outline-none"
-              >
-                <option
-                  v-for="resolution in VIDEO_RESOLUTION_OPTIONS"
-                  :key="resolution"
-                  :value="resolution"
-                >
-                  {{ resolution.toUpperCase() }}
-                </option>
-              </select>
-            </label>
-            <span v-if="isReferenceVideoMode()" class="self-center text-xs text-[var(--text-2)]">
-              多参考图模式最长 10 秒
-            </span>
-          </div>
-
-          <!-- Chat Area -->
+          <!-- Immersive Chat Area -->
           <div
             ref="chatScrollRef"
-            class="flex-1 overflow-y-auto px-6 py-6 flex flex-col gap-6 custom-scrollbar"
+            class="flex-1 overflow-y-auto px-8 sm:px-16 py-8 flex flex-col gap-12 custom-scrollbar scroll-smooth"
           >
             <div
               v-for="msg in messages"
               :key="msg.id"
-              class="flex w-full gap-4"
-              :class="msg.role === 'user' ? 'flex-row-reverse' : 'flex-row'"
+              class="flex w-full group animate-slide-up"
+              :class="msg.role === 'user' ? 'justify-end' : 'justify-start gap-6'"
             >
-              <!-- Avatar -->
-              <div class="shrink-0">
+              <!-- AI Avatar Side -->
+              <div v-if="msg.role === 'assistant'" class="shrink-0 pt-1">
                 <div
-                  v-if="msg.role === 'assistant'"
-                  class="w-10 h-10 rounded-full bg-zinc-100 dark:bg-zinc-800 flex flex-col items-center justify-center shadow-inner overflow-hidden border border-zinc-200 dark:border-zinc-700 p-1"
+                  class="w-8 h-8 rounded-full border border-[var(--border-color)] bg-[var(--bg-surface-1)] p-1 flex items-center justify-center shadow-surface"
                 >
                   <img
                     src="/表情包/bili_emoji_20.png"
-                    alt="ai"
+                    alt="bot"
                     class="w-full h-full object-contain"
                   />
                 </div>
-                <div
-                  v-else
-                  class="w-10 h-10 rounded-full bg-zinc-900 dark:bg-white text-white dark:text-zinc-900 flex items-center justify-center shadow-md"
-                >
-                  <User class="w-6 h-6" />
-                </div>
               </div>
 
-              <!-- Message Body -->
-              <div class="max-w-[80%] flex flex-col gap-2">
-                <!-- User attachments view -->
+              <!-- Content Area -->
+              <div
+                class="flex flex-col gap-4 max-w-[85%]"
+                :class="msg.role === 'user' ? 'items-end' : 'items-start'"
+              >
+                <!-- User Attached Images -->
                 <div
                   v-if="msg.role === 'user' && msg.images?.length"
-                  class="flex flex-wrap gap-2 justify-end"
+                  class="flex flex-wrap gap-2 justify-end mb-2"
                 >
                   <img
                     v-for="(img, idx) in msg.images"
                     :key="idx"
                     :src="img"
-                    class="w-32 h-32 object-cover rounded-xl shadow-md border border-zinc-200 dark:border-zinc-700"
+                    class="w-24 h-24 object-cover rounded-2xl shadow-raised border border-[var(--border-color)]"
                   />
                 </div>
 
-                <!-- Reasoning Message -->
+                <!-- Terminal-Style Reasoning (Assistant) -->
                 <details
                   v-if="msg.reasoningContent"
-                  class="px-5 py-3 rounded-2xl break-words leading-relaxed shadow-sm text-[14px] bg-zinc-50 border border-zinc-200/50 dark:bg-zinc-800/40 dark:border-zinc-700/50"
+                  class="group/reasoning w-full overflow-hidden text-[13px] rounded-2xl border border-[var(--border-color)] bg-[var(--bg-surface-1)]"
                   open
                 >
                   <summary
-                    class="cursor-pointer text-zinc-500 font-medium select-none flex items-center gap-2 outline-none"
+                    class="cursor-pointer select-none px-4 py-3 flex items-center gap-3 font-mono text-[var(--text-2)] hover:text-[var(--text-1)] transition-colors outline-none"
                   >
-                    <span class="opacity-80 flex items-center gap-2">
-                      <Loader2 v-if="msg.isLoading && !msg.content" class="w-4 h-4 animate-spin" />
-                      深度思考过程
-                    </span>
+                    <Loader2
+                      v-if="msg.isLoading && !msg.content"
+                      class="w-3.5 h-3.5 animate-spin text-[var(--text-1)]"
+                    />
+                    <span
+                      v-else
+                      class="w-2 h-2 rounded-full bg-[var(--text-2)] group-open/reasoning:bg-[var(--status-success)] transition-colors shadow-[0_0_8px_var(--status-success)]"
+                    ></span>
+                    <span class="tracking-widest uppercase text-[10px] font-bold"
+                      >Thought Process</span
+                    >
                   </summary>
                   <div
-                    class="mt-3 text-zinc-500 whitespace-pre-wrap font-mono text-sm leading-relaxed border-t border-zinc-200/50 dark:border-zinc-700/50 pt-2"
+                    class="px-5 py-4 font-mono text-[var(--text-2)] leading-relaxed whitespace-pre-wrap border-t border-[var(--border-color)] bg-[var(--bg-surface-2)] opacity-80"
                   >
                     {{ msg.reasoningContent }}
                   </div>
                 </details>
 
-                <!-- Text Message -->
+                <!-- Markdown Content -->
                 <div
-                  v-if="msg.content !== undefined"
-                  class="px-5 py-3 rounded-2xl break-words leading-relaxed shadow-sm text-[15px] markdown-body"
+                  v-if="msg.role === 'user' ? msg.content !== undefined : getPrimaryContent(msg)"
+                  class="leading-[1.7] break-words text-[15px]"
                   :class="[
                     msg.role === 'user'
-                      ? 'bg-zinc-900 text-white dark:bg-white dark:text-zinc-900 rounded-tr-none whitespace-pre-wrap'
-                      : 'bg-zinc-100/80 dark:bg-zinc-800/80 text-[var(--text-1)] rounded-tl-none border border-zinc-200/50 dark:border-zinc-700/50',
+                      ? 'px-6 py-4 bg-[var(--bg-surface-2)] text-[var(--text-1)] rounded-[24px] rounded-br-sm border border-[var(--border-color)] shadow-raised font-medium'
+                      : 'markdown-body xai-assistant-bubble text-[var(--text-1)] w-full',
                   ]"
+                  @click="msg.role === 'assistant' ? handleAssistantMarkupClick($event) : undefined"
                   v-html="msg.role === 'assistant' ? getRenderedHtml(msg) : msg.content"
                 ></div>
-                <!-- Loading text indicator -->
+
+                <div
+                  v-if="msg.role === 'assistant' && getVideoResults(msg).length"
+                  class="mt-4 w-full"
+                >
+                  <div class="mb-3 flex items-center gap-2">
+                    <span class="h-2 w-2 rounded-full bg-[var(--brand-blue)]"></span>
+                    <span
+                      class="text-[11px] font-mono font-bold tracking-[0.24em] uppercase text-[var(--text-2)]"
+                    >
+                      Video Results
+                    </span>
+                  </div>
+                  <div class="grid gap-3 max-w-[42rem]">
+                    <button
+                      v-for="(item, resultIndex) in getVideoResults(msg)"
+                      :key="`${msg.id}-video-result-${resultIndex}`"
+                      class="group relative overflow-hidden rounded-[1.35rem] border border-[var(--border-color)] bg-[var(--bg-surface-1)] px-5 py-4 text-left transition-all duration-300 hover:-translate-y-0.5 hover:border-[var(--brand-blue)]/40 hover:shadow-raised"
+                      @click="void goToVideoResult(item.href)"
+                    >
+                      <div
+                        class="absolute inset-y-0 left-0 w-1 bg-[var(--brand-blue)]/70 opacity-0 transition-opacity duration-300 group-hover:opacity-100"
+                      ></div>
+                      <div class="flex items-start justify-between gap-4">
+                        <div class="min-w-0 flex-1">
+                          <div class="truncate text-[16px] font-semibold text-[var(--text-1)]">
+                            {{ item.title }}
+                          </div>
+                          <div class="mt-2 line-clamp-2 text-[13px] leading-6 text-[var(--text-2)]">
+                            {{ item.description }}
+                          </div>
+                        </div>
+                        <div
+                          class="shrink-0 rounded-full border border-[var(--border-color)] bg-[var(--bg-surface-2)] px-3 py-1 text-[10px] font-mono font-bold uppercase tracking-[0.18em] text-[var(--text-2)] transition-colors duration-300 group-hover:text-[var(--brand-blue)]"
+                        >
+                          Open
+                        </div>
+                      </div>
+                    </button>
+                  </div>
+                </div>
+
+                <!-- Loading Indicator (Text) -->
                 <div
                   v-if="
                     msg.role === 'assistant' &&
@@ -1015,121 +1196,199 @@ const handleSend = () => {
                     !msg.reasoningContent &&
                     msg.type === 'text'
                   "
-                  class="flex items-center gap-2 text-zinc-500 py-2"
+                  class="flex items-center gap-1.5 py-2 px-1"
                 >
-                  <Loader2 class="w-4 h-4 animate-spin" /> <span class="text-sm">思考中...</span>
+                  <div
+                    class="w-1.5 h-1.5 rounded-full bg-[var(--brand-blue)] animate-[pulse_1s_infinite]"
+                  ></div>
+                  <div
+                    class="w-1.5 h-1.5 rounded-full bg-[var(--brand-blue)] animate-[pulse_1s_infinite_0.2s]"
+                  ></div>
+                  <div
+                    class="w-1.5 h-1.5 rounded-full bg-[var(--brand-blue)] animate-[pulse_1s_infinite_0.4s]"
+                  ></div>
                 </div>
 
-                <!-- Error -->
+                <!-- Error Toast -->
                 <div
                   v-if="msg.error"
-                  class="text-sm text-red-500 px-4 py-2 bg-red-500/10 rounded-xl border border-red-500/20"
+                  class="px-4 py-2 bg-[var(--status-danger-soft)] text-[var(--status-danger-ink)] text-sm rounded-xl border border-[var(--status-danger-border)] flex items-center gap-2"
                 >
-                  ⚠️ {{ msg.error }}
+                  <span class="w-2 h-2 rounded-full bg-[var(--status-danger)]"></span>
+                  {{ msg.error }}
                 </div>
 
-                <!-- Image Gen Results -->
+                <!-- Extravagant Image Grid -->
                 <div
                   v-if="msg.type === 'image_gen' && msg.results"
-                  class="grid w-full gap-3"
+                  class="mt-4 grid gap-3 self-start"
                   :class="
                     msg.results.length > 1
-                      ? 'max-w-[34rem] grid-cols-2'
-                      : 'max-w-[24rem] grid-cols-1'
+                      ? 'w-[min(44rem,calc(100vw-12rem))] max-w-full grid-cols-2'
+                      : 'w-[20rem] max-w-full grid-cols-1'
                   "
                 >
                   <div
                     v-for="(res, idx) in msg.results"
                     :key="idx"
-                    class="relative group w-full min-h-[14rem] rounded-xl overflow-hidden shadow-md bg-zinc-100 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 aspect-square"
+                    class="relative group aspect-square min-w-0 rounded-[1.5rem] overflow-hidden bg-[var(--bg-surface-1)] shadow-raised ring-1 ring-[var(--border-color)]"
+                    :class="res.url && !res.error ? 'cursor-zoom-in' : ''"
+                    @click="res.url && !res.error ? openImagePreview(res.url) : undefined"
                   >
                     <div
                       v-if="!res.url"
-                      class="absolute inset-0 flex flex-col items-center justify-center text-zinc-400 gap-3"
+                      class="absolute inset-0 isolate overflow-hidden rounded-[1.5rem] border border-[var(--border-color)] bg-[var(--bg-surface-1)] shadow-surface"
                     >
-                      <Loader2 class="w-8 h-8 animate-spin" />
-                      <span class="text-xs font-medium">魔法绘制中...</span>
+                      <div
+                        class="absolute inset-0 bg-gradient-to-r from-transparent via-black/10 to-transparent dark:via-white/10 animate-shimmer"
+                        style="background-size: 200% 100%"
+                      ></div>
+                      <div
+                        class="absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(255,255,255,0.12),transparent_52%)] dark:bg-[radial-gradient(circle_at_top,rgba(255,255,255,0.08),transparent_48%)]"
+                      ></div>
+
+                      <div class="relative z-10 flex h-full flex-col justify-between p-5">
+                        <div class="flex items-start justify-between gap-4">
+                          <div>
+                            <div
+                              class="text-[10px] font-mono font-bold tracking-[0.28em] text-[var(--text-2)]"
+                            >
+                              IMAGE
+                            </div>
+                            <div
+                              class="mt-2 h-2 w-20 rounded-full bg-black/10 dark:bg-white/10"
+                            ></div>
+                          </div>
+                          <div
+                            class="rounded-full border border-[var(--border-color)] bg-[var(--bg-surface-1)] px-3 py-1 text-[10px] font-mono font-bold tracking-[0.2em] text-[var(--text-2)]"
+                          >
+                            {{ String(idx + 1).padStart(2, '0') }}
+                          </div>
+                        </div>
+
+                        <div class="flex flex-col gap-3">
+                          <div
+                            class="relative flex aspect-square items-center justify-center overflow-hidden rounded-[1.1rem] border border-[var(--border-color)] bg-[var(--bg-surface-0)]/80"
+                          >
+                            <div
+                              class="absolute inset-0 bg-gradient-to-br from-black/[0.04] via-transparent to-black/[0.08] dark:from-white/[0.04] dark:to-white/[0.02]"
+                            ></div>
+                            <div
+                              class="relative z-10 h-24 w-24 rounded-full border border-black/10 bg-black/[0.04] dark:border-white/10 dark:bg-white/[0.04]"
+                            ></div>
+                          </div>
+                          <div class="space-y-2">
+                            <div class="h-2.5 rounded-full bg-black/10 dark:bg-white/10"></div>
+                            <div
+                              class="h-2.5 w-[72%] rounded-full bg-black/[0.08] dark:bg-white/[0.08]"
+                            ></div>
+                          </div>
+                          <div
+                            class="flex items-center justify-between text-[10px] font-mono font-bold tracking-[0.22em] text-[var(--text-2)]"
+                          >
+                            <span>RENDERING</span>
+                            <span>IN PROGRESS</span>
+                          </div>
+                        </div>
+                      </div>
                     </div>
                     <div
                       v-else-if="res.error"
-                      class="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-zinc-100 px-4 text-center text-zinc-500 dark:bg-zinc-800"
+                      class="absolute inset-0 flex flex-col items-center justify-center gap-3 p-6 text-center"
                     >
-                      <span class="text-xs font-medium">{{ res.error }}</span>
-                      <button
-                        class="rounded-full border border-zinc-300 px-3 py-1 text-xs font-medium hover:bg-zinc-50 dark:border-zinc-600 dark:hover:bg-zinc-700"
-                        @click.prevent="openExternal(res.url)"
-                      >
-                        打开原图
-                      </button>
+                      <span class="text-xs text-[var(--status-danger)] font-mono">{{
+                        res.error
+                      }}</span>
                     </div>
                     <template v-else>
+                      <div
+                        class="absolute top-4 right-4 z-10 flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity duration-300"
+                      >
+                        <button
+                          class="w-10 h-10 flex items-center justify-center rounded-full bg-[var(--glass-bg)] border border-[var(--glass-border)] text-[var(--text-1)] hover:text-[var(--brand-blue)] transition-colors shadow-overlay backdrop-blur-md"
+                          title="下载图片"
+                          @click.stop.prevent="void downloadAsset(res.url, `xai-${Date.now()}.png`)"
+                        >
+                          <Download class="w-4 h-4" />
+                        </button>
+                        <button
+                          v-if="isCoverPickerMode"
+                          class="w-10 h-10 flex items-center justify-center rounded-full bg-[var(--glass-bg)] border border-[var(--glass-border)] text-[var(--text-1)] hover:text-[var(--brand-blue)] transition-colors shadow-overlay backdrop-blur-md"
+                          :disabled="isAssetActionBusy(makeAssetActionKey(msg.id, idx, 'cover'))"
+                          title="上传到当前投稿封面"
+                          @click.stop.prevent="
+                            void handleCoverPick(
+                              msg.id,
+                              idx,
+                              res.url,
+                              msg.sourcePrompt || '',
+                              res.mime_type
+                            )
+                          "
+                        >
+                          <Loader2
+                            v-if="isAssetActionBusy(makeAssetActionKey(msg.id, idx, 'cover'))"
+                            class="w-4 h-4 animate-spin"
+                          />
+                          <UploadCloud v-else class="w-4 h-4" />
+                        </button>
+                      </div>
                       <img
                         :src="res.url"
                         referrerpolicy="no-referrer"
-                        class="block w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
-                        @error="markMediaResultError(msg, idx, '图片加载失败')"
+                        class="w-full h-full object-cover transition-transform duration-[2s] ease-out-expo group-hover:scale-105"
+                        @click.stop="openImagePreview(res.url)"
+                        @error="markMediaResultError(msg, idx, 'Failed to load')"
                       />
-                      <!-- Hover mask & download -->
-                      <div
-                        class="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center gap-3"
-                      >
-                        <button
-                          class="bg-white/90 text-black px-4 py-2 rounded-full font-bold text-sm shadow-xl flex items-center gap-2 hover:bg-white transform hover:scale-105 transition-all"
-                          @click.prevent="
-                            void downloadAsset(res.url, `xai-image-${Date.now()}.png`)
-                          "
-                        >
-                          <Download class="w-4 h-4" /> 获取画作
-                        </button>
-                      </div>
                     </template>
                   </div>
                 </div>
 
-                <!-- Video Gen Results -->
-                <div v-if="msg.type === 'video_gen'" class="flex flex-col gap-3">
+                <!-- Epic Video Container -->
+                <div v-if="msg.type === 'video_gen'" class="mt-4">
                   <div
                     v-if="msg.isLoading"
-                    class="w-72 aspect-video bg-zinc-100 dark:bg-zinc-800 rounded-xl border border-zinc-200 dark:border-zinc-700 flex flex-col items-center justify-center text-zinc-500 shadow-inner gap-4 relative overflow-hidden"
+                    class="relative w-[28rem] sm:w-[38rem] aspect-video rounded-[1.5rem] overflow-hidden bg-[var(--bg-surface-1)] border border-[var(--border-color)] flex flex-col items-center justify-center gap-6 shadow-surface"
                   >
                     <div
-                      class="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent animate-shimmer"
+                      class="absolute inset-0 bg-gradient-to-r from-transparent via-[var(--brand-blue)]/10 to-transparent animate-shimmer"
                       style="background-size: 200% 100%"
                     ></div>
-                    <div class="relative z-10 flex flex-col items-center gap-3">
-                      <div class="relative w-12 h-12 flex items-center justify-center">
-                        <svg class="w-full h-full transform -rotate-90">
-                          <circle
-                            cx="24"
-                            cy="24"
-                            r="20"
-                            stroke="currentColor"
-                            stroke-width="4"
-                            fill="none"
-                            class="opacity-20"
-                          />
-                          <circle
-                            cx="24"
-                            cy="24"
-                            r="20"
-                            stroke="currentColor"
-                            stroke-width="4"
-                            fill="none"
-                            :stroke-dasharray="125.6"
-                            :stroke-dashoffset="125.6 - (125.6 * (msg.progress || 0)) / 100"
-                            class="transition-all duration-300"
-                          />
-                        </svg>
-                        <span class="absolute text-[10px] font-bold">{{ msg.progress || 0 }}%</span>
-                      </div>
-                      <span class="text-xs font-medium tracking-widest text-[var(--text-1)]"
-                        >构筑世界线中...</span
-                      >
+                    <div class="relative z-10 w-20 h-20 flex items-center justify-center">
+                      <svg class="w-full h-full transform -rotate-90">
+                        <circle
+                          cx="40"
+                          cy="40"
+                          r="36"
+                          stroke="currentColor"
+                          stroke-width="2"
+                          fill="none"
+                          class="opacity-10 text-[var(--text-2)]"
+                        />
+                        <circle
+                          cx="40"
+                          cy="40"
+                          r="36"
+                          stroke="currentColor"
+                          stroke-width="2"
+                          fill="none"
+                          :stroke-dasharray="226"
+                          :stroke-dashoffset="226 - (226 * (msg.progress || 0)) / 100"
+                          class="text-[var(--brand-blue)] transition-all duration-700 ease-out-expo"
+                        />
+                      </svg>
+                      <span class="absolute text-sm font-mono font-bold text-[var(--text-1)]">{{
+                        msg.progress || 0
+                      }}</span>
                     </div>
+                    <span
+                      class="relative z-10 text-[10px] font-mono tracking-[0.3em] font-bold text-[var(--brand-blue)]"
+                      >SYNTHESIS_IN_PROGRESS</span
+                    >
                   </div>
                   <div
                     v-else-if="msg.results?.length"
-                    class="w-96 aspect-video rounded-xl overflow-hidden shadow-xl border border-zinc-200 dark:border-zinc-700 relative group bg-black"
+                    class="relative group w-[28rem] sm:w-[38rem] aspect-video rounded-[1.5rem] overflow-hidden bg-black shadow-cinematic ring-1 ring-[var(--border-color)]"
                   >
                     <video
                       :src="msg.results?.[0]?.url"
@@ -1138,209 +1397,572 @@ const handleSend = () => {
                       autoplay
                       loop
                       muted
-                      @error="markMediaResultError(msg, 0, '视频加载失败')"
+                      @error="markMediaResultError(msg, 0, 'Failed')"
                     />
                     <div
-                      v-if="msg.results?.[0]?.error"
-                      class="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-black/75 px-4 text-center text-white"
-                    >
-                      <span class="text-sm font-medium">{{ msg.results?.[0]?.error }}</span>
-                      <button
-                        class="rounded-full bg-white/15 px-4 py-2 text-xs font-medium hover:bg-white/25"
-                        @click.prevent="openExternal(msg.results?.[0]?.url || '')"
-                      >
-                        打开原视频
-                      </button>
-                    </div>
-                    <div
-                      class="absolute top-3 right-3 opacity-0 group-hover:opacity-100 transition-opacity"
+                      class="absolute top-4 right-4 z-10 flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity duration-300"
                     >
                       <button
-                        class="bg-black/60 backdrop-blur-md text-white p-2 rounded-full hover:bg-black/80 transition-colors shadow-lg"
+                        class="w-10 h-10 flex items-center justify-center rounded-full bg-[var(--glass-bg)] border border-[var(--glass-border)] text-[var(--text-1)] hover:text-[var(--brand-blue)] transition-colors shadow-overlay backdrop-blur-md"
+                        title="下载视频"
                         @click.prevent="
                           void downloadAsset(
                             msg.results?.[0]?.url || '',
-                            `xai-video-${Date.now()}.mp4`
+                            `xai-vid-${Date.now()}.mp4`
                           )
                         "
                       >
-                        <Download class="w-5 h-5" />
+                        <Download class="w-4 h-4" />
+                      </button>
+                      <button
+                        v-if="showVideoSubmitAction"
+                        class="w-10 h-10 flex items-center justify-center rounded-full bg-[var(--glass-bg)] border border-[var(--glass-border)] text-[var(--text-1)] hover:text-[var(--brand-blue)] transition-colors shadow-overlay backdrop-blur-md"
+                        :disabled="isAssetActionBusy(makeAssetActionKey(msg.id, 0, 'submit'))"
+                        title="一键投稿：跳转到投稿页并自动上传"
+                        @click.prevent="
+                          void handleOneClickSubmit(
+                            msg.id,
+                            0,
+                            msg.results?.[0]?.url || '',
+                            msg.sourcePrompt || ''
+                          )
+                        "
+                      >
+                        <Loader2
+                          v-if="isAssetActionBusy(makeAssetActionKey(msg.id, 0, 'submit'))"
+                          class="w-4 h-4 animate-spin"
+                        />
+                        <UploadCloud v-else class="w-4 h-4" />
                       </button>
                     </div>
                   </div>
                 </div>
               </div>
+
+              <!-- User Avatar Side -->
+              <div v-if="msg.role === 'user'" class="shrink-0 pt-1 hidden sm:block">
+                <div
+                  class="w-10 h-10 rounded-full border border-[var(--border-color)] bg-[var(--bg-surface-1)] p-0.5 flex items-center justify-center shadow-surface overflow-hidden"
+                >
+                  <img
+                    :src="authStore.user?.avatar || '/bili_emoji_20.png'"
+                    alt="user"
+                    class="w-full h-full object-cover rounded-full"
+                  />
+                </div>
+              </div>
             </div>
-            <!-- Bottom spacing -->
-            <div class="h-2 shrink-0"></div>
+            <!-- Bottom spacer -->
+            <div class="h-10 shrink-0"></div>
           </div>
 
-          <!-- Input Area -->
-          <div
-            class="shrink-0 p-4 border-t border-zinc-200/50 dark:border-zinc-800/80 bg-[var(--bg-surface-1)]"
-          >
-            <!-- Pasted Media Preview -->
-            <div v-if="pastedImages.length > 0" class="flex gap-3 mb-4 overflow-x-auto py-2">
-              <div v-for="(img, idx) in pastedImages" :key="idx" class="relative group shrink-0">
-                <img
-                  :src="img.url"
-                  class="h-20 w-20 object-cover rounded-xl shadow-md border border-zinc-200 dark:border-zinc-700"
-                />
-                <button
-                  class="absolute -top-2 -right-2 bg-red-500 text-white rounded-full p-1 opacity-0 group-hover:opacity-100 transition-opacity shadow-lg"
-                  @click="removePastedImage(idx)"
-                >
-                  <X class="w-3 h-3" />
-                </button>
-              </div>
-            </div>
-
+          <!-- THE COMMAND CENTER (Integrated at bottom) -->
+          <div class="shrink-0 relative z-20">
+            <!-- Fade block -->
             <div
-              class="relative flex items-end gap-3 max-w-4xl mx-auto bg-zinc-100/50 dark:bg-zinc-900/50 rounded-3xl p-2 border border-zinc-200/80 dark:border-zinc-800/80 shadow-inner focus-within:ring-2 focus-within:ring-zinc-900 dark:focus-within:ring-white focus-within:border-transparent transition-all"
-            >
-              <!-- Textarea -->
-              <textarea
-                v-model="inputContent"
-                class="flex-1 max-h-40 min-h-[44px] bg-transparent resize-none outline-none py-2 px-4 text-[var(--text-1)] placeholder:text-zinc-500 custom-scrollbar"
-                :placeholder="
-                  activeModel === 'text'
-                    ? '有什么问题尽管问我...(支持Ctrl+V粘贴图片)'
-                    : '描述你想要的画面，越详细越好...(粘贴图片支持图生图)'
-                "
-                rows="1"
-                @paste="handlePaste"
-                @keydown.enter.exact.prevent="handleSend"
-              ></textarea>
+              class="absolute top-0 left-0 right-0 h-12 -translate-y-full bg-gradient-to-t from-[var(--bg-surface-0)] to-transparent pointer-events-none"
+            ></div>
 
-              <!-- Action group -->
-              <div class="flex items-center gap-2 mb-1 mr-1">
-                <button
-                  class="flex items-center justify-center p-3 rounded-2xl transition-all shadow-sm"
-                  :class="
-                    (!inputContent.trim() && pastedImages.length === 0) || isSending
-                      ? 'bg-zinc-200 text-zinc-400 dark:bg-zinc-800 dark:text-zinc-600 cursor-not-allowed'
-                      : 'bg-black text-white hover:scale-105 active:scale-95 dark:bg-white dark:text-black hover:shadow-lg'
-                  "
-                  :disabled="(!inputContent.trim() && pastedImages.length === 0) || isSending"
-                  @click="handleSend"
-                >
-                  <Send v-if="!isSending" class="w-5 h-5" />
-                  <Loader2 v-else class="w-5 h-5 animate-spin" />
-                </button>
+            <div class="max-w-4xl mx-auto px-6 pb-6 w-full">
+              <!-- Toolbar Floating Island -->
+              <div
+                class="flex flex-col rounded-[24px] bg-[var(--bg-surface-1)] shadow-overlay border border-[var(--border-color)] p-2 transition-all duration-500 focus-within:ring-1 focus-within:ring-[var(--brand-blue)]"
+              >
+                <!-- Tiny Segmented Control & Settings Toggle -->
+                <div class="flex items-center justify-between px-3 py-2 mb-1">
+                  <div
+                    class="flex items-center gap-2 p-1 bg-[var(--bg-surface-2)] rounded-xl border border-[var(--border-color)]"
+                  >
+                    <button
+                      class="px-4 py-1.5 rounded-lg text-xs font-mono font-bold tracking-widest transition-all duration-300"
+                      :class="
+                        activeModel === 'text'
+                          ? 'bg-[var(--text-1)] text-[var(--bg-surface-0)] shadow-surface'
+                          : 'text-[var(--text-2)] hover:text-[var(--text-1)]'
+                      "
+                      @click="activeModel = 'text'"
+                    >
+                      TEXT
+                    </button>
+                    <button
+                      class="px-4 py-1.5 rounded-lg text-xs font-mono font-bold tracking-widest transition-all duration-300"
+                      :class="
+                        activeModel === 'image'
+                          ? 'bg-[var(--text-1)] text-[var(--bg-surface-0)] shadow-surface'
+                          : 'text-[var(--text-2)] hover:text-[var(--text-1)]'
+                      "
+                      @click="activeModel = 'image'"
+                    >
+                      IMAGE
+                    </button>
+                    <button
+                      class="px-4 py-1.5 rounded-lg text-xs font-mono font-bold tracking-widest transition-all duration-300"
+                      :class="
+                        activeModel === 'video'
+                          ? 'bg-[var(--text-1)] text-[var(--bg-surface-0)] shadow-surface'
+                          : 'text-[var(--text-2)] hover:text-[var(--text-1)]'
+                      "
+                      @click="activeModel = 'video'"
+                    >
+                      VIDEO
+                    </button>
+                  </div>
+                  <button
+                    v-if="activeModel !== 'text'"
+                    class="w-8 h-8 flex items-center justify-center rounded-xl transition-all duration-300"
+                    :class="
+                      showSettings
+                        ? 'border border-[var(--brand-blue)] text-[var(--brand-blue)] shadow-[0_0_8px_var(--brand-blue)] bg-black/5 dark:bg-white/10'
+                        : 'text-[var(--text-2)] bg-[var(--bg-surface-2)] hover:text-[var(--text-1)] border border-[var(--border-color)]'
+                    "
+                    @click="showSettings = !showSettings"
+                  >
+                    <Settings2 class="w-4 h-4" />
+                  </button>
+                </div>
+
+                <!-- Expansive Inline Options -->
+                <transition name="expand">
+                  <div v-show="showSettings && activeModel !== 'text'" class="overflow-hidden">
+                    <div
+                      class="px-4 py-3 mx-2 mb-2 bg-[var(--bg-surface-2)] rounded-[16px] border border-[var(--border-color)] flex gap-8 items-center text-xs font-mono uppercase tracking-widest text-[var(--text-2)] overflow-x-auto custom-scrollbar"
+                    >
+                      <template v-if="activeModel === 'image'">
+                        <label class="flex items-center gap-3 shrink-0">
+                          <span class="font-bold">Count</span>
+                          <input
+                            v-model="imgCount"
+                            type="number"
+                            min="1"
+                            max="10"
+                            class="w-12 bg-transparent text-[var(--text-1)] border-b border-[var(--border-color)] focus:border-[var(--brand-blue)] outline-none text-center"
+                          />
+                        </label>
+                        <label class="flex items-center gap-3 shrink-0">
+                          <span class="font-bold">Ratio</span>
+                          <select
+                            v-model="imgRatio"
+                            :disabled="isSingleImageEdit()"
+                            class="bg-transparent text-[var(--text-1)] border-b border-[var(--border-color)] focus:border-[var(--brand-blue)] outline-none"
+                          >
+                            <option
+                              v-for="ratio in IMAGE_RATIO_OPTIONS"
+                              :key="ratio"
+                              :value="ratio"
+                              class="bg-[var(--bg-surface-0)] text-[var(--text-1)]"
+                            >
+                              {{ ratio }}
+                            </option>
+                          </select>
+                        </label>
+                        <label class="flex items-center gap-3 shrink-0">
+                          <span class="font-bold">Res</span>
+                          <select
+                            v-model="imgResolution"
+                            class="bg-transparent text-[var(--text-1)] border-b border-[var(--border-color)] focus:border-[var(--brand-blue)] outline-none"
+                          >
+                            <option
+                              v-for="resolution in IMAGE_RESOLUTION_OPTIONS"
+                              :key="resolution"
+                              :value="resolution"
+                              class="bg-[var(--bg-surface-0)] text-[var(--text-1)]"
+                            >
+                              {{ resolution }}
+                            </option>
+                          </select>
+                        </label>
+                        <span
+                          v-if="isSingleImageEdit()"
+                          class="ml-auto opacity-70 text-[10px] shrink-0 text-[var(--brand-blue)]"
+                          >Inherits Source</span
+                        >
+                      </template>
+                      <template v-if="activeModel === 'video'">
+                        <label class="flex items-center gap-3 shrink-0">
+                          <span class="font-bold">Seconds</span>
+                          <input
+                            v-model="vidDuration"
+                            type="number"
+                            min="1"
+                            :max="videoDurationMax()"
+                            class="w-12 bg-transparent text-[var(--text-1)] border-b border-[var(--border-color)] focus:border-[var(--brand-blue)] outline-none text-center"
+                          />
+                        </label>
+                        <label class="flex items-center gap-3 shrink-0">
+                          <span class="font-bold">Ratio</span>
+                          <select
+                            v-model="vidRatio"
+                            class="bg-transparent text-[var(--text-1)] border-b border-[var(--border-color)] focus:border-[var(--brand-blue)] outline-none"
+                          >
+                            <option
+                              v-for="ratio in VIDEO_RATIO_OPTIONS"
+                              :key="ratio"
+                              :value="ratio"
+                              class="bg-[var(--bg-surface-0)] text-[var(--text-1)]"
+                            >
+                              {{ ratio }}
+                            </option>
+                          </select>
+                        </label>
+                        <label class="flex items-center gap-3 shrink-0">
+                          <span class="font-bold">Res</span>
+                          <select
+                            v-model="vidResolution"
+                            class="bg-transparent text-[var(--text-1)] border-b border-[var(--border-color)] focus:border-[var(--brand-blue)] outline-none"
+                          >
+                            <option
+                              v-for="resolution in VIDEO_RESOLUTION_OPTIONS"
+                              :key="resolution"
+                              :value="resolution"
+                              class="bg-[var(--bg-surface-0)] text-[var(--text-1)]"
+                            >
+                              {{ resolution }}
+                            </option>
+                          </select>
+                        </label>
+                        <span
+                          v-if="isReferenceVideoMode()"
+                          class="ml-auto opacity-70 text-[10px] shrink-0 text-[var(--brand-blue)]"
+                          >Max 10s Mode</span
+                        >
+                      </template>
+                    </div>
+                  </div>
+                </transition>
+
+                <!-- Pasted Media & Text Area -->
+                <div class="flex flex-col px-3 pb-3">
+                  <div
+                    v-if="pastedImages.length > 0"
+                    class="flex gap-2.5 overflow-x-auto py-2 custom-scrollbar px-1"
+                  >
+                    <div
+                      v-for="(img, idx) in pastedImages"
+                      :key="idx"
+                      class="relative group shrink-0"
+                    >
+                      <img
+                        :src="img.url"
+                        class="h-16 w-16 object-cover rounded-[12px] shadow-sm border border-[var(--border-color)]"
+                      />
+                      <button
+                        class="absolute -top-1.5 -right-1.5 w-5 h-5 bg-[var(--status-danger)] text-[var(--status-danger-ink)] rounded-full flex items-center justify-center shadow-md transform hover:scale-110 transition-transform"
+                        @click="removePastedImage(idx)"
+                      >
+                        <X class="w-3 h-3" />
+                      </button>
+                    </div>
+                  </div>
+
+                  <div class="flex items-end gap-3 mt-1 px-1">
+                    <textarea
+                      v-model="inputContent"
+                      class="flex-1 max-h-[160px] min-h-[44px] bg-transparent resize-none outline-none py-2 px-2 text-[16px] leading-[1.6] text-[var(--text-1)] placeholder:text-[var(--text-2)] custom-scrollbar font-normal"
+                      :placeholder="
+                        activeModel === 'text'
+                          ? 'Type a message...'
+                          : 'Describe what you want to create...'
+                      "
+                      rows="1"
+                      @paste="handlePaste"
+                      @keydown.enter.exact.prevent="handleSend"
+                    ></textarea>
+
+                    <button
+                      class="shrink-0 w-11 h-11 flex items-center justify-center rounded-2xl transition-all duration-300 ease-out-expo shadow-raised"
+                      :class="
+                        (!inputContent.trim() && pastedImages.length === 0) || isSending
+                          ? 'bg-[var(--bg-surface-2)] text-[var(--text-2)] cursor-not-allowed shadow-none border border-[var(--border-color)]'
+                          : 'bg-[var(--brand-blue)] text-[var(--signal-foreground)] hover:scale-105 active:scale-95'
+                      "
+                      :disabled="(!inputContent.trim() && pastedImages.length === 0) || isSending"
+                      @click="handleSend"
+                    >
+                      <Loader2 v-if="isSending" class="w-5 h-5 animate-spin" />
+                      <Send v-else class="w-4 h-4 ml-0.5" />
+                    </button>
+                  </div>
+                </div>
               </div>
-            </div>
-            <div class="mt-2 text-center text-[11px] text-zinc-400 font-medium tracking-wide">
-              AI 助手可能会生成不准确的信息，请独立核实。视频功能较慢请耐心等待。
+
+              <!-- Very minimal disclaimer -->
+              <div class="mt-4 text-center">
+                <span
+                  class="text-[10px] font-mono tracking-widest text-[var(--text-2)] uppercase opacity-70"
+                  >Generated content may require verification</span
+                >
+              </div>
             </div>
           </div>
         </div>
       </div>
     </transition>
   </Teleport>
+  <ImageViewer v-model="showPreviewImage" :src="previewImageUrl" />
 </template>
 
 <style scoped>
+/* Ultra Premium Typography Reset adapted for theme variables */
+:deep(.markdown-body) {
+  font-family: inherit;
+  color: inherit;
+}
+
+:deep(.xai-assistant-bubble) {
+  border-radius: 1.5rem;
+  border: 1px solid var(--border-color);
+  background: linear-gradient(
+    180deg,
+    color-mix(in oklab, var(--bg-surface-0) 94%, transparent),
+    var(--bg-surface-1)
+  );
+  box-shadow: 0 20px 48px -32px rgba(15, 15, 15, 0.45);
+  padding: 1.15rem 1.25rem;
+}
 :deep(.markdown-body h1),
 :deep(.markdown-body h2),
 :deep(.markdown-body h3) {
-  font-weight: bold;
-  margin-top: 1em;
-  margin-bottom: 0.5em;
+  font-family:
+    'Inter',
+    system-ui,
+    -apple-system,
+    sans-serif;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  line-height: 1.2;
+  margin-top: 1.5em;
+  margin-bottom: 0.75em;
   color: var(--text-1);
 }
 :deep(.markdown-body h1) {
-  font-size: 1.5em;
+  font-size: 1.75em;
 }
 :deep(.markdown-body h2) {
-  font-size: 1.25em;
+  font-size: 1.4em;
 }
 :deep(.markdown-body h3) {
-  font-size: 1.1em;
+  font-size: 1.15em;
 }
+
 :deep(.markdown-body a) {
-  color: #3b82f6;
-  text-decoration: none;
+  color: var(--brand-blue);
+  text-decoration: underline;
+  text-decoration-color: transparent;
+  text-underline-offset: 4px;
+  transition: all 0.3s ease;
 }
 :deep(.markdown-body a:hover) {
-  text-decoration: underline;
+  text-decoration-color: currentColor;
 }
+
+:deep(.markdown-body .xai-code-block) {
+  overflow: hidden;
+  border-radius: 1.15rem;
+  border: 1px solid var(--border-color);
+  background: var(--bg-surface-0);
+  margin: 1.5em 0;
+  box-shadow: 0 24px 44px -36px rgba(15, 15, 15, 0.5);
+}
+
+:deep(.markdown-body .xai-code-toolbar) {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.75rem 0.95rem;
+  border-bottom: 1px solid var(--border-color);
+  background: color-mix(in oklab, var(--bg-surface-1) 82%, var(--bg-surface-0));
+}
+
+:deep(.markdown-body .xai-code-language) {
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.22em;
+  color: var(--text-2);
+}
+
+:deep(.markdown-body .xai-code-copy) {
+  min-width: 4.5rem;
+  border: 1px solid var(--border-color);
+  border-radius: 999px;
+  background: var(--bg-surface-0);
+  color: var(--text-1);
+  padding: 0.38rem 0.8rem;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  transition:
+    background-color 180ms ease,
+    border-color 180ms ease,
+    color 180ms ease,
+    transform 180ms ease;
+}
+
+:deep(.markdown-body .xai-code-copy:hover) {
+  transform: translateY(-1px);
+  border-color: var(--text-2);
+  background: var(--bg-surface-1);
+}
+
+:deep(.markdown-body .xai-code-copy[data-copied='true']) {
+  background: var(--text-1);
+  border-color: var(--text-1);
+  color: var(--bg-surface-0);
+}
+
 :deep(.markdown-body pre) {
-  background-color: #1c2128;
-  color: #adbac7;
-  padding: 1rem;
-  border-radius: 0.5rem;
+  background: transparent;
+  color: var(--text-1);
+  padding: 1rem 1.1rem 1.15rem;
+  border-radius: 0;
+  border: 0;
   overflow-x: auto;
-  margin-top: 0.5em;
-  margin-bottom: 0.5em;
-  font-family:
-    ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New',
-    monospace;
+  margin: 0;
+  font-family: 'JetBrains Mono', 'Fira Code', ui-monospace, SFMono-Regular, monospace;
+  font-size: 0.85em;
+  line-height: 1.7;
+}
+
+:deep(.markdown-body code:not(pre code)) {
+  background-color: var(--bg-surface-2);
+  color: var(--text-1);
+  padding: 0.2em 0.4em;
+  border-radius: 6px;
+  font-family: 'JetBrains Mono', 'Fira Code', monospace;
   font-size: 0.85em;
 }
-:deep(.markdown-body code:not(pre code)) {
-  background-color: rgba(128, 128, 128, 0.2);
-  padding: 0.125rem 0.25rem;
-  border-radius: 0.25rem;
-  font-family: monospace;
+
+:deep(.markdown-body pre code) {
+  color: var(--text-1);
+  background: transparent;
 }
-:deep(.markdown-body ul) {
-  list-style-type: disc;
-  padding-left: 1.5rem;
-  margin-top: 0.5em;
-  margin-bottom: 0.5em;
+
+:deep(.markdown-body .hljs) {
+  color: var(--text-1);
+  background: transparent;
 }
-:deep(.markdown-body ol) {
-  list-style-type: decimal;
-  padding-left: 1.5rem;
-  margin-top: 0.5em;
-  margin-bottom: 0.5em;
+
+:deep(.markdown-body .hljs-keyword),
+:deep(.markdown-body .hljs-selector-tag),
+:deep(.markdown-body .hljs-built_in),
+:deep(.markdown-body .hljs-literal) {
+  color: color-mix(in oklab, var(--text-1) 88%, var(--text-2));
 }
+
+:deep(.markdown-body .hljs-string),
+:deep(.markdown-body .hljs-title),
+:deep(.markdown-body .hljs-section),
+:deep(.markdown-body .hljs-attribute),
+:deep(.markdown-body .hljs-meta-string) {
+  color: var(--text-2);
+}
+
+:deep(.markdown-body .hljs-number),
+:deep(.markdown-body .hljs-symbol),
+:deep(.markdown-body .hljs-bullet) {
+  color: color-mix(in oklab, var(--text-1) 75%, var(--bg-surface-0));
+}
+
+:deep(.markdown-body .hljs-comment),
+:deep(.markdown-body .hljs-quote) {
+  color: color-mix(in oklab, var(--text-2) 84%, transparent);
+  font-style: italic;
+}
+
 :deep(.markdown-body p) {
-  margin-bottom: 0.7em;
-  line-height: 1.6;
+  margin-bottom: 1.2em;
+  line-height: 1.75;
 }
 :deep(.markdown-body p:last-child) {
   margin-bottom: 0;
 }
 
+:deep(.markdown-body ul),
+:deep(.markdown-body ol) {
+  padding-left: 1.2em;
+  margin: 1.2em 0;
+  line-height: 1.75;
+}
+:deep(.markdown-body li) {
+  margin-bottom: 0.5em;
+}
+
+/* Scrollbar Minimalist */
 .custom-scrollbar::-webkit-scrollbar {
-  width: 6px;
+  width: 4px;
+  height: 4px;
 }
 .custom-scrollbar::-webkit-scrollbar-track {
   background: transparent;
 }
 .custom-scrollbar::-webkit-scrollbar-thumb {
-  background: var(--border);
+  background: var(--border-color);
   border-radius: 4px;
 }
-
-.fade-bounce-enter-active {
-  animation: fadeBounceIn 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
-}
-.fade-bounce-leave-active {
-  animation: fadeBounceOut 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+.custom-scrollbar:hover::-webkit-scrollbar-thumb {
+  background: var(--text-2);
 }
 
-@keyframes fadeBounceIn {
+/* Animations */
+.ease-out-expo {
+  transition-timing-function: cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.zen-modal-enter-active {
+  animation: zenIn 0.5s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+.zen-modal-leave-active {
+  animation: zenOut 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+@keyframes zenIn {
   0% {
     opacity: 0;
-    transform: scale(0.95) translateY(10px);
+    transform: scale(0.98) translateY(20px);
   }
   100% {
     opacity: 1;
     transform: scale(1) translateY(0);
   }
 }
-
-@keyframes fadeBounceOut {
+@keyframes zenOut {
   0% {
     opacity: 1;
     transform: scale(1) translateY(0);
   }
   100% {
     opacity: 0;
-    transform: scale(0.95) translateY(10px);
+    transform: scale(0.98) translateY(10px);
   }
+}
+
+.animate-slide-up {
+  animation: slideUp 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  opacity: 0;
+}
+@keyframes slideUp {
+  0% {
+    opacity: 0;
+    transform: translateY(15px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.expand-enter-active,
+.expand-leave-active {
+  transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+  overflow: hidden;
+  max-height: 200px;
+  opacity: 1;
+}
+.expand-enter-from,
+.expand-leave-to {
+  max-height: 0;
+  opacity: 0;
+  transform: translateY(-5px);
 }
 
 @keyframes shimmer {
@@ -1353,5 +1975,92 @@ const handleSend = () => {
 }
 .animate-shimmer {
   animation: shimmer 2.5s infinite linear;
+}
+
+.image-skeleton-shimmer {
+  position: absolute;
+  inset: -20%;
+  background: linear-gradient(
+    115deg,
+    transparent 22%,
+    color-mix(in oklab, var(--text-1) 10%, transparent) 48%,
+    transparent 72%
+  );
+  background-size: 220% 100%;
+  animation: shimmer 2.8s infinite linear;
+}
+
+.image-skeleton-grid {
+  opacity: 0.42;
+  background-image:
+    linear-gradient(color-mix(in oklab, var(--border-color) 72%, transparent) 1px, transparent 1px),
+    linear-gradient(
+      90deg,
+      color-mix(in oklab, var(--border-color) 72%, transparent) 1px,
+      transparent 1px
+    );
+  background-size: 28px 28px;
+}
+
+.image-skeleton-topfade {
+  background: linear-gradient(
+    180deg,
+    color-mix(in oklab, var(--bg-surface-0) 96%, transparent),
+    transparent
+  );
+}
+
+.image-skeleton-bottomfade {
+  background: linear-gradient(
+    0deg,
+    color-mix(in oklab, var(--bg-surface-0) 98%, transparent),
+    transparent
+  );
+}
+
+.image-skeleton-frame {
+  position: relative;
+  display: grid;
+  place-items: center;
+  aspect-ratio: 1 / 1;
+  border-radius: 1.1rem;
+  border: 1px solid color-mix(in oklab, var(--border-color) 88%, transparent);
+  background: linear-gradient(
+    180deg,
+    color-mix(in oklab, var(--bg-surface-1) 88%, transparent),
+    color-mix(in oklab, var(--bg-surface-2) 84%, transparent)
+  );
+  overflow: hidden;
+}
+
+.image-skeleton-frame__inner {
+  width: 44%;
+  height: 44%;
+  border-radius: 999px;
+  border: 1px solid color-mix(in oklab, var(--text-2) 35%, transparent);
+  background: color-mix(in oklab, var(--bg-surface-0) 88%, transparent);
+  box-shadow: inset 0 0 0 10px color-mix(in oklab, var(--bg-surface-1) 90%, transparent);
+}
+
+.image-skeleton-line {
+  height: 0.7rem;
+  width: 100%;
+  border-radius: 999px;
+  background: linear-gradient(
+    90deg,
+    color-mix(in oklab, var(--bg-surface-2) 94%, transparent),
+    color-mix(in oklab, var(--text-1) 12%, transparent),
+    color-mix(in oklab, var(--bg-surface-2) 94%, transparent)
+  );
+  background-size: 200% 100%;
+  animation: shimmer 2.4s infinite linear;
+}
+
+.image-skeleton-line--short {
+  width: 5rem;
+}
+
+.image-skeleton-line--medium {
+  width: 72%;
 }
 </style>

@@ -97,7 +97,7 @@ const handlePointerUp = () => {
     <Transition name="viewer">
       <div
         v-if="modelValue"
-        class="fixed inset-0 z-[100] flex items-center justify-center bg-zinc-50/95 backdrop-blur-2xl transition-all overflow-hidden dark:bg-zinc-950/95"
+        class="fixed inset-0 z-[100100] flex items-center justify-center overflow-hidden bg-zinc-50/95 backdrop-blur-2xl transition-all dark:bg-zinc-950/95"
         @click="close"
         @wheel.prevent="handleWheel"
       >

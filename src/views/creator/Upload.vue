@@ -1,10 +1,11 @@
-<script setup lang="ts">
+﻿<script setup lang="ts">
 import { ref, onMounted, onBeforeUnmount, computed, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import {
   UploadCloud,
   AlertTriangle,
   Image as ImageIcon,
+  Bot,
   X,
   Loader2,
   Plus,
@@ -29,6 +30,7 @@ import {
   DialogTitle,
   DialogFooter,
 } from '@/components/ui/dialog'
+import XaiChatDialog from '@/components/xai/XaiChatDialog.vue'
 import {
   uploadChunk,
   getUploadStatus,
@@ -45,9 +47,12 @@ import {
   type StorageConfig,
 } from '@/api/site'
 import { resolveCreatorTagIds } from '@/utils/creator-video'
+import { useCreatorBridgeStore } from '@/stores/creatorBridge'
+import { hashFileSha256 } from '@/utils/xai-assets'
 
 const router = useRouter()
 const { toast } = useToast()
+const creatorBridgeStore = useCreatorBridgeStore()
 
 interface VideoPart {
   id: string
@@ -89,6 +94,7 @@ interface VideoWork {
   form: VideoWorkForm
   coverFile: File | null
   coverPreview: string
+  currentCoverUrl: string
   coverSource: 'none' | 'auto' | 'manual'
 }
 
@@ -115,6 +121,7 @@ const createWork = (initialParts: VideoPart[] = []): VideoWork => ({
   form: createWorkForm(),
   coverFile: null,
   coverPreview: '',
+  currentCoverUrl: '',
   coverSource: 'none',
 })
 
@@ -184,6 +191,8 @@ const showPartLabels = computed(() => activeParts.value.length > 1)
 
 // Cover Setting State
 const showCoverSetting = ref(false)
+const showAICoverDialog = ref(false)
+const applyingAICover = ref(false)
 const frameVideoRef = ref<HTMLVideoElement | null>(null)
 const previewVideoUrl = ref('')
 const previewVideoError = ref(false)
@@ -206,6 +215,10 @@ const coverDialogTip = computed(() => {
   if (previewVideoUrl.value) return '当前视频浏览器无法预览，仅支持本地上传自定义封面'
   return '当前视频预览源尚未就绪，请先上传自定义封面'
 })
+const aiCoverInitialPrompt = computed(() => {
+  return activeWork.value?.form.title || activeParts.value[0]?.title || ''
+})
+const importedAIDraftIds = new Set<string>()
 
 const emptyUploadStatus = (fileHash: string): UploadStatusResult => ({
   fileHash,
@@ -483,6 +496,7 @@ const clearAutoCover = (work?: VideoWork) => {
   if (!work || work.coverSource !== 'auto') return
   work.coverFile = null
   work.coverPreview = ''
+  work.currentCoverUrl = ''
   work.coverSource = 'none'
   autoCoverPartTokens.delete(work.id)
 }
@@ -598,6 +612,7 @@ const autoRecommendCoverForPart = async (part: VideoPart) => {
 
     latestWork.coverFile = cover.file
     latestWork.coverPreview = cover.preview
+    latestWork.currentCoverUrl = ''
     latestWork.coverSource = 'auto'
     autoCoverPartTokens.set(latestWork.id, token)
   } catch (error) {
@@ -611,10 +626,63 @@ const confirmCoverSetting = () => {
   if (activeWork.value) {
     activeWork.value.coverPreview = tempCoverPreview.value
     activeWork.value.coverFile = tempCoverFile.value
+    activeWork.value.currentCoverUrl = tempCoverFile.value ? '' : activeWork.value.currentCoverUrl
     activeWork.value.coverSource = tempCoverFile.value ? 'manual' : activeWork.value.coverSource
     autoCoverPartTokens.delete(activeWork.value.id)
   }
   showCoverSetting.value = false
+}
+
+const applyUploadedCoverUrl = (coverUrl: string) => {
+  if (!activeWork.value) return
+  activeWork.value.coverFile = null
+  activeWork.value.coverPreview = coverUrl
+  activeWork.value.currentCoverUrl = coverUrl
+  activeWork.value.coverSource = 'manual'
+  autoCoverPartTokens.delete(activeWork.value.id)
+}
+
+const handleAICoverPick = async (payload: { file: File; sourceUrl: string; prompt: string }) => {
+  if (!activeWork.value) return
+  applyingAICover.value = true
+  try {
+    const fileHash = activeParts.value[0]?.hash || (await hashFileSha256(payload.file))
+    const uploadResult = await uploadImage(fileHash, payload.file)
+    applyUploadedCoverUrl(uploadResult.imageUrl)
+    showAICoverDialog.value = false
+    toast({ title: 'AI 封面已应用' })
+  } catch (error) {
+    console.error('Apply AI cover failed', error)
+    toast({ title: 'AI 封面上传失败', variant: 'destructive' })
+  } finally {
+    applyingAICover.value = false
+  }
+}
+
+const importPendingAIVideoDraft = () => {
+  const draft = creatorBridgeStore.pendingVideoImport
+  if (!draft || importedAIDraftIds.has(draft.id)) return
+
+  importedAIDraftIds.add(draft.id)
+  const title = draft.title.trim() || draft.file.name.replace(/\.[^/.]+$/, '')
+  const part: VideoPart = {
+    id: Math.random().toString(36).substring(2, 9),
+    file: draft.file,
+    title,
+    progress: 0,
+    status: 'pending',
+    hash: '',
+    filePath: '',
+    instant: false,
+  }
+  const work = createWork([part])
+  work.form.title = title
+  work.form.description = draft.prompt
+  works.value.push(work)
+  activeWorkIndex.value = works.value.length - 1
+  creatorBridgeStore.clearPendingVideoImport()
+  toast({ title: 'AI 视频已导入投稿页，开始上传' })
+  processUploadQueue()
 }
 
 onMounted(async () => {
@@ -632,7 +700,16 @@ onMounted(async () => {
   scheduleBoundaryTimer = window.setInterval(refreshScheduleBoundary, 30000)
   window.addEventListener('dragover', handleWindowDragOver)
   window.addEventListener('drop', handleWindowDrop)
+  importPendingAIVideoDraft()
 })
+
+watch(
+  () => creatorBridgeStore.pendingVideoImport?.id,
+  (draftId) => {
+    if (!draftId) return
+    importPendingAIVideoDraft()
+  }
+)
 
 watch(
   () => [
@@ -1333,7 +1410,7 @@ const handlePublish = async () => {
         publishTimeStr = new Date(normalized).toISOString()
       }
       const tagIds = await resolveCreatorTagIds(work.form.tags)
-      let coverUrl = ''
+      let coverUrl = work.currentCoverUrl
       if (work.coverFile) {
         const coverRes = await uploadImage(work.parts[0]?.hash || '', work.coverFile)
         coverUrl = coverRes.imageUrl
@@ -1699,7 +1776,22 @@ const handlePublish = async () => {
         <div class="max-w-4xl space-y-10">
           <!-- Cover -->
           <div class="space-y-4">
-            <Label class="text-base">视频封面 <span class="text-red-500">*</span></Label>
+            <div class="flex items-center gap-3">
+              <Label class="text-base">视频封面 <span class="text-red-500">*</span></Label>
+              <span title="AI 生成封面">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="icon"
+                  class="h-9 w-9 rounded-full"
+                  :disabled="applyingAICover"
+                  @click="showAICoverDialog = true"
+                >
+                  <Loader2 v-if="applyingAICover" class="h-4 w-4 animate-spin" />
+                  <Bot v-else class="h-4 w-4" />
+                </Button>
+              </span>
+            </div>
 
             <div class="flex flex-col gap-4">
               <!-- Main Cover -->
@@ -2070,6 +2162,15 @@ const handlePublish = async () => {
         </DialogFooter>
       </DialogContent>
     </Dialog>
+
+    <XaiChatDialog
+      :open="showAICoverDialog"
+      mode="cover-picker"
+      initial-model="image"
+      :initial-prompt="aiCoverInitialPrompt"
+      @update:open="showAICoverDialog = $event"
+      @cover-pick="handleAICoverPick"
+    />
   </div>
 </template>
 

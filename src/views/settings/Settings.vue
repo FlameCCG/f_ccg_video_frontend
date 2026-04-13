@@ -56,6 +56,7 @@ const formUsername = ref('')
 const formDescription = ref('')
 const formGender = ref(0)
 const formBirthday = ref('')
+const profileLikeTagInput = ref('')
 const avatarUploading = ref(false)
 
 const oldPassword = ref('')
@@ -127,12 +128,25 @@ const recordTabs: { key: RecordTab; label: string; icon: typeof Clock3 }[] = [
   { key: 'coin', label: '硬币记录', icon: Coins },
 ]
 
+const normalizeLikeTags = (tags?: string[] | null) => {
+  if (!Array.isArray(tags)) return []
+  return tags
+    .map((tag) => tag.trim())
+    .filter((tag, index, arr) => tag.length > 0 && arr.indexOf(tag) === index)
+}
+
 const fetchData = async () => {
   loading.value = true
   try {
     const [info, config] = await Promise.all([getCurrentUserInfo(), getUserConfig()])
-    userInfo.value = info
-    userConfig.value = config
+    userInfo.value = {
+      ...info,
+      likeTags: normalizeLikeTags(info.likeTags),
+    }
+    userConfig.value = {
+      ...config,
+      likeTags: normalizeLikeTags(config.likeTags),
+    }
     formUsername.value = info.username
     formDescription.value = info.description || ''
     formGender.value = info.gender
@@ -350,6 +364,44 @@ const handleSavePrivacy = async () => {
   }
 }
 
+const handleSaveLikeTags = async (silent = false) => {
+  if (!userConfig.value || saving.value) return
+  saving.value = true
+  const nextTags = normalizeLikeTags(userConfig.value.likeTags)
+  try {
+    await updateUserConfig({ likeTags: nextTags })
+    userConfig.value.likeTags = nextTags
+    if (userInfo.value) {
+      userInfo.value.likeTags = nextTags
+    }
+    authStore.updateUser({ likeTags: nextTags })
+    if (!silent) toast.success('个人标签已保存')
+  } catch {
+    toast.error('保存失败')
+  } finally {
+    saving.value = false
+  }
+}
+
+const addProfileLikeTag = async () => {
+  if (!userConfig.value) return
+  const nextTag = profileLikeTagInput.value.trim()
+  if (!nextTag) return
+  if (userConfig.value.likeTags.includes(nextTag)) {
+    profileLikeTagInput.value = ''
+    return
+  }
+  userConfig.value.likeTags = [...userConfig.value.likeTags, nextTag]
+  profileLikeTagInput.value = ''
+  await handleSaveLikeTags(true)
+}
+
+const removeProfileLikeTag = async (tag: string) => {
+  if (!userConfig.value) return
+  userConfig.value.likeTags = userConfig.value.likeTags.filter((item) => item !== tag)
+  await handleSaveLikeTags(true)
+}
+
 const handleChangePwd = async () => {
   if (!newPassword.value || !oldPassword.value) {
     toast.warning('请填写完整')
@@ -506,6 +558,65 @@ watch(activeRecordTab, (tab) => {
             <button class="btn-pri" :disabled="saving" @click="handleSaveProfile">
               <Save :size="14" /> {{ saving ? '保存中...' : '保存修改' }}
             </button>
+          </div>
+
+          <div v-if="userConfig" class="form-block">
+            <h3 class="text-[20px] font-bold text-[var(--text-1)] mb-6 tracking-tight">
+              个人标签设置
+            </h3>
+
+            <div class="flex flex-wrap items-center gap-3">
+              <template v-if="userConfig.likeTags.length">
+                <span
+                  v-for="tag in userConfig.likeTags"
+                  :key="tag"
+                  class="inline-flex items-center gap-1.5 px-3 h-[34px] rounded shrink-0 border border-[var(--border-color)] text-[13px] text-[var(--text-1)] bg-transparent"
+                >
+                  <i
+                    class="vui_icon sic-fsp-tag_line mt-[1px] text-[14px] text-[var(--text-3)] not-italic"
+                  ></i>
+                  {{ tag }}
+                  <button
+                    type="button"
+                    class="ml-1 w-[14px] h-[14px] bg-[var(--text-4)] hover:bg-[var(--text-3)] rounded-full flex items-center justify-center transition-colors"
+                    aria-label="删除标签"
+                    @click="removeProfileLikeTag(tag)"
+                  >
+                    <span class="text-[var(--bg-surface-0)] text-[11px] leading-none pb-[1px]"
+                      >×</span
+                    >
+                  </button>
+                </span>
+              </template>
+
+              <div class="flex items-center h-[34px]">
+                <div class="relative w-[200px] h-full">
+                  <input
+                    v-model="profileLikeTagInput"
+                    type="text"
+                    maxlength="24"
+                    class="w-full h-full bg-transparent border border-[var(--border-color)] border-r-0 px-3 pr-8 text-[13px] rounded-l outline-none focus:border-[var(--brand-blue)] transition-colors"
+                    @keydown.enter.prevent="addProfileLikeTag"
+                  />
+                  <!-- Clear button inside input -->
+                  <button
+                    v-if="profileLikeTagInput"
+                    class="absolute right-2 top-1/2 -translate-y-1/2 w-[14px] h-[14px] bg-[var(--text-4)] hover:bg-[var(--text-3)] rounded-full flex items-center justify-center transition-colors"
+                    @click="profileLikeTagInput = ''"
+                  >
+                    <span class="text-[var(--bg-surface-0)] text-[11px] leading-none pb-[1px]"
+                      >×</span
+                    >
+                  </button>
+                </div>
+                <button
+                  class="h-full border border-[var(--border-color)] px-5 rounded-r text-[13px] text-[var(--brand-blue)] hover:bg-[var(--brand-blue)]/5 transition-colors focus:border-[var(--brand-blue)] bg-transparent whitespace-nowrap"
+                  @click="addProfileLikeTag"
+                >
+                  新增
+                </button>
+              </div>
+            </div>
           </div>
         </section>
 
@@ -1351,12 +1462,80 @@ watch(activeRecordTab, (tab) => {
   cursor: not-allowed;
 }
 
+.btn-ghost {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 104px;
+  padding: 0 18px;
+  border-radius: 999px;
+  border: 1px solid var(--color-border);
+  background: var(--color-card);
+  color: var(--color-foreground);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition:
+    border-color 0.15s,
+    transform 0.15s,
+    background-color 0.15s;
+}
+
+.btn-ghost:hover {
+  border-color: var(--color-primary);
+  background: var(--color-secondary);
+  transform: translateY(-1px);
+}
+
 .btn-danger {
   background: var(--color-accent);
 }
 
 .btn-danger:hover:not(:disabled) {
   background: oklch(from var(--color-accent) calc(l - 0.08) c h);
+}
+
+.tag-board {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.tag-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  background: var(--color-card);
+  color: var(--color-foreground);
+  padding: 7px 12px;
+  font-size: 12px;
+  line-height: 1;
+}
+
+.tag-chip__remove {
+  border: none;
+  background: transparent;
+  color: var(--color-muted-foreground);
+  cursor: pointer;
+  padding: 0;
+  line-height: 1;
+}
+
+.tag-chip__remove:hover {
+  color: var(--color-foreground);
+}
+
+.tag-empty {
+  font-size: 12px;
+  color: var(--color-muted-foreground);
+}
+
+.tag-input-row {
+  display: flex;
+  gap: 10px;
+  margin-top: 16px;
 }
 
 /* Privacy */

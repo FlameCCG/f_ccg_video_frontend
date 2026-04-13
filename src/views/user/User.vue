@@ -58,6 +58,7 @@ import {
   FileVideo,
   ChevronRight,
   Shirt,
+  VenusAndMars,
   Pin,
   Trash2,
   MoreVertical,
@@ -212,12 +213,96 @@ const genderText = computed(() => {
   return '保密'
 })
 
+const normalizeLikeTags = (tags?: string[] | null) => {
+  if (!Array.isArray(tags)) return []
+  return tags
+    .map((tag) => tag.trim())
+    .filter((tag, index, arr) => tag.length > 0 && arr.indexOf(tag) === index)
+}
+
+const visibleLikeTags = computed(() => normalizeLikeTags(user.value?.likeTags))
+
+type ProfileMetaItem =
+  | { key: string; label: string; icon: any; value: string; tags?: never }
+  | { key: string; label: string; icon: any; value?: never; tags: string[] }
+
+const profileMetaItems = computed<ProfileMetaItem[]>(() => {
+  if (!user.value) return []
+
+  const items: ProfileMetaItem[] = [
+    { key: 'uid', label: 'UID', icon: 'vui_icon sic-fsp-uid_line', value: String(user.value.id) },
+    {
+      key: 'birthday',
+      label: '生日',
+      icon: 'vui_icon sic-fsp-cake_line',
+      value: user.value.birthday ? fmtDate(user.value.birthday) : '-',
+    },
+    { key: 'gender', label: '性别', icon: VenusAndMars, value: genderText.value || '-' },
+  ]
+
+  if (visibleLikeTags.value.length) {
+    items.push({
+      key: 'likeTags',
+      label: '兴趣',
+      icon: 'vui_icon sic-fsp-tag_line',
+      tags: visibleLikeTags.value,
+    })
+  }
+
+  return items
+})
+
+const likeTagInput = ref('')
+
+const addLikeTagDraft = async () => {
+  if (!userConf.value) return
+  const nextTag = likeTagInput.value.trim()
+  if (!nextTag) return
+  if (userConf.value.likeTags.includes(nextTag)) {
+    likeTagInput.value = ''
+    return
+  }
+  userConf.value.likeTags = [...userConf.value.likeTags, nextTag]
+  likeTagInput.value = ''
+  await saveLikeTags(true)
+}
+
+const removeLikeTagDraft = async (tag: string) => {
+  if (!userConf.value) return
+  userConf.value.likeTags = userConf.value.likeTags.filter((item) => item !== tag)
+  await saveLikeTags(true)
+}
+
+const saveLikeTags = async (silent = false) => {
+  if (!userConf.value || confSaving.value) return
+
+  confSaving.value = true
+  const nextTags = normalizeLikeTags(userConf.value.likeTags)
+  try {
+    await updateUserConfig({ likeTags: nextTags })
+    userConf.value.likeTags = nextTags
+    if (user.value) {
+      user.value.likeTags = nextTags
+    }
+    authStore.updateUser({ likeTags: nextTags })
+    if (silent !== true) toast.success('兴趣标签已保存')
+  } catch {
+    toast.error('保存兴趣标签失败')
+  } finally {
+    confSaving.value = false
+  }
+}
+
 // ---- Fetchers ----
 
 const fetchUserProfile = async () => {
   loading.value = true
   try {
-    user.value = await getUserDetail(userId.value)
+    const detail = await getUserDetail(userId.value)
+    user.value = {
+      ...detail,
+      likeTags: normalizeLikeTags(detail.likeTags),
+    }
     if (authStore.isLoggedIn && !isSelf.value) {
       relation.value = await getRelation(userId.value)
     }
@@ -363,7 +448,11 @@ const fetchDynamics = async (page = 1) => {
 const fetchUserConf = async () => {
   confLoading.value = true
   try {
-    userConf.value = await getUserConfig()
+    const config = await getUserConfig()
+    userConf.value = {
+      ...config,
+      likeTags: normalizeLikeTags(config.likeTags),
+    }
   } catch {
     toast.error('获取隐私设置失败')
   } finally {
@@ -1139,21 +1228,39 @@ const privacySettings = [
                 >
                   个人资料
                 </div>
-                <div class="flex flex-col gap-1.5 text-[12px]">
-                  <div class="flex">
-                    <span class="w-10 text-muted-foreground/80">UID</span>
-                    <span class="text-muted-foreground">{{ user.id }}</span>
-                  </div>
-                  <div class="flex">
-                    <span class="w-10 text-muted-foreground/80">生日</span>
-                    <span class="text-muted-foreground">{{
-                      user.birthday ? fmtDate(user.birthday) : '-'
-                    }}</span>
-                  </div>
-                  <div class="flex">
-                    <span class="w-10 text-muted-foreground/80">性别</span>
-                    <span class="text-muted-foreground">{{ genderText }}</span>
-                  </div>
+                <div class="flex flex-col gap-2.5 text-[13px]">
+                  <template v-for="item in profileMetaItems" :key="item.key">
+                    <div
+                      v-if="'value' in item"
+                      class="flex items-center gap-2 text-muted-foreground"
+                    >
+                      <component
+                        :is="item.icon"
+                        v-if="typeof item.icon !== 'string'"
+                        class="h-[18px] w-[18px] flex-shrink-0 text-muted-foreground/75"
+                      />
+                      <i
+                        v-else
+                        :class="item.icon"
+                        class="text-[18px] w-[18px] h-[18px] not-italic inline-flex items-center justify-center flex-shrink-0 text-muted-foreground/75"
+                      ></i>
+                      <div class="min-w-0 flex-1 flex items-center min-h-[22px]">
+                        <span class="leading-none pt-[1.5px]">{{ item.value }}</span>
+                      </div>
+                    </div>
+                    <div v-else class="grid grid-cols-2 gap-x-2 gap-y-2.5 mt-2">
+                      <div
+                        v-for="tag in item.tags"
+                        :key="`${item.key}-${tag}`"
+                        class="flex items-center gap-1.5 text-foreground/90 overflow-hidden"
+                      >
+                        <i
+                          class="vui_icon sic-fsp-tag_line text-[14px] not-italic inline-flex items-center justify-center text-muted-foreground/80 shrink-0"
+                        ></i>
+                        <span class="text-[13px] leading-none pt-[1px] truncate">{{ tag }}</span>
+                      </div>
+                    </div>
+                  </template>
                 </div>
               </div>
 
@@ -1539,21 +1646,36 @@ const privacySettings = [
               <div class="text-[14px] font-medium text-foreground mb-2 pb-2 border-b border-border">
                 个人资料
               </div>
-              <div class="flex flex-col gap-1.5 text-[12px]">
-                <div class="flex">
-                  <span class="text-muted-foreground/80 w-10">UID</span>
-                  <span class="text-muted-foreground">{{ user.id }}</span>
-                </div>
-                <div class="flex">
-                  <span class="text-muted-foreground/80 w-10">生日</span>
-                  <span class="text-muted-foreground">{{
-                    user.birthday ? fmtDate(user.birthday) : '-'
-                  }}</span>
-                </div>
-                <div class="flex">
-                  <span class="text-muted-foreground/80 w-10">性别</span>
-                  <span class="text-muted-foreground">{{ genderText }}</span>
-                </div>
+              <div class="flex flex-col gap-2 text-[12px]">
+                <template v-for="item in profileMetaItems" :key="item.key">
+                  <div v-if="'value' in item" class="flex items-center gap-2 text-muted-foreground">
+                    <component
+                      :is="item.icon"
+                      v-if="typeof item.icon !== 'string'"
+                      class="h-[18px] w-[18px] flex-shrink-0 text-muted-foreground/75"
+                    />
+                    <i
+                      v-else
+                      :class="item.icon"
+                      class="text-[18px] w-[18px] h-[18px] not-italic inline-flex items-center justify-center flex-shrink-0 text-muted-foreground/75"
+                    ></i>
+                    <div class="min-w-0 flex-1 flex items-center min-h-[22px]">
+                      <span class="leading-none pt-[1.5px] text-[13px]">{{ item.value }}</span>
+                    </div>
+                  </div>
+                  <div v-else class="grid grid-cols-2 gap-x-2 gap-y-2.5 mt-2">
+                    <div
+                      v-for="tag in item.tags"
+                      :key="`${item.key}-${tag}`"
+                      class="flex items-center gap-1.5 text-foreground/90 overflow-hidden"
+                    >
+                      <i
+                        class="vui_icon sic-fsp-tag_line text-[14px] not-italic inline-flex items-center justify-center text-muted-foreground/80 shrink-0"
+                      ></i>
+                      <span class="text-[13px] leading-none pt-[1px] truncate">{{ tag }}</span>
+                    </div>
+                  </div>
+                </template>
               </div>
             </div>
 
@@ -1745,38 +1867,98 @@ const privacySettings = [
 
         <!-- ==================== SETTINGS TAB ==================== -->
         <div v-else-if="activeTab === 'settings' && isSelf" class="bg-card rounded-lg p-6">
-          <h2 class="text-[18px] font-bold text-foreground mb-6">隐私设置</h2>
+          <h2 class="text-[18px] font-bold text-foreground mb-6">主页设置</h2>
 
           <div v-if="confLoading" class="py-16 text-center text-muted-foreground/80 text-[13px]">
             加载中...
           </div>
 
-          <div v-else-if="userConf" class="grid grid-cols-3 gap-x-8 gap-y-5">
-            <div
-              v-for="s in privacySettings"
-              :key="s.key"
-              class="flex items-center justify-between"
-            >
-              <span class="text-[13px] text-foreground">{{ s.label }}</span>
-              <button
-                class="relative w-[40px] h-[22px] rounded-full transition-colors cursor-pointer"
-                :class="
-                  (userConf as Record<string, unknown>)[s.key]
-                    ? 'bg-primary'
-                    : 'bg-black/10 dark:bg-white/15'
-                "
-                :disabled="confSaving"
-                @click="toggleConf(s.key)"
-              >
-                <span
-                  class="absolute left-0 top-[2px] w-[18px] h-[18px] rounded-full bg-white shadow transition-transform"
-                  :class="
-                    (userConf as Record<string, unknown>)[s.key]
-                      ? 'translate-x-[20px]'
-                      : 'translate-x-[2px]'
-                  "
-                ></span>
-              </button>
+          <div v-else-if="userConf" class="space-y-8">
+            <div>
+              <h3 class="mb-4 text-[15px] font-semibold text-foreground">隐私设置</h3>
+              <div class="grid grid-cols-3 gap-x-8 gap-y-5">
+                <div
+                  v-for="s in privacySettings"
+                  :key="s.key"
+                  class="flex items-center justify-between"
+                >
+                  <span class="text-[13px] text-foreground">{{ s.label }}</span>
+                  <button
+                    class="relative h-[22px] w-[40px] cursor-pointer rounded-full transition-colors"
+                    :class="
+                      (userConf as Record<string, unknown>)[s.key]
+                        ? 'bg-primary'
+                        : 'bg-black/10 dark:bg-white/15'
+                    "
+                    :disabled="confSaving"
+                    @click="toggleConf(s.key)"
+                  >
+                    <span
+                      class="absolute left-0 top-[2px] h-[18px] w-[18px] rounded-full bg-white shadow transition-transform"
+                      :class="
+                        (userConf as Record<string, unknown>)[s.key]
+                          ? 'translate-x-[20px]'
+                          : 'translate-x-[2px]'
+                      "
+                    ></span>
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <div class="mt-8">
+              <h3 class="text-[20px] font-bold text-foreground mb-6 tracking-tight">
+                个人标签设置
+              </h3>
+
+              <div class="flex flex-wrap items-center gap-3">
+                <template v-if="userConf.likeTags.length">
+                  <span
+                    v-for="tag in userConf.likeTags"
+                    :key="tag"
+                    class="inline-flex items-center gap-1.5 px-3 h-[34px] rounded shrink-0 border border-border/70 text-[13px] text-foreground bg-transparent shadow-sm"
+                  >
+                    <i
+                      class="vui_icon sic-fsp-tag_line mt-[1px] text-[14px] text-muted-foreground not-italic"
+                    ></i>
+                    {{ tag }}
+                    <button
+                      type="button"
+                      class="ml-1 w-[14px] h-[14px] bg-muted-foreground/60 hover:bg-muted-foreground/80 rounded-full flex items-center justify-center transition-colors"
+                      aria-label="删除标签"
+                      @click="removeLikeTagDraft(tag)"
+                    >
+                      <span class="text-card text-[11px] leading-none pb-[1px]">×</span>
+                    </button>
+                  </span>
+                </template>
+
+                <div class="flex items-center h-[34px] shadow-sm rounded">
+                  <div class="relative w-[200px] h-full">
+                    <input
+                      v-model="likeTagInput"
+                      type="text"
+                      maxlength="24"
+                      class="w-full h-full bg-card border border-border/70 border-r-0 px-3 pr-8 text-[13px] rounded-l outline-none focus:border-primary transition-colors text-foreground"
+                      @keydown.enter.prevent="addLikeTagDraft"
+                    />
+                    <!-- Clear button visible only when user typing -->
+                    <button
+                      v-if="likeTagInput"
+                      class="absolute right-2 top-1/2 -translate-y-1/2 w-[14px] h-[14px] bg-muted-foreground/60 hover:bg-muted-foreground/80 rounded-full flex items-center justify-center transition-colors"
+                      @click="likeTagInput = ''"
+                    >
+                      <span class="text-card text-[11px] leading-none pb-[1px]">×</span>
+                    </button>
+                  </div>
+                  <button
+                    class="h-full border border-border/70 px-5 rounded-r text-[13px] text-primary hover:bg-primary/5 transition-colors focus:border-primary bg-card whitespace-nowrap font-medium"
+                    @click="addLikeTagDraft"
+                  >
+                    新增
+                  </button>
+                </div>
+              </div>
             </div>
           </div>
         </div>

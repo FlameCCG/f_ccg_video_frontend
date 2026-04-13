@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onBeforeUnmount, watch } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import { onBeforeRouteLeave, useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { likeDanmu, reportDanmu, type PlayerDanmuPayload } from '@/api/danmu'
 import { useVideoStore } from '@/stores/video'
@@ -430,6 +430,7 @@ const loadVideo = async (id: number) => {
         currentTime: video.value.watchProgress ?? 0,
         duration: video.value.duration,
       })
+      void videoStore.saveProgress()
     }
   }
 }
@@ -459,18 +460,30 @@ const handleSeek = (time: number) => {
   }
 }
 
+const persistVideoHistoryWithoutPlayer = async () => {
+  if (!authStore.isLoggedIn || !video.value) return
+  await videoStore.saveProgress()
+}
+
 onMounted(() => {
   if (videoId.value) {
     void loadVideo(videoId.value)
   }
 })
 
-watch(videoId, (id) => {
+watch(videoId, (id, previousId) => {
+  if (previousId && previousId !== id) {
+    void persistVideoHistoryWithoutPlayer()
+  }
   if (id) {
     videoStore.clearVideo()
     descExpanded.value = false
     void loadVideo(id)
   }
+})
+
+onBeforeRouteLeave(() => {
+  void persistVideoHistoryWithoutPlayer()
 })
 
 watch(

@@ -93,6 +93,7 @@ export interface UserInfo {
   fansCount: number
   dynamicCount: number
   registerSource: string
+  likeTags: string[]
 }
 
 export interface UserDetail {
@@ -109,6 +110,7 @@ export interface UserDetail {
   fansCount: number
   totalLikes: number
   totalViews: number
+  likeTags: string[]
 }
 
 export interface UpdateUserInfoParams {

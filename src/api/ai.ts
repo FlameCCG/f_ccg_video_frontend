@@ -1,4 +1,10 @@
-import request, { getAccessToken } from './request'
+import request from './request'
+import {
+  API_BASE,
+  ensureAccessToken,
+  refreshAccessToken,
+  isAuthenticationError,
+} from '@/utils/authSession'
 
 /** 后端统一响应：HTTP 常为 200，业务成败看 code（0 成功 / 1 失败） */
 interface AiBusinessResponse {
@@ -93,13 +99,25 @@ export interface AiResponsesRequest {
   thinkingEffort?: string
 }
 
+export interface AiToolCall {
+  callId: string
+  name: string
+  label: string
+  status: 'running' | 'completed' | 'failed' | 'cancelled'
+  query?: string
+  resultCount?: number
+  retrievalMode?: string
+  message?: string
+}
+
 export const fetchAiChatStream = async (
   payload: AiResponsesRequest,
   onChunk: (text: string) => void,
   onReasoningChunk: (text: string) => void,
   onComplete: () => void,
   onError: (err: Error) => void,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  onToolEvent?: (event: AiToolCall) => void
 ) => {
   let completed = false
   let reader: ReadableStreamDefaultReader<Uint8Array> | undefined
@@ -111,17 +129,35 @@ export const fetchAiChatStream = async (
   }
 
   try {
-    const token = getAccessToken()
-    const response = await fetch('/v1/common/ai/responses', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Accept: 'text/event-stream',
-        Authorization: token ? `Bearer ${token}` : '',
-      },
-      body: JSON.stringify(payload),
-      signal,
-    })
+    let token = await ensureAccessToken()
+    const sendRequest = () =>
+      fetch(`${API_BASE}/common/ai/responses`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Accept: 'text/event-stream',
+          Authorization: token ? `Bearer ${token}` : '',
+        },
+        body: JSON.stringify(payload),
+        signal,
+      })
+    signal?.throwIfAborted()
+    let response = await sendRequest()
+    let rejected = response.status === 401
+    if (isJsonContentType(response.headers.get('content-type'))) {
+      const body = (await response
+        .clone()
+        .json()
+        .catch(() => null)) as AiBusinessResponse | null
+      rejected ||= body?.code === 1 && isAuthenticationError(body.msg)
+    }
+    // 仅在 SSE 建立前恢复身份；已经开始生成的回答不能自动重放。
+    if (rejected) {
+      await response.body?.cancel()
+      token = await refreshAccessToken(token)
+      signal?.throwIfAborted()
+      response = await sendRequest()
+    }
 
     // HTTP 层失败（非本项目常见路径，但需兜底）
     if (!response.ok) {
@@ -174,6 +210,34 @@ export const fetchAiChatStream = async (
       // 部分上游会在 SSE data 里塞业务错误 JSON
       const bizErr = parseBusinessJsonError(dataObj)
       if (bizErr) throw bizErr
+
+      if (
+        type === 'response.tool.started' ||
+        type === 'response.tool.completed' ||
+        type === 'response.tool.failed'
+      ) {
+        if (typeof dataObj.callId !== 'string' || typeof dataObj.name !== 'string') return
+        onToolEvent?.({
+          callId: dataObj.callId,
+          name: dataObj.name,
+          label: typeof dataObj.label === 'string' ? dataObj.label : dataObj.name,
+          status:
+            type === 'response.tool.started'
+              ? 'running'
+              : type === 'response.tool.completed'
+                ? 'completed'
+                : 'failed',
+          query: typeof dataObj.query === 'string' ? dataObj.query : undefined,
+          resultCount:
+            typeof dataObj.resultCount === 'number' && Number.isInteger(dataObj.resultCount)
+              ? Math.max(0, dataObj.resultCount)
+              : undefined,
+          retrievalMode:
+            typeof dataObj.retrievalMode === 'string' ? dataObj.retrievalMode : undefined,
+          message: typeof dataObj.message === 'string' ? dataObj.message : undefined,
+        })
+        return
+      }
 
       if (type === 'response.output_text.delta') {
         const text = asDeltaText(dataObj.delta)

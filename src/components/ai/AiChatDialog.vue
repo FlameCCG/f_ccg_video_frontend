@@ -2,6 +2,7 @@
 import { ref, reactive, nextTick, watch, onBeforeUnmount, computed, shallowRef } from 'vue'
 import { useRouter } from 'vue-router'
 import { getAccessToken } from '@/api/request'
+import { SessionExpiredError } from '@/utils/authSession'
 import {
   X,
   Download,
@@ -11,6 +12,8 @@ import {
   UploadCloud,
   ArrowDown,
   Check,
+  Search,
+  CircleAlert,
 } from 'lucide-vue-next'
 import {
   fetchAiChatStream,
@@ -28,6 +31,7 @@ import {
   type AiResponsesContentPart,
   type AiResponsesMessage,
   type AiResponsesRequest,
+  type AiToolCall,
 } from '@/api/ai'
 import { toast } from 'vue-sonner'
 import ImageViewer from '@/components/common/ImageViewer.vue'
@@ -88,6 +92,7 @@ export interface ChatMessage {
   content?: string
   sourcePrompt?: string
   reasoningContent?: string
+  toolCalls?: AiToolCall[]
   images?: string[] // pasted image urls
   // Placeholder/Result fields
   isLoading?: boolean
@@ -117,6 +122,37 @@ const activeResponseId = computed(() =>
 )
 const isActiveMessage = (msg: ChatMessage) =>
   activeResponseId.value === msg.id && !msg.error && !msg.notice
+
+const updateToolCall = (message: ChatMessage, event: AiToolCall) => {
+  const calls = message.toolCalls ?? []
+  const exists = calls.some((call) => call.callId === event.callId)
+  message.toolCalls = exists
+    ? calls.map((call) => (call.callId === event.callId ? { ...call, ...event } : call))
+    : [...calls, event]
+}
+
+const settleToolCalls = (message: ChatMessage, status: 'failed' | 'cancelled') => {
+  message.toolCalls = message.toolCalls?.map((call) =>
+    call.status === 'running'
+      ? { ...call, status, message: status === 'cancelled' ? '已停止搜索' : '搜索已中断' }
+      : call
+  )
+}
+
+const toolCallStatusText = (call: AiToolCall) => {
+  if (call.status === 'running') return '正在调用'
+  if (call.status === 'cancelled') return '已停止'
+  if (call.status === 'failed') return call.message || '搜索失败'
+  if (call.retrievalMode === 'latest_fallback') return '未找到匹配，已提供最新作品'
+  return `已完成 · ${call.resultCount ?? 0} 个候选`
+}
+
+const activeResponseText = (msg: ChatMessage) => {
+  if (msg.toolCalls?.some((call) => call.status === 'running')) return '正在搜索'
+  if (msg.content) return '正在回复'
+  if (msg.toolCalls?.length) return '正在整理结果'
+  return msg.reasoningContent ? '正在思考' : '正在准备'
+}
 let activeRequest: AbortController | null = null
 const stopRequest = () => activeRequest?.abort()
 /** 流式输出中：关闭 scroll-smooth，减少强制布局抖动 */
@@ -928,6 +964,7 @@ const sendRequest = async (payload: AiComposerSendPayload) => {
         type: 'text',
         content: '',
         reasoningContent: '',
+        toolCalls: [],
         isLoading: true,
       }
       messages.value.push(asstMsg)
@@ -988,15 +1025,28 @@ const sendRequest = async (payload: AiComposerSendPayload) => {
         },
         (err) => {
           textStreamBuffer.flushFinal()
+          settleToolCalls(reactiveAsstMsg, signal.aborted ? 'cancelled' : 'failed')
           // 必须收尾 loading，否则 API Key 未配置等业务错误会让界面一直转圈
           reactiveAsstMsg.isLoading = false
           isStreamingUi.value = false
           if (signal.aborted) return
+          if (err instanceof SessionExpiredError) {
+            if (!reactiveAsstMsg.content && !reactiveAsstMsg.reasoningContent) {
+              messages.value = messages.value.filter((message) => message.id !== assistantMsgId)
+            } else {
+              reactiveAsstMsg.notice = '回复已中断'
+            }
+            return
+          }
           const message = formatAiErrorMessage(err.message)
           reactiveAsstMsg.error = message
           toast.error(message)
         },
-        signal
+        signal,
+        (event) => {
+          updateToolCall(reactiveAsstMsg, event)
+          void scrollToBottom()
+        }
       )
       signal.throwIfAborted()
     } else if (payload.mode === 'image') {
@@ -1173,13 +1223,14 @@ const sendRequest = async (payload: AiComposerSendPayload) => {
   } catch (err: unknown) {
     if (assistantMessage) {
       assistantMessage.isLoading = false
+      settleToolCalls(assistantMessage, signal.aborted ? 'cancelled' : 'failed')
       if (signal.aborted) {
         assistantMessage.notice =
           payload.mode === 'text' ? '已停止生成' : '已停止等待，已创建的生成任务可能仍在处理'
         if (payload.mode === 'image') {
           assistantMessage.results = assistantMessage.results?.filter((result) => result.url)
         }
-      } else {
+      } else if (!(err instanceof SessionExpiredError)) {
         const message = formatAiErrorMessage(err instanceof Error ? err.message : String(err))
         assistantMessage.error = message
         toast.error(message)
@@ -1263,6 +1314,7 @@ const handleComposerSend = (payload: AiComposerSendPayload) => {
               msg.id,
               msg.content,
               msg.reasoningContent,
+              msg.toolCalls,
               msg.isLoading,
               msg.error,
               msg.notice,
@@ -1301,8 +1353,7 @@ const handleComposerSend = (payload: AiComposerSendPayload) => {
                   class="ai-response-state ai-response-state--live"
                   role="status"
                 >
-                  <i></i
-                  >{{ msg.content ? '正在回复' : msg.reasoningContent ? '正在思考' : '正在准备' }}
+                  <i></i>{{ activeResponseText(msg) }}
                 </span>
                 <span v-else-if="!msg.error && !msg.notice" class="ai-response-state">
                   <Check :size="12" />{{ msg.type === 'text' ? '回复完成' : '生成完成' }}
@@ -1341,6 +1392,31 @@ const handleComposerSend = (payload: AiComposerSendPayload) => {
                         : 'done'
                 "
               />
+
+              <div v-if="msg.toolCalls?.length" class="ai-tool-calls" aria-label="工具调用记录">
+                <div
+                  v-for="call in msg.toolCalls"
+                  :key="call.callId"
+                  class="ai-tool-call"
+                  :class="`ai-tool-call--${call.status}`"
+                  role="status"
+                  :aria-busy="call.status === 'running'"
+                >
+                  <Loader2 v-if="call.status === 'running'" :size="15" class="ai-tool-spin" />
+                  <Check v-else-if="call.status === 'completed'" :size="15" />
+                  <CircleAlert v-else-if="call.status === 'failed'" :size="15" />
+                  <Search v-else :size="15" />
+                  <div class="ai-tool-copy">
+                    <div class="ai-tool-heading">
+                      <span class="ai-tool-label" :title="call.name">{{ call.label }}</span>
+                      <span class="ai-tool-status">{{ toolCallStatusText(call) }}</span>
+                    </div>
+                    <span v-if="call.query" class="ai-tool-query" :title="call.query">{{
+                      call.query
+                    }}</span>
+                  </div>
+                </div>
+              </div>
 
               <!-- Markdown Content -->
               <div
@@ -1403,6 +1479,7 @@ const handleComposerSend = (payload: AiComposerSendPayload) => {
                   msg.isLoading &&
                   msg.content === '' &&
                   !msg.reasoningContent &&
+                  !msg.toolCalls?.length &&
                   msg.type === 'text'
                 "
                 class="ai-waiting"
@@ -1925,6 +2002,86 @@ const handleComposerSend = (payload: AiComposerSendPayload) => {
     inset 0 1px 0 #ffffff40,
     0 4px 10px #193d6b08;
 }
+.ai-tool-calls {
+  display: grid;
+  gap: 8px;
+  width: 100%;
+  max-width: 42rem;
+  margin-block: 6px 12px;
+}
+
+.ai-tool-call {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  padding: 10px 12px;
+  color: var(--text-2);
+  background: var(--bg-surface-2);
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+
+  > svg {
+    flex-shrink: 0;
+    margin-top: 3px;
+  }
+
+  &.ai-tool-call--running > svg {
+    color: var(--brand-blue);
+  }
+
+  &.ai-tool-call--failed > svg {
+    color: var(--status-danger-ink);
+  }
+}
+
+.ai-tool-copy {
+  flex: 1;
+  min-width: 0;
+}
+
+.ai-tool-heading {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  align-items: baseline;
+  justify-content: space-between;
+}
+
+.ai-tool-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-1);
+}
+
+.ai-tool-status {
+  font-size: 11px;
+}
+
+.ai-tool-query {
+  display: block;
+  overflow: hidden;
+  margin-top: 3px;
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ai-tool-spin {
+  animation: ai-tool-rotate 1s linear infinite;
+}
+
+@keyframes ai-tool-rotate {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ai-tool-spin {
+    animation: none;
+  }
+}
+
 .ai-message-content {
   display: flex;
   flex-direction: column;
@@ -1994,7 +2151,7 @@ const handleComposerSend = (payload: AiComposerSendPayload) => {
 .ai-response-state i {
   width: 5px;
   height: 5px;
-  background: currentColor;
+  background: currentcolor;
   border-radius: 50%;
   box-shadow: 0 0 0 3px color-mix(in oklch, var(--brand-blue) 9%, transparent);
   animation: ai-breathe 1.5s ease-in-out infinite;
@@ -2673,6 +2830,7 @@ const handleComposerSend = (payload: AiComposerSendPayload) => {
 .ai-chat-scroll--welcome:focus-within {
   scrollbar-width: none;
 }
+
 @media (hover: none) {
   .custom-scrollbar:not(.ai-chat-scroll--welcome) {
     scrollbar-color: var(--border-color) transparent;

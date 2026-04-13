@@ -16,7 +16,13 @@ const heading = computed(() =>
   thinking.value ? '思路正在展开' : interrupted.value ? '已保留思考过程' : '思考已就绪'
 )
 const statusLabel = computed(() =>
-  thinking.value ? '思考中' : props.state === 'error' ? '已中断' : props.state === 'stopped' ? '已停止' : '已完成'
+  thinking.value
+    ? '思考中'
+    : props.state === 'error'
+      ? '已中断'
+      : props.state === 'stopped'
+        ? '已停止'
+        : '已完成'
 )
 const preview = computed(() => {
   const text = props.content.trim().replace(/\s+/g, ' ')
@@ -63,7 +69,9 @@ watch(
         <span>{{ expanded ? '收起思考过程' : '展开，看看思路如何形成' }}</span>
       </span>
       <span class="reasoning-panel__status" role="status">
-        <span v-if="thinking" class="reasoning-panel__wave" aria-hidden="true"><i></i><i></i><i></i></span>
+        <span v-if="thinking" class="reasoning-panel__wave" aria-hidden="true"
+          ><i></i><i></i><i></i
+        ></span>
         {{ statusLabel }}
       </span>
       <ChevronDown :size="14" class="reasoning-panel__chevron" aria-hidden="true" />
@@ -77,9 +85,17 @@ watch(
         role="region"
         aria-label="思考过程"
         @scroll.passive="handleScroll"
-      >{{ content }}</div>
+      >
+        {{ content }}
+      </div>
       <div class="reasoning-panel__footer">
-        <span>{{ thinking ? '思路持续更新中' : interrupted ? '以上为中断前的思考内容' : '从思考到答案，每一步都有迹可循' }}</span>
+        <span>{{
+          thinking
+            ? '思路持续更新中'
+            : interrupted
+              ? '以上为中断前的思考内容'
+              : '从思考到答案，每一步都有迹可循'
+        }}</span>
         <button v-if="thinking && !followTail" type="button" @click="scrollToLatest">
           <ArrowDown :size="12" />最新思路
         </button>
@@ -94,7 +110,11 @@ watch(
   width: 100%;
   overflow: hidden;
   color: var(--text-2);
-  background: linear-gradient(120deg, color-mix(in oklch, var(--brand-blue) 5%, var(--bg-surface-0)), var(--bg-surface-0));
+  background: linear-gradient(
+    120deg,
+    color-mix(in oklch, var(--brand-blue) 5%, var(--bg-surface-0)),
+    var(--bg-surface-0)
+  );
   border: 1px solid color-mix(in oklch, var(--brand-blue) 16%, var(--border-color));
   border-radius: 16px;
 
@@ -110,7 +130,13 @@ watch(
   }
   &--live::before {
     width: 90px;
-    background: linear-gradient(90deg, transparent, var(--brand-blue), var(--brand-pink), transparent);
+    background: linear-gradient(
+      90deg,
+      transparent,
+      var(--brand-blue),
+      var(--brand-pink),
+      transparent
+    );
     animation: reasoning-light 2.6s ease-in-out infinite;
   }
   &__summary {
@@ -122,9 +148,17 @@ watch(
     cursor: pointer;
     list-style: none;
   }
-  &__summary::-webkit-details-marker { display: none; }
-  &__summary:hover { background: color-mix(in oklch, var(--brand-blue) 3%, transparent); }
-  &__summary:focus-visible { outline: 2px solid var(--brand-blue); outline-offset: -3px; border-radius: 14px; }
+  &__summary::-webkit-details-marker {
+    display: none;
+  }
+  &__summary:hover {
+    background: color-mix(in oklch, var(--brand-blue) 3%, transparent);
+  }
+  &__summary:focus-visible {
+    outline: 2px solid var(--brand-blue);
+    outline-offset: -3px;
+    border-radius: 14px;
+  }
   &__icon {
     display: grid;
     width: 34px;
@@ -135,20 +169,74 @@ watch(
     border: 1px solid color-mix(in oklch, var(--brand-blue) 13%, transparent);
     border-radius: 11px;
   }
-  &__heading { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
-  &__heading strong { color: var(--text-1); font-size: 12px; font-weight: 550; letter-spacing: 0.02em; }
-  &__heading > span { font-size: 10px; }
-  &__status { display: inline-flex; align-items: center; gap: 6px; color: var(--text-2); font-size: 10px; white-space: nowrap; }
-  &--live &__status { color: var(--brand-blue); }
-  &__wave { display: flex; align-items: center; gap: 2px; height: 12px; }
-  &__wave i { width: 2px; height: 9px; background: currentColor; border-radius: 2px; animation: reasoning-wave 1s ease-in-out infinite; }
-  &__wave i:nth-child(2) { animation-delay: 150ms; }
-  &__wave i:nth-child(3) { animation-delay: 300ms; }
-  &__chevron { transition: transform 200ms ease; }
-  &[open] &__chevron { transform: rotate(180deg); }
-  &__preview { display: -webkit-box; grid-column: 2 / -1; overflow: hidden; font-size: 11px; line-height: 1.8; overflow-wrap: anywhere; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
-  &[open] &__preview { display: none; }
-  &__body { margin: 0 16px; border-top: 1px solid color-mix(in oklch, var(--border-color) 65%, transparent); }
+  &__heading {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    min-width: 0;
+  }
+  &__heading strong {
+    color: var(--text-1);
+    font-size: 12px;
+    font-weight: 550;
+    letter-spacing: 0.02em;
+  }
+  &__heading > span {
+    font-size: 10px;
+  }
+  &__status {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    color: var(--text-2);
+    font-size: 10px;
+    white-space: nowrap;
+  }
+  &--live &__status {
+    color: var(--brand-blue);
+  }
+  &__wave {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    height: 12px;
+  }
+  &__wave i {
+    width: 2px;
+    height: 9px;
+    background: currentcolor;
+    border-radius: 2px;
+    animation: reasoning-wave 1s ease-in-out infinite;
+  }
+  &__wave i:nth-child(2) {
+    animation-delay: 150ms;
+  }
+  &__wave i:nth-child(3) {
+    animation-delay: 300ms;
+  }
+  &__chevron {
+    transition: transform 200ms ease;
+  }
+  &[open] &__chevron {
+    transform: rotate(180deg);
+  }
+  &__preview {
+    display: -webkit-box;
+    grid-column: 2 / -1;
+    overflow: hidden;
+    font-size: 11px;
+    line-height: 1.8;
+    overflow-wrap: anywhere;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+  }
+  &[open] &__preview {
+    display: none;
+  }
+  &__body {
+    margin: 0 16px;
+    border-top: 1px solid color-mix(in oklch, var(--border-color) 65%, transparent);
+  }
   &__content {
     max-height: 260px;
     padding: 16px 10px 16px 17px;
@@ -163,30 +251,88 @@ watch(
     scrollbar-width: thin;
     scrollbar-color: var(--border-color) transparent;
   }
-  &__content:focus-visible { outline: 2px solid var(--brand-blue); outline-offset: -2px; }
-  &__footer { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 34px; padding: 0 0 10px; font-size: 9px; }
-  &__footer button { display: inline-flex; align-items: center; gap: 4px; flex-shrink: 0; padding: 5px 7px; color: var(--brand-blue); background: var(--accent-surface); border-radius: 6px; }
-}
-@keyframes reasoning-light {
-  0%, 100% { opacity: 0.4; transform: translateX(0); }
-  50% { opacity: 1; transform: translateX(80px); }
-}
-@keyframes reasoning-wave {
-  0%, 100% { transform: scaleY(0.45); }
-  50% { transform: scaleY(1); }
-}
-@media (width <= 600px) {
-  .reasoning-panel {
-    &__summary { grid-template-columns: 30px minmax(0, 1fr) auto 12px; gap: 7px; padding: 12px; }
-    &__icon { width: 30px; height: 30px; border-radius: 9px; }
-    &__heading > span { display: none; }
-    &__preview { grid-column: 1 / -1; }
-    &__body { margin: 0 12px; }
-    &__content { max-height: 200px; padding-left: 12px; }
+  &__content:focus-visible {
+    outline: 2px solid var(--brand-blue);
+    outline-offset: -2px;
+  }
+  &__footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    min-height: 34px;
+    padding: 0 0 10px;
+    font-size: 9px;
+  }
+  &__footer button {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    flex-shrink: 0;
+    padding: 5px 7px;
+    color: var(--brand-blue);
+    background: var(--accent-surface);
+    border-radius: 6px;
   }
 }
+
+@keyframes reasoning-light {
+  0%,
+  100% {
+    opacity: 0.4;
+    transform: translateX(0);
+  }
+  50% {
+    opacity: 1;
+    transform: translateX(80px);
+  }
+}
+
+@keyframes reasoning-wave {
+  0%,
+  100% {
+    transform: scaleY(0.45);
+  }
+  50% {
+    transform: scaleY(1);
+  }
+}
+
+@media (width <= 600px) {
+  .reasoning-panel {
+    &__summary {
+      grid-template-columns: 30px minmax(0, 1fr) auto 12px;
+      gap: 7px;
+      padding: 12px;
+    }
+    &__icon {
+      width: 30px;
+      height: 30px;
+      border-radius: 9px;
+    }
+    &__heading > span {
+      display: none;
+    }
+    &__preview {
+      grid-column: 1 / -1;
+    }
+    &__body {
+      margin: 0 12px;
+    }
+    &__content {
+      max-height: 200px;
+      padding-left: 12px;
+    }
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
-  .reasoning-panel--live::before, .reasoning-panel__wave i { animation: none; }
-  .reasoning-panel__chevron { transition: none; }
+  .reasoning-panel--live::before,
+  .reasoning-panel__wave i {
+    animation: none;
+  }
+  .reasoning-panel__chevron {
+    transition: none;
+  }
 }
 </style>

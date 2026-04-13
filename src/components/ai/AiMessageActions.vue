@@ -62,6 +62,7 @@ onBeforeUnmount(() => clearTimeout(timer))
   color: var(--brand-blue);
   background: var(--accent-surface);
 }
+
 @media (prefers-reduced-motion: reduce) {
   .message-copy {
     transition: none;

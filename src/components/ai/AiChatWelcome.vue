@@ -261,6 +261,7 @@ const coverSuggestions = ['电影感光影', '极简留白', '梦幻插画']
 }
 .inspiration-card {
   --card-accent: var(--brand-blue);
+
   position: relative;
   min-width: 0;
   overflow: hidden;
@@ -371,6 +372,7 @@ const coverSuggestions = ['电影感光影', '极简留白', '梦幻插画']
     transform: translate(2px, -2px);
   }
 }
+
 @keyframes spark-arrive {
   from {
     opacity: 0;
@@ -381,6 +383,7 @@ const coverSuggestions = ['电影感光影', '极简留白', '梦幻插画']
     transform: translateY(0) scale(1);
   }
 }
+
 @keyframes studio-float {
   0%,
   100% {
@@ -390,6 +393,7 @@ const coverSuggestions = ['电影感光影', '极简留白', '梦幻插画']
     transform: translateY(-5px) rotate(2deg);
   }
 }
+
 @keyframes studio-glow {
   0%,
   100% {
@@ -401,6 +405,7 @@ const coverSuggestions = ['电影感光影', '极简留白', '梦幻插画']
     opacity: 1;
   }
 }
+
 @keyframes studio-ring {
   0%,
   100% {
@@ -410,6 +415,7 @@ const coverSuggestions = ['电影感光影', '极简留白', '梦幻插画']
     opacity: 1;
   }
 }
+
 @keyframes studio-twinkle {
   0%,
   100% {
@@ -421,6 +427,7 @@ const coverSuggestions = ['电影感光影', '极简留白', '梦幻插画']
     opacity: 0.9;
   }
 }
+
 @keyframes studio-sheen {
   0%,
   65% {
@@ -491,6 +498,7 @@ const coverSuggestions = ['电影感光影', '极简留白', '梦幻插画']
     transform: translate(calc(var(--orbit-x) * 0.9239), calc(var(--orbit-y) * -0.3827));
   }
 }
+
 @media (width <= 600px) {
   .chat-welcome {
     padding: 4px 0 16px;
@@ -552,12 +560,14 @@ const coverSuggestions = ['电影感光影', '极简留白', '梦幻插画']
     }
   }
 }
+
 @container ai-chat (height <= 480px) {
   .chat-welcome {
     padding: 0 0 8px;
     &__art {
       --orbit-x: 81px;
       --orbit-y: 31px;
+
       height: 108px;
       margin-bottom: 4px;
     }
@@ -594,11 +604,13 @@ const coverSuggestions = ['电影感光影', '极简留白', '梦幻插画']
     padding-bottom: 12px;
   }
 }
+
 @container ai-chat (height <= 350px) {
   .chat-welcome {
     &__art {
       --orbit-x: 69px;
       --orbit-y: 24px;
+
       height: 76px;
     }
     &__orb {
@@ -642,11 +654,13 @@ const coverSuggestions = ['电影感光影', '极简留白', '梦幻插画']
     display: none;
   }
 }
+
 @media (width <= 600px) {
   .inspiration-card__visual {
     height: auto;
   }
 }
+
 @media (prefers-reduced-motion: reduce) {
   .chat-welcome__art,
   .chat-welcome__art::before,

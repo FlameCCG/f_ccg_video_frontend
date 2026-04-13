@@ -1,13 +1,14 @@
 <script setup lang="ts">
 /**
- * 图形文字验证码用于注册、找回密码和换绑邮箱的前置校验。
+ * 图形文字验证码用于登录、注册、找回密码和换绑邮箱的前置校验。
  * 与滑块、点选共用视觉语言：加载显示 skeleton-shimmer，换图使用原地交叉淡入。
  */
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, nextTick } from 'vue'
 import { RefreshCw } from 'lucide-vue-next'
 import { getGraphicsTextCaptcha, type GraphicsTextCaptcha } from '@/api/captcha'
 
 const props = defineProps<{
+  invalid?: boolean
   modelValue?: {
     captchaID: string
     captchaCode: string
@@ -22,6 +23,16 @@ const emit = defineEmits<{
 const captchaData = ref<GraphicsTextCaptcha | null>(null)
 const isLoading = ref(false)
 const captchaCode = ref('')
+const inputRef = ref<HTMLInputElement | null>(null)
+const refreshRef = ref<HTMLButtonElement | null>(null)
+let focusAfterLoad = false
+const focus = () => {
+  if (isLoading.value) {
+    focusAfterLoad = true
+    return
+  }
+  ;(captchaData.value ? inputRef.value : refreshRef.value)?.focus()
+}
 
 const currentValue = computed(() => ({
   captchaID: captchaData.value?.captchaID || '',
@@ -32,6 +43,8 @@ const loadCaptcha = async () => {
   if (isLoading.value) return
   isLoading.value = true
   captchaCode.value = ''
+  captchaData.value = null
+  emit('update:modelValue', { captchaID: '', captchaCode: '' })
   try {
     captchaData.value = await getGraphicsTextCaptcha({ type: props.type })
     emit('update:modelValue', { captchaID: captchaData.value.captchaID, captchaCode: '' })
@@ -39,6 +52,10 @@ const loadCaptcha = async () => {
     // Error handled by request interceptor
   } finally {
     isLoading.value = false
+    if (focusAfterLoad) {
+      focusAfterLoad = false
+      void nextTick(focus)
+    }
   }
 }
 
@@ -53,22 +70,27 @@ onMounted(() => {
 
 defineExpose({
   loadCaptcha,
+  focus,
 })
 </script>
 
 <template>
   <div class="graphics-captcha cap-scope">
     <input
+      ref="inputRef"
       type="text"
       inputmode="text"
       autocomplete="off"
       placeholder="图形验证码"
       class="graphics-captcha__input"
       :value="captchaCode"
+      :disabled="isLoading || !captchaData"
+      :aria-invalid="invalid || undefined"
       @input="handleInput(($event.target as HTMLInputElement).value)"
     />
 
     <button
+      ref="refreshRef"
       type="button"
       class="graphics-captcha__figure"
       :disabled="isLoading"

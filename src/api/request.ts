@@ -1,10 +1,21 @@
 import axios, {
+  CanceledError,
   type AxiosError,
   type AxiosInstance,
   type AxiosResponse,
   type InternalAxiosRequestConfig,
 } from 'axios'
 import { toast } from 'vue-sonner'
+import {
+  API_BASE,
+  getAccessToken,
+  isAuthenticationError,
+  isLoginRequest,
+  refreshAccessToken,
+  SessionExpiredError,
+} from '@/utils/authSession'
+
+export { getAccessToken, getRefreshToken, setTokens, clearTokens } from '@/utils/authSession'
 
 // API response structure
 // 文档约定：所有接口都可能返回 HTTP 200，业务是否成功必须以 code 判断。
@@ -15,34 +26,18 @@ export interface ApiResponse<T = unknown> {
 }
 
 export class ApiBusinessError extends Error {
-  constructor(message: string) {
+  readonly data: unknown
+
+  constructor(message: string, data?: unknown) {
     super(message)
+    this.data = data
     this.name = 'ApiBusinessError'
   }
 }
 
-// Token storage keys
-const ACCESS_TOKEN_KEY = 'accessToken'
-const REFRESH_TOKEN_KEY = 'refreshToken'
-
-// 开发态可通过 VITE_API_BASE 直连后端，绕过 Vite 代理（例：http://127.0.0.1:8080/v1）
-const API_BASE = (import.meta.env.VITE_API_BASE || '/v1').replace(/\/$/, '')
-
 // 瞬时失败最多再试 1 次（仅幂等 GET/HEAD）
 const MAX_TRANSIENT_RETRIES = 1
 const TRANSIENT_RETRY_DELAY_MS = 120
-
-// Token management
-export const getAccessToken = (): string | null => localStorage.getItem(ACCESS_TOKEN_KEY)
-export const getRefreshToken = (): string | null => localStorage.getItem(REFRESH_TOKEN_KEY)
-export const setTokens = (accessToken: string, refreshToken: string): void => {
-  localStorage.setItem(ACCESS_TOKEN_KEY, accessToken)
-  localStorage.setItem(REFRESH_TOKEN_KEY, refreshToken)
-}
-export const clearTokens = (): void => {
-  localStorage.removeItem(ACCESS_TOKEN_KEY)
-  localStorage.removeItem(REFRESH_TOKEN_KEY)
-}
 
 // Create axios instance
 const request: AxiosInstance = axios.create({
@@ -53,46 +48,6 @@ const request: AxiosInstance = axios.create({
   },
 })
 
-// Flag to prevent multiple refresh token requests
-let isRefreshing = false
-let refreshSubscribers: Array<(token: string | null) => void> = []
-/** 防止并发请求同时触发多次「会话失效」清理与弹窗 */
-let isHandlingSessionExpired = false
-
-const subscribeTokenRefresh = (callback: (token: string | null) => void): void => {
-  refreshSubscribers.push(callback)
-}
-
-const onTokenRefreshed = (token: string | null): void => {
-  refreshSubscribers.forEach((callback) => callback(token))
-  refreshSubscribers = []
-}
-
-/**
- * 会话彻底失效（refresh 失败或无 refresh token）：
- * 清 localStorage token，并通知 UI 同步清 Pinia 登录态（头像等）。
- * 注意：此处不能直接 import auth store，避免与 request 循环依赖。
- */
-const handleSessionExpired = (message?: string): void => {
-  clearTokens()
-
-  if (isHandlingSessionExpired) {
-    return
-  }
-  isHandlingSessionExpired = true
-
-  // 单一事件：UI 负责 clearAuth + 提示 + 打开登录框（勿再派 login-required，避免双 toast）
-  window.dispatchEvent(
-    new CustomEvent('auth:session-expired', {
-      detail: { message: message || '登录已过期，请重新登录' },
-    })
-  )
-
-  window.setTimeout(() => {
-    isHandlingSessionExpired = false
-  }, 1500)
-}
-
 const normalizeApiMessage = (msg: unknown): string => {
   return typeof msg === 'string' ? msg : ''
 }
@@ -100,27 +55,6 @@ const normalizeApiMessage = (msg: unknown): string => {
 const isCaptchaBusinessError = (msg: string): boolean => {
   const lowerMsg = msg.toLowerCase()
   return lowerMsg.includes('验证码') || lowerMsg.includes('captcha')
-}
-
-const isTokenBusinessError = (msg: string): boolean => {
-  if (!msg) return false
-
-  const tokenKeywords = [
-    'token',
-    'Token',
-    'access token',
-    'refresh token',
-    'unauthorized',
-    'invalid token',
-    'expired token',
-    '登录已过期',
-  ]
-
-  if (tokenKeywords.some((keyword) => msg.includes(keyword))) {
-    return true
-  }
-
-  return /(登录|认证).*(过期|失效)/.test(msg)
 }
 
 const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms))
@@ -203,29 +137,41 @@ const getTransportErrorMessage = (error: AxiosError): string => {
   return '服务器错误，请稍后重试'
 }
 
-// Refresh token function
-const refreshAccessToken = async (): Promise<string | null> => {
-  const refreshToken = getRefreshToken()
-  if (!refreshToken) {
-    return null
-  }
-
+// 同一请求最多重放一次；迟到的旧 AT 响应会复用已经刷新的 Token。
+const retryAuthentication = async (config: InternalAxiosRequestConfig): Promise<AxiosResponse> => {
+  let token: string
   try {
-    const response = await axios.post<ApiResponse<{ accessToken: string; refreshToken: string }>>(
-      `${API_BASE}/common/user/login/refresh`,
-      { refreshToken },
-      { timeout: 15000 }
-    )
-
-    if (response.data.code === 0) {
-      const { accessToken, refreshToken: newRefreshToken } = response.data.data
-      setTokens(accessToken, newRefreshToken)
-      return accessToken
+    if (config.signal?.aborted) throw new CanceledError()
+    if (config._authRetry || isLoginRequest(config.url)) {
+      throw new ApiBusinessError('登录状态验证失败，请重试')
     }
-    return null
-  } catch {
-    return null
+    config._authRetry = true
+    const authorization = config.headers.Authorization
+    const failedToken =
+      typeof authorization === 'string' ? authorization.replace(/^Bearer /, '') : ''
+    token = await refreshAccessToken(failedToken)
+    if (config.signal?.aborted) throw new CanceledError()
+  } catch (error) {
+    if (axios.isCancel(error)) throw error
+    // 持有凭据失效由 App 的会话事件提示一次；访客仍需收到登录入口与提示。
+    if (error instanceof SessionExpiredError) {
+      if (!error.notified) {
+        window.dispatchEvent(new CustomEvent('auth:login-required'))
+        if (!config.silent) toast.error(error.message)
+      }
+    } else if (!config.silent) {
+      const message = axios.isAxiosError(error)
+        ? getTransportErrorMessage(error)
+        : error instanceof Error
+          ? error.message
+          : '请求失败'
+      toast.error(message)
+    }
+    throw error
   }
+  config.headers.Authorization = `Bearer ${token}`
+  // 重放请求的失败由自身拦截器提示，避免被外层再提示一次。
+  return request(config)
 }
 
 // Request interceptor - inject token
@@ -287,52 +233,19 @@ request.interceptors.response.use(
 
     // Captcha business error
     if (code === 1 && isCaptchaBusinessError(normalizedMsg)) {
-      const captchaErrorMsg = '验证码错误'
+      const captchaErrorMsg = normalizedMsg
       if (!response.config?.silent) {
         toast.error(captchaErrorMsg)
       }
-      return Promise.reject(new Error(captchaErrorMsg))
+      return Promise.reject(new ApiBusinessError(captchaErrorMsg, data))
     }
 
-    // Token expired - check if msg contains token-related keywords
-    const isTokenError = isTokenBusinessError(normalizedMsg)
-
-    if (code === 1 && isTokenError) {
-      const originalRequest = response.config
-
-      if (!isRefreshing) {
-        isRefreshing = true
-
-        const newToken = await refreshAccessToken()
-
-        if (newToken) {
-          isRefreshing = false
-          onTokenRefreshed(newToken)
-
-          // Retry original request with new token
-          originalRequest.headers.Authorization = `Bearer ${newToken}`
-          return request(originalRequest)
-        } else {
-          // Refresh 失败：清 token + 通知 UI 掉登录态（头像等）
-          isRefreshing = false
-          onTokenRefreshed(null) // Reject pending requests
-          const expiredMsg = normalizedMsg || '登录已过期，请重新登录'
-          handleSessionExpired(expiredMsg)
-          return Promise.reject(new Error(expiredMsg))
-        }
-      } else {
-        // Wait for token refresh
-        return new Promise((resolve, reject) => {
-          subscribeTokenRefresh((token: string | null) => {
-            if (token) {
-              originalRequest.headers.Authorization = `Bearer ${token}`
-              resolve(request(originalRequest))
-            } else {
-              reject(new Error('登录已过期，请重新登录'))
-            }
-          })
-        })
-      }
+    if (
+      code === 1 &&
+      isAuthenticationError(normalizedMsg) &&
+      !isLoginRequest(response.config.url)
+    ) {
+      return retryAuthentication(response.config)
     }
 
     // 代理失败被改写成 502 + code:1 时，给用户可操作的提示
@@ -350,43 +263,13 @@ request.interceptors.response.use(
     if (!response.config?.silent) {
       toast.error(normalizedMsg || '请求失败')
     }
-    return Promise.reject(new ApiBusinessError(normalizedMsg || '请求失败'))
+    return Promise.reject(new ApiBusinessError(normalizedMsg || '请求失败', data))
   },
   async (error: AxiosError) => {
     const config = error.config
 
-    // HTTP 401：按会话失效处理（部分网关/中间层可能直接回 401）
-    if (error.response?.status === 401) {
-      const expiredMsg = '登录已过期，请重新登录'
-      if (!isRefreshing) {
-        isRefreshing = true
-        const newToken = await refreshAccessToken()
-        if (newToken && config) {
-          isRefreshing = false
-          onTokenRefreshed(newToken)
-          config.headers = config.headers ?? {}
-          config.headers.Authorization = `Bearer ${newToken}`
-          return request(config)
-        }
-        isRefreshing = false
-        onTokenRefreshed(null)
-        handleSessionExpired(expiredMsg)
-      } else if (config) {
-        return new Promise((resolve, reject) => {
-          subscribeTokenRefresh((token: string | null) => {
-            if (token) {
-              config.headers = config.headers ?? {}
-              config.headers.Authorization = `Bearer ${token}`
-              resolve(request(config))
-            } else {
-              reject(new Error(expiredMsg))
-            }
-          })
-        })
-      } else {
-        handleSessionExpired(expiredMsg)
-      }
-      return Promise.reject(new Error(expiredMsg))
+    if (error.response?.status === 401 && config && !isLoginRequest(config.url)) {
+      return retryAuthentication(config)
     }
 
     // 幂等请求：瞬时代理/连通故障自动重试 1 次
@@ -404,6 +287,19 @@ request.interceptors.response.use(
     // Skip toast for silent requests / 用户取消
     if (error.code === 'ERR_CANCELED') {
       return Promise.reject(error)
+    }
+
+    const body = error.response?.data as ApiResponse | undefined
+    // 代理也可能返回 code: 1；保留传输错误类型，供上传重试和降级使用。
+    if (
+      !isTransientTransportError(error) &&
+      body &&
+      typeof body === 'object' &&
+      body.code === 1 &&
+      typeof body.msg === 'string'
+    ) {
+      if (!config?.silent) toast.error(body.msg)
+      return Promise.reject(new ApiBusinessError(body.msg, body.data))
     }
 
     error.message = getTransportErrorMessage(error)

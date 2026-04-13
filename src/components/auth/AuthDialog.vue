@@ -32,6 +32,7 @@ import GraphicsCaptcha from '@/components/captcha/GraphicsCaptcha.vue'
 import InteractiveCaptchaDialog from '@/components/captcha/InteractiveCaptchaDialog.vue'
 import { useCaptchaTypeQueue } from '@/composables/useCaptchaTypeQueue'
 import AuthLainMark from '@/components/auth/AuthLainMark.vue'
+import { getCaptchaFailureType, isInteractiveCaptchaFailure } from '@/utils/captchaError'
 
 interface CaptchaExposed {
   success: () => void
@@ -88,6 +89,7 @@ const graphicsCaptchaValue = shallowRef<{ captchaID: string; captchaCode: string
   captchaID: '',
   captchaCode: '',
 })
+const graphicCaptchaError = shallowRef('')
 const captchaOpen = shallowRef(false)
 const captchaType = shallowRef<'click' | 'slide'>('slide')
 const captchaRevision = shallowRef(0)
@@ -99,12 +101,38 @@ const isSelectingCaptcha = shallowRef(false)
 let captchaSelectionId = 0
 
 const isSubmitting = shallowRef(false)
+const isLoadingLoginConfig = shallowRef(false)
+const loginConfigFailed = shallowRef(false)
+const loadLoginConfig = async () => {
+  if (isLoadingLoginConfig.value) return
+  isLoadingLoginConfig.value = true
+  loginConfigFailed.value = false
+  try {
+    loginConfigFailed.value = !(await siteStore.refreshConfig(true))
+  } finally {
+    isLoadingLoginConfig.value = false
+  }
+}
 const isSendingEmail = shallowRef(false)
 const emailCountdown = shallowRef(0)
 let countdownTimer: ReturnType<typeof setInterval> | null = null
 
+const isGraphicsCaptchaEnabled = computed(() =>
+  mode.value === 'login'
+    ? siteStore.isLoginGraphicsCaptchaEnabled
+    : siteStore.isRegisterGraphicsCaptchaEnabled
+)
+
 const isLoginFormValid = computed(
-  () => loginUsername.value.trim() !== '' && loginPassword.value.trim() !== ''
+  () =>
+    siteStore.isLoaded &&
+    !isLoadingLoginConfig.value &&
+    !loginConfigFailed.value &&
+    loginUsername.value.trim() !== '' &&
+    loginPassword.value.trim() !== '' &&
+    (!siteStore.isLoginGraphicsCaptchaEnabled ||
+      (graphicsCaptchaValue.value.captchaID !== '' &&
+        graphicsCaptchaValue.value.captchaCode.trim() !== ''))
 )
 
 const isRegisterFormValid = computed(
@@ -185,6 +213,7 @@ const switchMode = (newMode: AuthMode) => {
 }
 
 const resetForms = () => {
+  graphicCaptchaError.value = ''
   loginUsername.value = ''
   loginPassword.value = ''
   showLoginPassword.value = false
@@ -206,9 +235,23 @@ const resetForms = () => {
 }
 
 const refreshGraphicsCaptcha = () => {
-  if (siteStore.isRegisterGraphicsCaptchaEnabled && graphicsCaptchaRef.value) {
+  if (isGraphicsCaptchaEnabled.value && graphicsCaptchaRef.value) {
+    graphicsCaptchaValue.value = { captchaID: '', captchaCode: '' }
     void graphicsCaptchaRef.value.loadCaptcha()
   }
+}
+
+const handleGraphicFailure = (error: unknown) => {
+  if (isInteractiveCaptchaFailure(error)) return
+  refreshGraphicsCaptcha()
+  if (getCaptchaFailureType(error) === 'graphic') {
+    graphicCaptchaError.value = error instanceof Error ? error.message : String(error)
+    if (!captchaOpen.value) focusGraphicCaptcha()
+  }
+}
+
+const focusGraphicCaptcha = () => {
+  if (graphicCaptchaError.value) void nextTick(() => graphicsCaptchaRef.value?.focus())
 }
 
 const buildEmailCaptchaPayload = (type: 1 | 2, email: string) => {
@@ -259,9 +302,15 @@ const handleLoginClick = async () => {
   if (opened === false && (await doLogin({}))) finishLogin()
 }
 
-const handleCaptchaRetry = () => {
+const handleCaptchaRetry = async () => {
   if (isSelectingCaptcha.value || !captchaAction.value || !captchaOpen.value) return
-  void openInteractiveCaptcha(captchaAction.value)
+  const action = captchaAction.value
+  const opened = await openInteractiveCaptcha(action)
+  if (opened === false) {
+    if (action === 'login') {
+      if (await doLogin({})) finishLogin()
+    } else await sendEmailCode()
+  }
 }
 const handleCaptchaCancel = () => {
   captchaSelectionId += 1
@@ -282,18 +331,33 @@ const finishLogin = () => {
 
 const doLogin = async (
   captcha: InteractiveCaptchaPayload,
-  options?: { silent?: boolean; onError?: (message: string) => void }
+  options?: { silent?: boolean; onError?: (message: string, error?: unknown) => void }
 ): Promise<boolean> => {
   isSubmitting.value = true
+  let failure: unknown
   try {
-    return await authStore.login(
+    const success = await authStore.login(
       {
         username: loginUsername.value.trim(),
         password: loginPassword.value,
+        ...(siteStore.isLoginGraphicsCaptchaEnabled
+          ? {
+              captchaID: graphicsCaptchaValue.value.captchaID,
+              captchaCode: graphicsCaptchaValue.value.captchaCode.trim(),
+            }
+          : {}),
         ...captcha,
       },
-      options
+      {
+        silent: options?.silent,
+        onError: (message, error) => {
+          failure = error ?? new Error(message)
+          options?.onError?.(message, error)
+        },
+      }
     )
+    if (!success) handleGraphicFailure(failure)
+    return success
   } finally {
     isSubmitting.value = false
   }
@@ -334,7 +398,7 @@ const handleSendEmailCode = async () => {
 const sendEmailCode = async (
   captcha: InteractiveCaptchaPayload = {},
   silent = false
-): Promise<string | null> => {
+): Promise<Error | null> => {
   isSendingEmail.value = true
   try {
     const type = mode.value === 'register' ? 1 : 2
@@ -349,34 +413,48 @@ const sendEmailCode = async (
     refreshGraphicsCaptcha()
     return null
   } catch (error: unknown) {
-    refreshGraphicsCaptcha()
-    return error instanceof Error ? error.message : '发送失败，请重试'
+    const failure = error instanceof Error ? error : new Error('发送失败，请重试')
+    handleGraphicFailure(failure)
+    return failure
   } finally {
     isSendingEmail.value = false
   }
 }
 
 const handleCaptchaConfirm = async (payload: InteractiveCaptchaPayload) => {
-  if (!captchaAction.value || isSubmitting.value || isSendingEmail.value) return
+  if (
+    !captchaAction.value ||
+    isSubmitting.value ||
+    isSendingEmail.value ||
+    isSelectingCaptcha.value
+  )
+    return
   const selectionId = captchaSelectionId
   let reason = ''
   let success = false
+  let failure: unknown
   if (captchaAction.value === 'login') {
     success = await doLogin(payload, {
       silent: true,
-      onError: (message) => {
+      onError: (message, error) => {
         reason = message
+        failure = error ?? new Error(message)
       },
     })
   } else {
     const error = await sendEmailCode(payload, true)
     success = error === null
-    reason = error ?? ''
+    reason = error?.message ?? ''
+    failure = error
   }
   if (selectionId !== captchaSelectionId || !props.open) return
   const dialog = captchaDialogRef.value
   if (success) dialog?.success()
-  else dialog?.fail(reason)
+  else if (!isInteractiveCaptchaFailure(failure ?? reason)) {
+    captchaOpen.value = false
+    handleCaptchaCancel()
+    toast.error(reason || '登录失败，请稍后重试')
+  } else dialog?.fail(reason)
 }
 
 const handleRegister = async () => {
@@ -554,9 +632,7 @@ watch(
       loginCaptchaQueue.reset()
       emailCaptchaQueue.reset()
       ;(mode.value === 'login' ? loginCaptchaQueue : emailCaptchaQueue).warmup()
-      if (!siteStore.isLoaded) {
-        void siteStore.fetchConfig()
-      }
+      void loadLoginConfig()
     } else {
       captchaSelectionId += 1
       isSelectingCaptcha.value = false
@@ -565,6 +641,18 @@ watch(
     }
   },
   { immediate: true }
+)
+
+watch(isGraphicsCaptchaEnabled, () => {
+  graphicCaptchaError.value = ''
+  graphicsCaptchaValue.value = { captchaID: '', captchaCode: '' }
+})
+
+watch(
+  () => graphicsCaptchaValue.value.captchaCode,
+  (code) => {
+    if (code.trim()) graphicCaptchaError.value = ''
+  }
 )
 
 /** bfcache 恢复 / 页签重新可见时解锁 OAuth */
@@ -642,6 +730,10 @@ onUnmounted(() => {
             class="auth-form"
             @submit.prevent="handleLoginClick"
           >
+            <p v-if="loginConfigFailed" role="alert" class="auth-field-meta">
+              登录配置加载失败，请
+              <button type="button" class="auth-text-link" @click="loadLoginConfig">重试</button>
+            </p>
             <div class="auth-field">
               <User class="auth-field-icon" aria-hidden="true" />
               <Input
@@ -682,6 +774,17 @@ onUnmounted(() => {
                   忘记密码？
                 </button>
               </div>
+            </div>
+
+            <div v-if="siteStore.isLoginGraphicsCaptchaEnabled">
+              <GraphicsCaptcha
+                ref="graphicsCaptchaRef"
+                v-model="graphicsCaptchaValue"
+                :invalid="!!graphicCaptchaError"
+              />
+              <p v-if="graphicCaptchaError" class="auth-error-text" role="alert">
+                {{ graphicCaptchaError }}
+              </p>
             </div>
 
             <Button
@@ -886,7 +989,14 @@ onUnmounted(() => {
             </div>
 
             <div v-if="siteStore.isRegisterGraphicsCaptchaEnabled">
-              <GraphicsCaptcha ref="graphicsCaptchaRef" v-model="graphicsCaptchaValue" />
+              <GraphicsCaptcha
+                ref="graphicsCaptchaRef"
+                v-model="graphicsCaptchaValue"
+                :invalid="!!graphicCaptchaError"
+              />
+              <p v-if="graphicCaptchaError" class="auth-error-text" role="alert">
+                {{ graphicCaptchaError }}
+              </p>
             </div>
 
             <div class="auth-code-row">
@@ -900,12 +1010,12 @@ onUnmounted(() => {
               <Button
                 type="button"
                 variant="outline"
-                class="auth-secondary-btn w-[108px] shrink-0"
+                class="auth-secondary-btn auth-send-code-btn"
                 :disabled="!canSendEmail || emailCountdown > 0"
                 @click="handleSendEmailCode"
               >
-                <Loader2 v-if="isSendingEmail" class="mr-1.5 h-3.5 w-3.5 animate-spin" />
-                <Send v-else-if="emailCountdown <= 0" class="mr-1.5 h-3.5 w-3.5" />
+                <Loader2 v-if="isSendingEmail" class="h-3.5 w-3.5 animate-spin" />
+                <Send v-else-if="emailCountdown <= 0" class="h-3.5 w-3.5" />
                 <span class="text-sm font-medium">
                   {{
                     isSendingEmail
@@ -955,7 +1065,14 @@ onUnmounted(() => {
             </div>
 
             <div v-if="siteStore.isRegisterGraphicsCaptchaEnabled">
-              <GraphicsCaptcha ref="graphicsCaptchaRef" v-model="graphicsCaptchaValue" />
+              <GraphicsCaptcha
+                ref="graphicsCaptchaRef"
+                v-model="graphicsCaptchaValue"
+                :invalid="!!graphicCaptchaError"
+              />
+              <p v-if="graphicCaptchaError" class="auth-error-text" role="alert">
+                {{ graphicCaptchaError }}
+              </p>
             </div>
 
             <div class="auth-code-row">
@@ -969,12 +1086,12 @@ onUnmounted(() => {
               <Button
                 type="button"
                 variant="outline"
-                class="auth-secondary-btn w-[108px] shrink-0"
+                class="auth-secondary-btn auth-send-code-btn"
                 :disabled="!canSendEmail || emailCountdown > 0"
                 @click="handleSendEmailCode"
               >
-                <Loader2 v-if="isSendingEmail" class="mr-1.5 h-3.5 w-3.5 animate-spin" />
-                <Send v-else-if="emailCountdown <= 0" class="mr-1.5 h-3.5 w-3.5" />
+                <Loader2 v-if="isSendingEmail" class="h-3.5 w-3.5 animate-spin" />
+                <Send v-else-if="emailCountdown <= 0" class="h-3.5 w-3.5" />
                 <span class="text-sm font-medium">
                   {{
                     isSendingEmail
@@ -1062,10 +1179,12 @@ onUnmounted(() => {
     :type="captchaType"
     :scene="captchaAction === 'login' ? 'login' : 'register'"
     :revision="captchaRevision"
+    :preparing="isSelectingCaptcha"
     @confirm="handleCaptchaConfirm"
     @verified="handleCaptchaVerified"
     @retry="handleCaptchaRetry"
     @cancel="handleCaptchaCancel"
+    @dismissed="focusGraphicCaptcha"
   />
 </template>
 
@@ -1287,8 +1406,30 @@ onUnmounted(() => {
 }
 
 .auth-code-row {
-  display: flex;
-  gap: 0.625rem;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.75rem;
+  align-items: center;
+
+  :deep(.auth-input) {
+    min-width: 0;
+  }
+}
+
+.auth-send-code-btn {
+  min-width: 8rem;
+  gap: 0.5rem;
+  padding-inline: 1rem;
+  color: var(--brand-blue);
+  background-color: color-mix(in oklch, var(--brand-blue) 6%, var(--bg-surface-0));
+  border-color: color-mix(in oklch, var(--brand-blue) 22%, var(--border-color));
+  box-shadow: none;
+
+  &:hover:not(:disabled) {
+    color: var(--brand-blue);
+    background-color: color-mix(in oklch, var(--brand-blue) 12%, var(--bg-surface-0));
+    border-color: color-mix(in oklch, var(--brand-blue) 40%, var(--border-color));
+  }
 }
 
 .auth-error-text {

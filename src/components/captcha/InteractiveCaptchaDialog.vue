@@ -12,6 +12,7 @@ const props = defineProps<{
   type: 'click' | 'slide'
   scene: CaptchaScene
   revision: number
+  preparing?: boolean
 }>()
 const emit = defineEmits<{
   'update:open': [value: boolean]
@@ -19,6 +20,7 @@ const emit = defineEmits<{
   retry: []
   verified: []
   cancel: []
+  dismissed: []
 }>()
 interface CaptchaHandle {
   success: () => void
@@ -29,6 +31,7 @@ const captchaRef = ref<CaptchaHandle | null>(null)
 const busy = ref(false)
 const pendingVerified = ref(false)
 function confirm(value: InteractiveCaptchaPayload): void {
+  if (busy.value || pendingVerified.value || props.preparing || !props.open) return
   busy.value = true
   emit('confirm', value)
 }
@@ -49,7 +52,11 @@ function close(open: boolean): void {
   emit('update:open', open)
 }
 function afterLeave(): void {
-  if (props.open || !pendingVerified.value) return
+  if (props.open) return
+  if (!pendingVerified.value) {
+    emit('dismissed')
+    return
+  }
   pendingVerified.value = false
   emit('verified')
 }
@@ -93,7 +100,7 @@ defineExpose({
         }
       "
     >
-      <div class="captcha-switch-stage">
+      <div class="captcha-switch-stage" :aria-busy="preparing" :inert="preparing || undefined">
         <Transition name="captcha-switch" mode="out-in">
           <ClickCaptchaDialog
             v-if="type === 'click'"
@@ -155,6 +162,7 @@ defineExpose({
   opacity: 0;
   transform: translateY(-4px) scale(0.99);
 }
+
 @media (prefers-reduced-motion: reduce) {
   .captcha-switch-enter-active,
   .captcha-switch-leave-active {

@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia'
-import { ref, computed } from 'vue'
+import { ref, computed, watch } from 'vue'
 import { toast } from 'vue-sonner'
+import { useNotificationStore } from './notification'
 import {
   loginByPassword,
   loginByQQ,
@@ -8,7 +9,6 @@ import {
   loginByGithub,
   loginByLinuxDo,
   loginByX,
-  refreshToken as refreshTokenApi,
   getCurrentUserInfo,
   type LoginPwdParams,
   type LoginQQParams,
@@ -19,16 +19,37 @@ import {
   type UserInfo,
   type JwtToken,
 } from '@/api/user'
-import { getAccessToken, getRefreshToken, setTokens, clearTokens } from '@/api/request'
+import {
+  authTokens,
+  getAccessToken,
+  setTokens,
+  clearTokens,
+  refreshTokens,
+  sessionIdentity,
+} from '@/utils/authSession'
 
 export const useAuthStore = defineStore(
   'auth',
   () => {
     // State
-    const accessToken = ref<string | null>(getAccessToken())
-    const refreshTokenValue = ref<string | null>(getRefreshToken())
+    const accessToken = computed(() => authTokens.value.accessToken)
+    const refreshTokenValue = computed(() => authTokens.value.refreshToken)
     const user = ref<UserInfo | null>(null)
     const isLoading = ref(false)
+
+    watch(
+      () => sessionIdentity(accessToken.value) ?? accessToken.value,
+      (identity) => {
+        user.value = null
+        useNotificationStore().clearAllCounts()
+        if (identity) {
+          void fetchUserInfo().then((loaded) => {
+            if (loaded) void useNotificationStore().fetchCounts()
+          })
+        }
+      },
+      { flush: 'sync' }
+    )
 
     // Getters
     const isLoggedIn = computed(() => !!accessToken.value)
@@ -44,8 +65,6 @@ export const useAuthStore = defineStore(
      * 设置 Token
      */
     const setAuthTokens = (tokens: JwtToken) => {
-      accessToken.value = tokens.accessToken
-      refreshTokenValue.value = tokens.refreshToken
       setTokens(tokens.accessToken, tokens.refreshToken)
     }
 
@@ -53,8 +72,6 @@ export const useAuthStore = defineStore(
      * 清除认证状态
      */
     const clearAuth = () => {
-      accessToken.value = null
-      refreshTokenValue.value = null
       user.value = null
       clearTokens()
     }
@@ -65,7 +82,7 @@ export const useAuthStore = defineStore(
     const handleLogin = async <P>(
       apiCall: (p: P) => Promise<JwtToken>,
       params: P,
-      onError?: (message: string) => void
+      onError?: (message: string, error?: unknown) => void
     ): Promise<boolean> => {
       isLoading.value = true
       try {
@@ -77,7 +94,7 @@ export const useAuthStore = defineStore(
       } catch (error: unknown) {
         // 默认路径：toast 由 request 拦截器负责。
         // 传了 onError 的调用方是要自己承载失败文案的（见 login 的 silent 说明）。
-        onError?.(error instanceof Error ? error.message : '')
+        onError?.(error instanceof Error ? error.message : '', error)
         return false
       } finally {
         isLoading.value = false
@@ -87,13 +104,12 @@ export const useAuthStore = defineStore(
     /**
      * 用户名密码登录
      *
-     * silent + onError: 让调用方把失败原因显示在自己的 UI 里（点选验证码弹窗内联提示），
-     * 而不是弹窗说「已为你换一张」、toast 再说一遍「密码错误」。
+     * silent + onError: 由调用方区分验证码失败与登录失败，决定在验证码内重试或返回表单提示。
      * 两者要成对使用——只给 silent 不给 onError 会让失败彻底没有反馈。
      */
     const login = (
       params: LoginPwdParams,
-      options?: { silent?: boolean; onError?: (message: string) => void }
+      options?: { silent?: boolean; onError?: (message: string, error?: unknown) => void }
     ): Promise<boolean> =>
       handleLogin(
         (p: LoginPwdParams) => loginByPassword(p, { silent: options?.silent }),
@@ -145,18 +161,10 @@ export const useAuthStore = defineStore(
      * 刷新 Access Token
      */
     const refreshAccessToken = async (): Promise<boolean> => {
-      const currentRefreshToken = refreshTokenValue.value
-      if (!currentRefreshToken) {
-        clearAuth()
-        return false
-      }
-
       try {
-        const tokens = await refreshTokenApi({ refreshToken: currentRefreshToken })
-        setAuthTokens(tokens)
+        await refreshTokens()
         return true
       } catch {
-        clearAuth()
         return false
       }
     }
@@ -164,22 +172,29 @@ export const useAuthStore = defineStore(
     /**
      * 获取当前用户信息
      */
-    const fetchUserInfo = async (): Promise<boolean> => {
-      if (!accessToken.value) {
-        return false
+    let profileRequest: { identity: string; promise: Promise<boolean> } | null = null
+    const fetchUserInfo = (): Promise<boolean> => {
+      const identity = sessionIdentity(accessToken.value) ?? accessToken.value
+      if (!identity) return Promise.resolve(false)
+      if (profileRequest?.identity === identity) return profileRequest.promise
+      const entry = {
+        identity,
+        promise: Promise.resolve().then(async () => {
+          try {
+            const userInfo = await getCurrentUserInfo()
+            if ((sessionIdentity(accessToken.value) ?? accessToken.value) !== identity) return false
+            user.value = userInfo
+            return true
+          } catch {
+            if (!getAccessToken()) clearAuth()
+            return false
+          } finally {
+            if (profileRequest === entry) profileRequest = null
+          }
+        }),
       }
-
-      try {
-        const userInfo = await getCurrentUserInfo()
-        user.value = userInfo
-        return true
-      } catch {
-        // 拦截器在 refresh 失败时会 clearTokens；此处同步清 Pinia，避免头像残留
-        if (!getAccessToken()) {
-          clearAuth()
-        }
-        return false
-      }
+      profileRequest = entry
+      return entry.promise
     }
 
     /**
@@ -248,7 +263,7 @@ export const useAuthStore = defineStore(
   },
   {
     persist: {
-      pick: ['accessToken', 'refreshToken', 'user'],
+      pick: ['user'],
     },
   }
 )

@@ -2,6 +2,7 @@ import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import { getNotificationCounts, type NotificationCounts } from '@/api/notification'
 import { useAuthStore } from './auth'
+import { sessionIdentity } from '@/utils/authSession'
 
 export const useNotificationStore = defineStore('notification', () => {
   // State
@@ -40,9 +41,12 @@ export const useNotificationStore = defineStore('notification', () => {
     }
 
     isLoading.value = true
+    const identity = sessionIdentity(authStore.accessToken) ?? authStore.accessToken
 
     try {
       const result = await getNotificationCounts()
+      if ((sessionIdentity(authStore.accessToken) ?? authStore.accessToken) !== identity)
+        return false
       counts.value = result
       lastFetchTime.value = Date.now()
       return true

@@ -560,7 +560,13 @@ const handleWsMessage = (event: MessageEvent) => {
     }
 
     if (payload.type === 'system' && payload.system) {
-      toast.error(payload.system)
+      if (payload.system === 'session expired, please sign in again') {
+        void authStore.refreshAccessToken().then((restored) => {
+          if (restored) toast.info('登录状态已恢复，请重发消息')
+        })
+      } else {
+        toast.error(payload.system)
+      }
 
       if (discardLastPendingSelfMessage()) {
         void loadConversations()
@@ -577,6 +583,7 @@ const handleWsMessage = (event: MessageEvent) => {
 const { connected, send } = useWebSocket(
   () => (authStore.accessToken ? getChatWebSocketUrl(authStore.accessToken) : null),
   {
+    auth: 'required',
     heartbeat: { message: { type: 'ping' }, interval: 30000 },
     reconnect: { initialDelay: 1000, maxDelay: 10000 },
     onMessage: (_ws, event) => handleWsMessage(event),

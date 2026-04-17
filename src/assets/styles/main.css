@@ -254,6 +254,10 @@
     color: var(--color-foreground);
   }
 
+  html {
+    scrollbar-gutter: stable;
+  }
+
   body {
     background-color: var(--color-background);
     background-image:

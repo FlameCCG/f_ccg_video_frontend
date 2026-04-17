@@ -197,6 +197,12 @@ const handleReport = () => {
   opacity: 0;
   transition: opacity 0.25s ease;
   pointer-events: none;
+  z-index: 0;
+}
+
+.action-btn > * {
+  position: relative;
+  z-index: 1;
 }
 
 .action-btn:hover {
@@ -251,21 +257,65 @@ const handleReport = () => {
 
 .triple-btn {
   color: oklch(var(--muted-foreground) / 0.9);
+  border-color: oklch(var(--border) / 0.55);
+  background:
+    linear-gradient(
+      180deg,
+      color-mix(in oklch, var(--color-card) 94%, var(--color-background)),
+      color-mix(in oklch, var(--color-muted) 74%, var(--color-card))
+    );
 }
 
 .triple-btn:hover {
-  color: var(--color-accent);
-  border-color: oklch(var(--accent) / 0.2);
+  color: var(--color-primary-foreground);
+  border-color: color-mix(in oklch, var(--brand-pink) 44%, var(--brand-blue) 56%);
+  background:
+    linear-gradient(
+      135deg,
+      color-mix(in oklch, var(--brand-blue) 80%, white 20%),
+      color-mix(in oklch, var(--brand-pink) 86%, white 14%)
+    );
+  box-shadow:
+    0 10px 24px -14px color-mix(in oklch, var(--brand-blue) 55%, transparent),
+    0 10px 24px -14px color-mix(in oklch, var(--brand-pink) 45%, transparent);
 }
 
 .triple-btn:hover::after {
-  background-color: var(--color-accent);
-  opacity: 0.08;
+  opacity: 0;
+}
+
+:global(.dark) .triple-btn:hover {
+  background:
+    linear-gradient(
+      135deg,
+      color-mix(in oklch, var(--brand-blue) 70%, black 30%),
+      color-mix(in oklch, var(--brand-pink) 72%, black 28%)
+    );
 }
 
 .triple-btn.is-animating .action-icon {
   animation: triple-spin 1s cubic-bezier(0.16, 1, 0.3, 1);
-  color: var(--color-accent);
+  color: inherit;
+}
+
+.triple-btn.is-animating {
+  color: var(--color-primary-foreground);
+  border-color: color-mix(in oklch, var(--brand-pink) 44%, var(--brand-blue) 56%);
+  background:
+    linear-gradient(
+      135deg,
+      color-mix(in oklch, var(--brand-blue) 80%, white 20%),
+      color-mix(in oklch, var(--brand-pink) 86%, white 14%)
+    );
+}
+
+:global(.dark) .triple-btn.is-animating {
+  background:
+    linear-gradient(
+      135deg,
+      color-mix(in oklch, var(--brand-blue) 70%, black 30%),
+      color-mix(in oklch, var(--brand-pink) 72%, black 28%)
+    );
 }
 
 .coin-option {

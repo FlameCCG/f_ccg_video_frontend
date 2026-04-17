@@ -148,7 +148,6 @@ const canSendEmail = computed(() => {
   if (!email.trim()) return false
   if (siteStore.isRegisterGraphicsCaptchaEnabled && !graphicsCaptchaValue.value.captchaCode)
     return false
-  if (siteStore.isRegisterSlideCaptchaEnabled && !slideCaptchaVerified.value) return false
   return !isSendingEmail.value
 })
 
@@ -231,10 +230,20 @@ const handleSlideCaptchaClick = () => {
 const handleSlideCaptchaVerified = (value: { token: string; x: number; y: number }) => {
   slideCaptchaValue.value = value
   slideCaptchaVerified.value = true
+  
+  if (mode.value === 'register') {
+    void handleSendEmailCode()
+  }
 }
 
 const handleSendEmailCode = async () => {
   if (!canSendEmail.value) return
+  
+  if (mode.value === 'register' && siteStore.isRegisterSlideCaptchaEnabled && !slideCaptchaVerified.value) {
+    slideCaptchaOpen.value = true
+    return
+  }
+
   isSendingEmail.value = true
   try {
     const type = mode.value === 'register' ? 1 : 2
@@ -797,52 +806,6 @@ onUnmounted(() => {
           <!-- Graphics Captcha -->
           <div v-if="siteStore.isRegisterGraphicsCaptchaEnabled">
             <GraphicsCaptcha ref="graphicsCaptchaRef" v-model="graphicsCaptchaValue" />
-          </div>
-
-          <!-- Slide Captcha Trigger -->
-          <div v-if="siteStore.isRegisterSlideCaptchaEnabled">
-            <Button
-              type="button"
-              variant="outline"
-              class="group relative h-12 w-full justify-start overflow-hidden rounded-xl border px-4 transition-all duration-300 active:scale-[0.98]"
-              :class="[
-                slideCaptchaVerified
-                  ? 'border-primary/40 bg-primary/5 text-primary hover:bg-primary/10'
-                  : 'border-border/40 bg-muted/20 text-muted-foreground hover:border-border hover:bg-muted/50 hover:text-foreground',
-              ]"
-              @click="handleSlideCaptchaClick"
-            >
-              <div class="flex w-full items-center justify-between">
-                <div class="flex items-center gap-3">
-                  <div
-                    class="flex h-5 w-5 items-center justify-center rounded-full transition-all duration-300"
-                    :class="
-                      slideCaptchaVerified
-                        ? 'scale-100 bg-primary text-primary-foreground'
-                        : 'scale-90 bg-muted-foreground/20 text-transparent group-hover:bg-muted-foreground/30'
-                    "
-                  >
-                    <Check v-if="slideCaptchaVerified" class="h-3 w-3" />
-                    <div v-else class="h-1.5 w-1.5 rounded-full bg-muted-foreground/50"></div>
-                  </div>
-                  <span class="font-medium tracking-wide">
-                    {{ slideCaptchaVerified ? '安全验证已通过' : '点击进行安全验证' }}
-                  </span>
-                </div>
-                <ShieldCheck
-                  class="h-4 w-4 transition-all duration-500"
-                  :class="
-                    slideCaptchaVerified
-                      ? 'scale-110 text-primary opacity-100'
-                      : 'text-muted-foreground/40 opacity-50 group-hover:opacity-80'
-                  "
-                />
-              </div>
-              <div
-                v-if="!slideCaptchaVerified"
-                class="pointer-events-none absolute inset-0 -translate-x-full animate-[shimmer_3s_infinite] bg-gradient-to-r from-transparent via-foreground/5 to-transparent"
-              ></div>
-            </Button>
           </div>
 
           <!-- Email Code -->

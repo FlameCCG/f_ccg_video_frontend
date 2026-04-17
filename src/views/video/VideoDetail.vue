@@ -366,6 +366,12 @@ const formatDate = (dateStr: string): string => {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
 }
 
+let videoLoadRequestId = 0
+
+const isLatestVideoLoad = (requestId: number, expectedVideoId: number) => {
+  return requestId === videoLoadRequestId && video.value?.id === expectedVideoId
+}
+
 const syncPartRoute = async (replace = true) => {
   const currentVideo = video.value
   if (!currentVideo) return
@@ -412,27 +418,40 @@ const syncPartRoute = async (replace = true) => {
 
 const loadVideo = async (id: number) => {
   if (!id) return
+  const requestId = ++videoLoadRequestId
   const ok = await videoStore.fetchVideoDetail(id)
-  if (ok) {
-    await syncPartRoute()
+  if (!ok || !isLatestVideoLoad(requestId, id)) return
 
-    if (video.value?.status === 1) {
-      try {
-        await addVideoView(id)
+  await syncPartRoute()
+  if (!isLatestVideoLoad(requestId, id)) return
+
+  if (video.value?.status === 1) {
+    try {
+      await addVideoView(id)
+      if (isLatestVideoLoad(requestId, id)) {
         videoStore.updateStats({ views: (video.value?.views ?? 0) + 1 })
-      } catch {
-        // Ignore view count errors
       }
-    }
-
-    if (authStore.isLoggedIn && video.value) {
-      videoStore.updatePlayerState({
-        currentTime: video.value.watchProgress ?? 0,
-        duration: video.value.duration,
-      })
-      void videoStore.saveProgress()
+    } catch {
+      // Ignore view count errors
     }
   }
+
+  if (!isLatestVideoLoad(requestId, id)) return
+
+  if (authStore.isLoggedIn && video.value) {
+    videoStore.updatePlayerState({
+      currentTime: video.value.watchProgress ?? 0,
+      duration: video.value.duration,
+    })
+    void videoStore.saveProgress()
+  }
+}
+
+const startVideoLoad = (id: number) => {
+  if (!id) return
+  videoStore.clearVideo()
+  descExpanded.value = false
+  void loadVideo(id)
 }
 
 const handlePartSelect = (partId: number) => {
@@ -467,7 +486,7 @@ const persistVideoHistoryWithoutPlayer = async () => {
 
 onMounted(() => {
   if (videoId.value) {
-    void loadVideo(videoId.value)
+    startVideoLoad(videoId.value)
   }
 })
 
@@ -476,9 +495,7 @@ watch(videoId, (id, previousId) => {
     void persistVideoHistoryWithoutPlayer()
   }
   if (id) {
-    videoStore.clearVideo()
-    descExpanded.value = false
-    void loadVideo(id)
+    startVideoLoad(id)
   }
 })
 
@@ -495,6 +512,7 @@ watch(
 )
 
 onBeforeUnmount(() => {
+  videoLoadRequestId++
   videoStore.clearVideo()
   if (hideTooltipTimer) clearTimeout(hideTooltipTimer)
   document.removeEventListener('keydown', handleReportKeydown)

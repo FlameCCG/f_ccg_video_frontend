@@ -48,7 +48,6 @@ import {
 } from '@/api/site'
 import { resolveCreatorTagIds } from '@/utils/creator-video'
 import { useCreatorBridgeStore } from '@/stores/creatorBridge'
-import { hashFileSha256 } from '@/utils/xai-assets'
 
 const router = useRouter()
 const { toast } = useToast()
@@ -633,27 +632,25 @@ const confirmCoverSetting = () => {
   showCoverSetting.value = false
 }
 
-const applyUploadedCoverUrl = (coverUrl: string) => {
+const applyLocalCoverFile = (coverFile: File, coverPreview: string) => {
   if (!activeWork.value) return
-  activeWork.value.coverFile = null
-  activeWork.value.coverPreview = coverUrl
-  activeWork.value.currentCoverUrl = coverUrl
+  activeWork.value.coverFile = coverFile
+  activeWork.value.coverPreview = coverPreview
+  activeWork.value.currentCoverUrl = ''
   activeWork.value.coverSource = 'manual'
   autoCoverPartTokens.delete(activeWork.value.id)
 }
 
-const handleAICoverPick = async (payload: { file: File; sourceUrl: string; prompt: string }) => {
+const handleAICoverPick = (payload: { file: File; sourceUrl: string; prompt: string }) => {
   if (!activeWork.value) return
   applyingAICover.value = true
   try {
-    const fileHash = activeParts.value[0]?.hash || (await hashFileSha256(payload.file))
-    const uploadResult = await uploadImage(fileHash, payload.file)
-    applyUploadedCoverUrl(uploadResult.imageUrl)
+    applyLocalCoverFile(payload.file, payload.sourceUrl)
     showAICoverDialog.value = false
     toast({ title: 'AI 封面已应用' })
   } catch (error) {
     console.error('Apply AI cover failed', error)
-    toast({ title: 'AI 封面上传失败', variant: 'destructive' })
+    toast({ title: 'AI 封面应用失败', variant: 'destructive' })
   } finally {
     applyingAICover.value = false
   }

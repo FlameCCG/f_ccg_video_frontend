@@ -256,41 +256,32 @@ const handleReport = () => {
 }
 
 .triple-btn {
-  color: oklch(var(--muted-foreground) / 0.9);
-  border-color: oklch(var(--border) / 0.55);
-  background:
-    linear-gradient(
-      180deg,
-      color-mix(in oklch, var(--color-card) 94%, var(--color-background)),
-      color-mix(in oklch, var(--color-muted) 74%, var(--color-card))
-    );
+  color: var(--brand-pink);
+  border-color: color-mix(in oklch, var(--brand-pink) 25%, transparent);
+  background: color-mix(in oklch, var(--brand-pink) 8%, transparent);
 }
 
 .triple-btn:hover {
-  color: var(--color-primary-foreground);
-  border-color: color-mix(in oklch, var(--brand-pink) 44%, var(--brand-blue) 56%);
-  background:
-    linear-gradient(
-      135deg,
-      color-mix(in oklch, var(--brand-blue) 80%, white 20%),
-      color-mix(in oklch, var(--brand-pink) 86%, white 14%)
-    );
-  box-shadow:
-    0 10px 24px -14px color-mix(in oklch, var(--brand-blue) 55%, transparent),
-    0 10px 24px -14px color-mix(in oklch, var(--brand-pink) 45%, transparent);
+  color: white;
+  border-color: transparent;
+  background: linear-gradient(135deg, var(--brand-blue), var(--brand-pink));
+  box-shadow: 0 6px 16px -4px color-mix(in oklch, var(--brand-pink) 50%, transparent);
 }
 
 .triple-btn:hover::after {
   opacity: 0;
 }
 
+:global(.dark) .triple-btn {
+  color: var(--brand-pink);
+  border-color: color-mix(in oklch, var(--brand-pink) 30%, transparent);
+  background: color-mix(in oklch, var(--brand-pink) 15%, transparent);
+}
+
 :global(.dark) .triple-btn:hover {
-  background:
-    linear-gradient(
-      135deg,
-      color-mix(in oklch, var(--brand-blue) 70%, black 30%),
-      color-mix(in oklch, var(--brand-pink) 72%, black 28%)
-    );
+  color: var(--bg-surface-0);
+  background: linear-gradient(135deg, var(--brand-blue), var(--brand-pink));
+  box-shadow: 0 6px 16px -4px color-mix(in oklch, var(--brand-pink) 30%, transparent);
 }
 
 .triple-btn.is-animating .action-icon {
@@ -299,23 +290,16 @@ const handleReport = () => {
 }
 
 .triple-btn.is-animating {
-  color: var(--color-primary-foreground);
-  border-color: color-mix(in oklch, var(--brand-pink) 44%, var(--brand-blue) 56%);
-  background:
-    linear-gradient(
-      135deg,
-      color-mix(in oklch, var(--brand-blue) 80%, white 20%),
-      color-mix(in oklch, var(--brand-pink) 86%, white 14%)
-    );
+  color: white;
+  border-color: transparent;
+  background: linear-gradient(135deg, var(--brand-blue), var(--brand-pink));
+  box-shadow: 0 8px 20px -4px color-mix(in oklch, var(--brand-pink) 60%, transparent);
 }
 
 :global(.dark) .triple-btn.is-animating {
-  background:
-    linear-gradient(
-      135deg,
-      color-mix(in oklch, var(--brand-blue) 70%, black 30%),
-      color-mix(in oklch, var(--brand-pink) 72%, black 28%)
-    );
+  color: var(--bg-surface-0);
+  background: linear-gradient(135deg, var(--brand-blue), var(--brand-pink));
+  box-shadow: 0 8px 20px -4px color-mix(in oklch, var(--brand-pink) 40%, transparent);
 }
 
 .coin-option {

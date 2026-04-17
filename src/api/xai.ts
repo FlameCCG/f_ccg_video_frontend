@@ -126,24 +126,66 @@ export const xaiGetVideoStatus = (requestId: string) => {
   return request.get(`/common/xai/videos/${requestId}`)
 }
 
+const XAI_REMOTE_ASSET_HOSTS = new Set(['imgen.x.ai', 'vidgen.x.ai'])
+const XAI_PROXY_PATHS = new Set(['/v1/common/xai/assets', '/common/xai/assets'])
+
+const getUrlParseBase = () => {
+  if (typeof window !== 'undefined' && window.location.origin) {
+    return window.location.origin
+  }
+  return 'http://localhost'
+}
+
+const normalizeLocalXaiAssetPath = (url: string) => {
+  if (url.startsWith('/v1/common/xai/assets')) {
+    return url
+  }
+
+  if (url.startsWith('/common/xai/assets')) {
+    return `/v1${url}`
+  }
+
+  const withoutDotPrefix = url.replace(/^(?:\.\/)+/, '')
+  if (withoutDotPrefix.startsWith('v1/common/xai/assets')) {
+    return `/${withoutDotPrefix}`
+  }
+
+  if (withoutDotPrefix.startsWith('common/xai/assets')) {
+    return `/v1/${withoutDotPrefix}`
+  }
+
+  return ''
+}
+
 export const resolveXaiAssetUrl = (url: string): string => {
   const trimmed = url.trim()
   if (!trimmed || trimmed.startsWith('data:')) {
     return trimmed
   }
 
+  const normalizedLocalPath = normalizeLocalXaiAssetPath(trimmed)
+  if (normalizedLocalPath) {
+    return normalizedLocalPath
+  }
+
+  const normalizedInput = trimmed.startsWith('//')
+    ? `${typeof window !== 'undefined' ? window.location.protocol : 'https:'}${trimmed}`
+    : trimmed
+
   try {
-    const parsed = new URL(trimmed)
-    if (parsed.hostname !== 'imgen.x.ai' && parsed.hostname !== 'vidgen.x.ai') {
+    const parsed = new URL(normalizedInput, getUrlParseBase())
+
+    if (XAI_PROXY_PATHS.has(parsed.pathname)) {
+      return `/v1/common/xai/assets${parsed.search}`
+    }
+
+    if (!XAI_REMOTE_ASSET_HOSTS.has(parsed.hostname)) {
       return trimmed
     }
   } catch {
-    if (trimmed.startsWith('/v1/common/xai/assets?')) {
-      return trimmed
-    }
     return trimmed
   }
 
-  const params = new URLSearchParams({ url: trimmed })
+  const params = new URLSearchParams({ url: normalizedInput })
   return `/v1/common/xai/assets?${params.toString()}`
 }

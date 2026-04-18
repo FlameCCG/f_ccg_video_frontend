@@ -237,7 +237,7 @@ export interface VideoPartPayload {
   fileHash: string
 }
 
-export interface PublishVideoParams {
+interface PublishVideoBaseParams {
   title: string
   description?: string
   partitionId: number
@@ -245,9 +245,24 @@ export interface PublishVideoParams {
   isOriginal?: boolean
   isPrivate?: boolean
   coverUrl: string
-  parts: VideoPartPayload[]
   publishTime?: string
 }
+
+export interface PublishSingleVideoParams extends PublishVideoBaseParams {
+  filePath: string
+  fileName: string
+  fileHash: string
+  parts?: never
+}
+
+export interface PublishMultipartVideoParams extends PublishVideoBaseParams {
+  parts: VideoPartPayload[]
+  filePath?: never
+  fileName?: never
+  fileHash?: never
+}
+
+export type PublishVideoParams = PublishSingleVideoParams | PublishMultipartVideoParams
 
 export interface PublishVideoResult {
   videoId: number

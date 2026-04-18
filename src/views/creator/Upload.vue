@@ -38,7 +38,7 @@ import {
   uploadImage,
   type UploadStatusResult,
 } from '@/api/upload'
-import { publishVideo, getPartitions, type Partition } from '@/api/video'
+import { publishVideo, getPartitions, type Partition, type PublishVideoParams } from '@/api/video'
 import {
   DEFAULT_STORAGE_CONFIG,
   getSiteConfig,
@@ -1412,7 +1412,7 @@ const handlePublish = async () => {
         const coverRes = await uploadImage(work.parts[0]?.hash || '', work.coverFile)
         coverUrl = coverRes.imageUrl
       }
-      await publishVideo({
+      const publishPayload: PublishVideoParams = {
         title: work.form.title,
         description: work.form.description,
         partitionId: work.form.partitionId!,
@@ -1421,13 +1421,22 @@ const handlePublish = async () => {
         isPrivate: work.form.isPrivate,
         coverUrl,
         publishTime: publishTimeStr,
-        parts: work.parts.map((p) => ({
-          title: p.title,
-          filePath: p.filePath,
-          fileName: p.file.name,
-          fileHash: p.hash,
-        })),
-      })
+        ...(work.parts.length === 1
+          ? {
+              filePath: work.parts[0]!.filePath,
+              fileName: work.parts[0]!.file.name,
+              fileHash: work.parts[0]!.hash,
+            }
+          : {
+              parts: work.parts.map((p) => ({
+                title: p.title,
+                filePath: p.filePath,
+                fileName: p.file.name,
+                fileHash: p.hash,
+              })),
+            }),
+      }
+      await publishVideo(publishPayload)
     }
     toast({ title: works.value.length > 1 ? `${works.value.length} 个作品发布成功` : '发布成功' })
     void router.push('/creator/content')

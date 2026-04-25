@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, watch } from 'vue'
+import { ref, computed, onMounted, watch, type Component } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import {
@@ -223,8 +223,8 @@ const normalizeLikeTags = (tags?: string[] | null) => {
 const visibleLikeTags = computed(() => normalizeLikeTags(user.value?.likeTags))
 
 type ProfileMetaItem =
-  | { key: string; label: string; icon: any; value: string; tags?: never }
-  | { key: string; label: string; icon: any; value?: never; tags: string[] }
+  | { key: string; label: string; icon: string | Component; value: string; tags?: never }
+  | { key: string; label: string; icon: string | Component; value?: never; tags: string[] }
 
 const profileMetaItems = computed<ProfileMetaItem[]>(() => {
   if (!user.value) return []

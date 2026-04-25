@@ -1,6 +1,11 @@
 <script setup lang="ts">
 import { ref, onMounted, watch, computed, nextTick } from 'vue'
-import { getDanmuList, type DanmuItem } from '@/api/danmu'
+import {
+  danmuMillisecondsToSeconds,
+  danmuSecondsToMilliseconds,
+  getDanmuList,
+  type DanmuItem,
+} from '@/api/danmu'
 import { MoreVertical, ChevronUp, ChevronLeft, ChevronRight, ArrowLeft } from 'lucide-vue-next'
 
 const props = defineProps<{
@@ -171,19 +176,15 @@ const selectDate = (day: CalendarDay) => {
   void fetchList(day.dateStr)
 }
 
-const isSecondsFormat = () => {
-  return list.value.length > 0 && list.value.every((d) => d.timeOffset > 0 && d.timeOffset < 10000)
-}
-
 const formatTime = (ms: number): string => {
-  const totalSec = isSecondsFormat() ? ms : Math.floor(ms / 1000)
+  const totalSec = Math.floor(danmuMillisecondsToSeconds(ms))
   const min = Math.floor(totalSec / 60)
   const sec = totalSec % 60
   return `${String(min).padStart(2, '0')}:${String(sec).padStart(2, '0')}`
 }
 
 const getRealTime = (ms: number): number => {
-  return isSecondsFormat() ? ms : ms / 1000
+  return danmuMillisecondsToSeconds(ms)
 }
 
 const formatDate = (dateStr: string): string => {
@@ -269,7 +270,7 @@ const addDanmu = (danmu: {
     videoPartId: props.partId ?? 0,
     userId: 0,
     content: danmu.text,
-    timeOffset: Math.round(danmu.time * 1000),
+    timeOffset: danmuSecondsToMilliseconds(danmu.time),
     color: danmu.color,
     fontSize: 25,
     position: danmu.mode,

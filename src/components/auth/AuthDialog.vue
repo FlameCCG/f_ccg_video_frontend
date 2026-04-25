@@ -230,7 +230,7 @@ const handleSlideCaptchaClick = () => {
 const handleSlideCaptchaVerified = (value: { token: string; x: number; y: number }) => {
   slideCaptchaValue.value = value
   slideCaptchaVerified.value = true
-  
+
   if (mode.value === 'register') {
     void handleSendEmailCode()
   }
@@ -238,8 +238,12 @@ const handleSlideCaptchaVerified = (value: { token: string; x: number; y: number
 
 const handleSendEmailCode = async () => {
   if (!canSendEmail.value) return
-  
-  if (mode.value === 'register' && siteStore.isRegisterSlideCaptchaEnabled && !slideCaptchaVerified.value) {
+
+  if (
+    mode.value === 'register' &&
+    siteStore.isRegisterSlideCaptchaEnabled &&
+    !slideCaptchaVerified.value
+  ) {
     slideCaptchaOpen.value = true
     return
   }

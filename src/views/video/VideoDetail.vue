@@ -2,7 +2,12 @@
 import { ref, computed, onMounted, onBeforeUnmount, watch } from 'vue'
 import { onBeforeRouteLeave, useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
-import { likeDanmu, reportDanmu, type PlayerDanmuPayload } from '@/api/danmu'
+import {
+  danmuMillisecondsToSeconds,
+  likeDanmu,
+  reportDanmu,
+  type PlayerDanmuPayload,
+} from '@/api/danmu'
 import { useVideoStore } from '@/stores/video'
 import { addVideoView } from '@/api/video'
 import VideoPlayer from '@/components/player/VideoPlayer.vue'
@@ -130,6 +135,15 @@ const rememberLocalDanmu = (danmuId?: number) => {
 }
 
 const getPlayerCurrentTime = () => {
+  const exactPlayerTime = playerRef.value?.getCurrentTime?.()
+  if (
+    typeof exactPlayerTime === 'number' &&
+    Number.isFinite(exactPlayerTime) &&
+    exactPlayerTime >= 0
+  ) {
+    return exactPlayerTime
+  }
+
   const playerTime = playerRef.value?.artRef?.currentTime
   if (typeof playerTime === 'number' && Number.isFinite(playerTime) && playerTime >= 0) {
     return playerTime
@@ -153,7 +167,7 @@ watch(newDanmu, (danmu) => {
     const payload: PlayerDanmuPayload = {
       id: danmu.id,
       text: danmu.content,
-      time: danmu.timeOffset / 1000,
+      time: danmuMillisecondsToSeconds(danmu.timeOffset),
       color: danmu.color || '#ffffff',
       mode: (danmu.position ?? 0) as 0 | 1 | 2,
       likeCount: danmu.likeCount ?? 0,

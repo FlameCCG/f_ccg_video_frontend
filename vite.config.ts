@@ -4,6 +4,8 @@ import vue from '@vitejs/plugin-vue'
 import tailwindcss from '@tailwindcss/vite'
 import { oml2d } from 'vite-plugin-oh-my-live2d'
 
+const live2dModelBase = 'https://registry.npmmirror.com/oml2d-models/latest/files/models'
+
 // https://vite.dev/config/
 export default defineConfig({
   plugins: [
@@ -15,26 +17,26 @@ export default defineConfig({
       mobileDisplay: false,
       models: [
         {
-          path: '/live2d-models/cat-black/model.json',
-          scale: 0.15,
-          position: [0, 20],
-          stageStyle: {
-            height: 350,
-          },
-        },
-        {
-          path: '/live2d-models/Pio/model.json',
+          path: `${live2dModelBase}/Pio/model.json`,
           scale: 0.4,
           position: [0, 50],
           stageStyle: {
             height: 300,
           },
         },
-{
-    path: "https://registry.npmmirror.com/oml2d-models/latest/files/models/Senko_Normals/senko.model3.json",  // 仙狐娘（动作非常丰富）
-    scale: 0.12,
-    position: [0, 50]
-  }
+        {
+          path: `${live2dModelBase}/shizuku/shizuku.model.json`,
+          scale: 0.22,
+          position: [0, 36],
+          stageStyle: {
+            height: 320,
+          },
+        },
+        {
+          path: `${live2dModelBase}/Senko_Normals/senko.model3.json`,
+          scale: 0.12,
+          position: [0, 50],
+        },
       ],
       menus: {
         items: (defaultItems: unknown[]) => [

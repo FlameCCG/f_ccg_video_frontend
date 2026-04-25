@@ -110,6 +110,16 @@ export interface PlayerDanmuPayload {
   isSelf?: boolean
 }
 
+export const danmuMillisecondsToSeconds = (timeOffset: number): number => {
+  if (!Number.isFinite(timeOffset) || timeOffset < 0) return 0
+  return timeOffset / 1000
+}
+
+export const danmuSecondsToMilliseconds = (time: number): number => {
+  if (!Number.isFinite(time) || time < 0) return 0
+  return Math.round(time * 1000)
+}
+
 // ============================================================================
 // 5.8 弹幕 API
 // ============================================================================

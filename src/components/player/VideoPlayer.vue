@@ -4,7 +4,12 @@ import Artplayer, { type Option, type Setting } from 'artplayer'
 import artplayerPluginDanmuku from 'artplayer-plugin-danmuku'
 import { useVideoStore } from '@/stores/video'
 import { useAuthStore } from '@/stores/auth'
-import { getDanmuList, type DanmuItem, type PlayerDanmuPayload } from '@/api/danmu'
+import {
+  danmuMillisecondsToSeconds,
+  getDanmuList,
+  type DanmuItem,
+  type PlayerDanmuPayload,
+} from '@/api/danmu'
 import type { VideoResourceItem } from '@/api/video'
 import { toast } from 'vue-sonner'
 
@@ -141,6 +146,38 @@ const getDanmuPlugin = (art: Artplayer | null | undefined = artRef.value) => {
     | undefined
 }
 
+const normalizePlayerTime = (time: unknown): number | undefined => {
+  return typeof time === 'number' && Number.isFinite(time) && time >= 0 ? time : undefined
+}
+
+const getCurrentTime = (art: Artplayer | null | undefined = artRef.value): number => {
+  const rawArt = art ? toRaw(art) : null
+  return (
+    normalizePlayerTime(rawArt?.video?.currentTime) ??
+    normalizePlayerTime(rawArt?.currentTime) ??
+    normalizePlayerTime(videoStore.playerState.currentTime) ??
+    0
+  )
+}
+
+const getDuration = (art: Artplayer): number => {
+  const rawArt = toRaw(art)
+  return (
+    normalizePlayerTime(rawArt.video?.duration) ??
+    normalizePlayerTime(rawArt.duration) ??
+    normalizePlayerTime(videoStore.playerState.duration) ??
+    0
+  )
+}
+
+const syncPlayerState = (art: Artplayer, playing = art.playing) => {
+  videoStore.updatePlayerState({
+    currentTime: getCurrentTime(art),
+    duration: getDuration(art),
+    playing,
+  })
+}
+
 const loadDanmuList = async (): Promise<
   { id?: string; text: string; time: number; color: string; mode: 0 | 1 | 2 }[]
 > => {
@@ -157,7 +194,6 @@ const loadDanmuList = async (): Promise<
     if (props.partId) params.partId = props.partId
     const result = await getDanmuList(params)
     const list = result.list ?? []
-    const isSeconds = list.length > 0 && list.every((d) => d.timeOffset > 0 && d.timeOffset < 10000)
 
     list.forEach((d: DanmuItem) => {
       loadedDanmuMeta.set(d.id, {
@@ -172,7 +208,7 @@ const loadDanmuList = async (): Promise<
     return list.map((d: DanmuItem) => ({
       id: String(d.id),
       text: d.content,
-      time: isSeconds ? d.timeOffset : d.timeOffset / 1000,
+      time: danmuMillisecondsToSeconds(d.timeOffset),
       color: d.color || '#ffffff',
       mode: (d.position ?? 0) as 0 | 1 | 2,
     }))
@@ -251,12 +287,39 @@ const setDanmuVisible = (visible: boolean) => {
 }
 
 const setDanmuOpacity = (opacity: number) => {
-  danmuOpacity.value = opacity
+  const normalizedOpacity = Math.min(1, Math.max(0, opacity))
+  danmuOpacity.value = normalizedOpacity
+  applyVisibleDanmuOpacity(normalizedOpacity)
   if (!artRef.value) return
   const plugin = getDanmuPlugin()
   if (plugin) {
-    plugin.config({ ...plugin.option, opacity })
+    plugin.config({ ...plugin.option, opacity: normalizedOpacity })
   }
+}
+
+const applyVisibleDanmuOpacity = (opacity: number) => {
+  const container = containerRef.value
+  if (!container) return
+
+  container.querySelectorAll<HTMLElement>('.art-danmuku > *').forEach((el) => {
+    const isHiddenOriginal = el.style.opacity === '0' && el.style.pointerEvents === 'none'
+    const isActiveDanmu =
+      el.dataset.isDanmuClone === 'true' ||
+      el.dataset.state === 'emit' ||
+      el.dataset.state === 'stop'
+
+    if (isHiddenOriginal || !isActiveDanmu) return
+    el.style.opacity = String(opacity)
+  })
+}
+
+const syncDanmuConfig = (option: unknown) => {
+  const opacity = (option as { opacity?: unknown })?.opacity
+  if (typeof opacity !== 'number' || !Number.isFinite(opacity)) return
+
+  const normalizedOpacity = Math.min(1, Math.max(0, opacity))
+  danmuOpacity.value = normalizedOpacity
+  applyVisibleDanmuOpacity(normalizedOpacity)
 }
 
 // ---- Hold / Release a single danmu ----
@@ -418,6 +481,7 @@ defineExpose({
   holdDanmu: holdDanmuItem,
   releaseHeldDanmu: releaseHeldDanmuItem,
   updateDanmuMeta,
+  getCurrentTime,
 })
 
 // ---- Hover event delegation ----
@@ -554,7 +618,6 @@ const initPlayer = () => {
           qualitySwitchTime = this.currentTime
           isSwitchingQuality.value = true
           switchingQualityLabel.value = html
-          toast.info(`正在切换至 ${html}`)
           // Safety timeout: dismiss overlay if canplay doesn't fire within 8s
           if (qualitySwitchTimer) clearTimeout(qualitySwitchTimer)
           qualitySwitchTimer = setTimeout(() => {
@@ -629,45 +692,41 @@ const initPlayer = () => {
   })
 
   art.on('video:timeupdate', () => {
-    videoStore.updatePlayerState({
-      currentTime: art.currentTime,
-      duration: art.duration,
-      playing: art.playing,
-    })
+    syncPlayerState(art)
   })
 
   art.on('video:play', () => {
-    videoStore.updatePlayerState({
-      currentTime: art.currentTime,
-      duration: art.duration,
-      playing: true,
-    })
+    syncPlayerState(art, true)
     resetProgressSaveCycle(art, { immediate: true })
   })
 
   art.on('video:pause', () => {
-    videoStore.updatePlayerState({
-      currentTime: art.currentTime,
-      duration: art.duration,
-      playing: false,
-    })
+    syncPlayerState(art, false)
     resetProgressSaveCycle(art, { immediate: true })
   })
 
   art.on('video:ended', () => {
-    videoStore.updatePlayerState({
-      currentTime: art.currentTime,
-      duration: art.duration,
-      playing: false,
-    })
+    syncPlayerState(art, false)
     resetProgressSaveCycle(art, { immediate: true })
   })
 
+  art.on('seek', (_currentTime, time) => {
+    if (Number.isFinite(time) && time >= 0) {
+      videoStore.updatePlayerState({
+        currentTime: time,
+        duration: getDuration(art),
+        playing: art.playing,
+      })
+    }
+  })
+
   art.on('video:seeking', () => {
+    syncPlayerState(art)
     resetVisibleDanmu()
   })
 
   art.on('video:seeked', () => {
+    syncPlayerState(art)
     resetVisibleDanmu()
   })
 
@@ -686,6 +745,8 @@ const initPlayer = () => {
       switchingQualityLabel.value = ''
     }
   })
+
+  art.on('artplayerPluginDanmuku:config', syncDanmuConfig)
 
   artRef.value = art
   emit('ready', art)
@@ -756,8 +817,8 @@ const destroyPlayer = () => {
   if (artRef.value) {
     if (authStore.isLoggedIn && videoStore.videoId) {
       videoStore.updatePlayerState({
-        currentTime: artRef.value.currentTime,
-        duration: artRef.value.duration,
+        currentTime: getCurrentTime(artRef.value),
+        duration: getDuration(artRef.value),
       })
       void videoStore.saveProgress()
     }

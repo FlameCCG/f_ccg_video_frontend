@@ -65,6 +65,7 @@ const confirmPassword = ref('')
 const showOldPwd = ref(false)
 const showNewPwd = ref(false)
 const changingPwd = ref(false)
+const thirdPartyRegisterSources = ['qq', 'google', 'github', 'x', 'linuxdo'] as const
 
 const RECORD_PAGE_SIZE = 8
 
@@ -107,6 +108,14 @@ const expNext = computed(() => {
   const thresholds = [0, 200, 1500, 4500, 10800, 28800, 100000]
   const lv = userInfo.value.level
   return thresholds[lv + 1] ?? thresholds[6]!
+})
+
+const requiresOldPassword = computed(() => {
+  const registerSource = userInfo.value?.registerSource
+  if (!registerSource) return true
+  return !thirdPartyRegisterSources.includes(
+    registerSource as (typeof thirdPartyRegisterSources)[number]
+  )
 })
 
 const genderOptions = [
@@ -185,6 +194,7 @@ const formatRegisterSource = (value: string | undefined) => {
   if (value === 'qq') return 'QQ 登录'
   if (value === 'google') return 'Google 登录'
   if (value === 'github') return 'GitHub 登录'
+  if (value === 'linuxdo') return 'LinuxDo 登录'
   if (value === 'x') return 'X 登录'
   return value
 }
@@ -403,8 +413,12 @@ const removeProfileLikeTag = async (tag: string) => {
 }
 
 const handleChangePwd = async () => {
-  if (!newPassword.value || !oldPassword.value) {
+  if (!newPassword.value || !confirmPassword.value) {
     toast.warning('请填写完整')
+    return
+  }
+  if (requiresOldPassword.value && !oldPassword.value) {
+    toast.warning('请输入当前密码')
     return
   }
   if (newPassword.value !== confirmPassword.value) {
@@ -417,7 +431,10 @@ const handleChangePwd = async () => {
   }
   changingPwd.value = true
   try {
-    await changePassword({ oldPassword: oldPassword.value, newPassword: newPassword.value })
+    await changePassword({
+      oldPassword: requiresOldPassword.value ? oldPassword.value : '',
+      newPassword: newPassword.value,
+    })
     toast.success('密码修改成功，请重新登录')
     authStore.logout()
     void router.push('/')
@@ -836,7 +853,10 @@ watch(activeRecordTab, (tab) => {
           </div>
 
           <h3 class="form-title" style="margin-top: 28px">修改密码</h3>
-          <div class="fg">
+          <p v-if="!requiresOldPassword" class="form-sub">
+            第三方登录账号首次设置密码时，无需填写旧密码。
+          </p>
+          <div v-if="requiresOldPassword" class="fg">
             <label class="fl">当前密码</label>
             <div class="fi-wrap">
               <input

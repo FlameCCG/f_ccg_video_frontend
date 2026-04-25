@@ -3,6 +3,8 @@ import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 import { useAuthStore } from '@/stores/auth'
 import {
   sendDanmu,
+  danmuMillisecondsToSeconds,
+  danmuSecondsToMilliseconds,
   type DanmuPositionType,
   DanmuPosition,
   type PlayerDanmuPayload,
@@ -74,7 +76,7 @@ const normalizeDanmuTime = (timeOffset?: number): number | undefined => {
     return undefined
   }
 
-  return timeOffset >= 10000 ? timeOffset / 1000 : timeOffset
+  return danmuMillisecondsToSeconds(timeOffset)
 }
 
 const handleSend = async () => {
@@ -88,7 +90,7 @@ const handleSend = async () => {
   sending.value = true
   const text = inputText.value.trim()
   const sendAt = getExactCurrentTime()
-  const timeMs = Math.round(sendAt * 1000)
+  const timeMs = danmuSecondsToMilliseconds(sendAt)
 
   try {
     const sendParams: Parameters<typeof sendDanmu>[0] = {

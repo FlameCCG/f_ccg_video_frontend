@@ -18,6 +18,7 @@ import { marked } from 'marked'
 import DOMPurify from 'dompurify'
 import hljs from 'highlight.js'
 import ImageViewer from '@/components/common/ImageViewer.vue'
+import AppAvatar from '@/components/common/AppAvatar.vue'
 import { useCreatorBridgeStore } from '@/stores/creatorBridge'
 import { useAuthStore } from '@/stores/auth'
 import { buildXaiSuggestedTitle, fetchXaiAssetAsFile } from '@/utils/xai-assets'
@@ -1441,15 +1442,14 @@ const handleSend = () => {
 
               <!-- User Avatar Side -->
               <div v-if="msg.role === 'user'" class="shrink-0 pt-1 hidden sm:block">
-                <div
-                  class="w-10 h-10 rounded-full border border-[var(--border-color)] bg-[var(--bg-surface-1)] p-0.5 flex items-center justify-center shadow-surface overflow-hidden"
-                >
-                  <img
-                    :src="authStore.user?.avatar || '/bili_emoji_20.png'"
-                    alt="user"
-                    class="w-full h-full object-cover rounded-full"
-                  />
-                </div>
+                <AppAvatar
+                  :src="authStore.user?.avatar"
+                  :name="authStore.user?.username"
+                  alt="user"
+                  container-class="w-10 h-10 border border-[var(--border-color)] bg-[var(--bg-surface-1)] p-0.5 shadow-surface"
+                  image-class="w-full h-full object-cover rounded-full"
+                  text-class="text-sm font-bold"
+                />
               </div>
             </div>
             <!-- Bottom spacer -->

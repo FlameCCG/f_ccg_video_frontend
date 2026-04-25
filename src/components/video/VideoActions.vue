@@ -256,16 +256,16 @@ const handleReport = () => {
 }
 
 .triple-btn {
-  color: var(--brand-pink);
-  border-color: color-mix(in oklch, var(--brand-pink) 25%, transparent);
-  background: color-mix(in oklch, var(--brand-pink) 8%, transparent);
+  color: oklch(var(--foreground) / 0.92);
+  border-color: oklch(var(--foreground) / 0.12);
+  background: oklch(var(--foreground) / 0.045);
 }
 
 .triple-btn:hover {
-  color: white;
+  color: oklch(var(--background));
   border-color: transparent;
-  background: linear-gradient(135deg, var(--brand-blue), var(--brand-pink));
-  box-shadow: 0 6px 16px -4px color-mix(in oklch, var(--brand-pink) 50%, transparent);
+  background: oklch(var(--foreground) / 0.9);
+  box-shadow: 0 6px 16px -4px rgb(0 0 0 / 0.18);
 }
 
 .triple-btn:hover::after {
@@ -273,15 +273,15 @@ const handleReport = () => {
 }
 
 :global(.dark) .triple-btn {
-  color: var(--brand-pink);
-  border-color: color-mix(in oklch, var(--brand-pink) 30%, transparent);
-  background: color-mix(in oklch, var(--brand-pink) 15%, transparent);
+  color: oklch(var(--foreground) / 0.96);
+  border-color: oklch(var(--foreground) / 0.16);
+  background: oklch(var(--foreground) / 0.08);
 }
 
 :global(.dark) .triple-btn:hover {
   color: var(--bg-surface-0);
-  background: linear-gradient(135deg, var(--brand-blue), var(--brand-pink));
-  box-shadow: 0 6px 16px -4px color-mix(in oklch, var(--brand-pink) 30%, transparent);
+  background: oklch(var(--foreground) / 0.94);
+  box-shadow: 0 6px 16px -4px rgb(0 0 0 / 0.36);
 }
 
 .triple-btn.is-animating .action-icon {
@@ -290,16 +290,16 @@ const handleReport = () => {
 }
 
 .triple-btn.is-animating {
-  color: white;
+  color: oklch(var(--background));
   border-color: transparent;
-  background: linear-gradient(135deg, var(--brand-blue), var(--brand-pink));
-  box-shadow: 0 8px 20px -4px color-mix(in oklch, var(--brand-pink) 60%, transparent);
+  background: oklch(var(--foreground) / 0.92);
+  box-shadow: 0 8px 20px -4px rgb(0 0 0 / 0.2);
 }
 
 :global(.dark) .triple-btn.is-animating {
   color: var(--bg-surface-0);
-  background: linear-gradient(135deg, var(--brand-blue), var(--brand-pink));
-  box-shadow: 0 8px 20px -4px color-mix(in oklch, var(--brand-pink) 40%, transparent);
+  background: oklch(var(--foreground) / 0.96);
+  box-shadow: 0 8px 20px -4px rgb(0 0 0 / 0.42);
 }
 
 .coin-option {

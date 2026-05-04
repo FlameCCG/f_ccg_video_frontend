@@ -18,8 +18,14 @@ const routes: RouteRecordRaw[] = [
         name: 'video-detail',
         component: () => import('@/views/video/VideoDetail.vue'),
       },
+    ],
+  },
+  {
+    path: '/search',
+    component: VideoLayout,
+    children: [
       {
-        path: '/search',
+        path: '',
         name: 'search',
         component: () => import('@/views/search/SearchResult.vue'),
       },

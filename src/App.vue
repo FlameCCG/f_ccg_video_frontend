@@ -7,6 +7,7 @@ import { useAuthStore } from '@/stores/auth'
 import { useThemeStore } from '@/stores/theme'
 import AuthDialog from '@/components/auth/AuthDialog.vue'
 import XaiChatDialog from '@/components/xai/XaiChatDialog.vue'
+import { initLive2d } from '@/utils/live2d'
 
 const authStore = useAuthStore()
 useThemeStore()
@@ -25,6 +26,7 @@ onMounted(() => {
   void authStore.initAuth()
   window.addEventListener('auth:login-required', handleLoginRequired as EventListener)
   window.addEventListener('oml2d:open-chat', handleOpenChat)
+  initLive2d()
 })
 
 onUnmounted(() => {

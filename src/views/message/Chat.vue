@@ -956,7 +956,7 @@ onMounted(() => {
   border-radius: 22px;
   padding: 12px 16px;
   border: 1px solid transparent;
-  box-shadow: 0 18px 40px -32px rgba(15, 15, 15, 0.4);
+  box-shadow: 0 18px 40px -32px rgb(15, 15, 15, 0.4);
   backdrop-filter: blur(12px);
 }
 
@@ -980,7 +980,7 @@ onMounted(() => {
   max-width: 100%;
 }
 
-@media (max-width: 768px) {
+@media (width <= 768px) {
   .chat-message-row {
     gap: 0.6rem;
   }

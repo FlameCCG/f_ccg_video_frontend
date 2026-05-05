@@ -48,7 +48,12 @@ const authStore = useAuthStore()
 const containerRef = ref<HTMLDivElement | null>(null)
 const artRef = ref<Artplayer | null>(null)
 
+type DanmuPluginInstance = ReturnType<ReturnType<typeof artplayerPluginDanmuku>>
+
 const VOLUME_STORAGE_KEY = 'artplayer_volume'
+const DEFAULT_DANMU_FONT_SIZE = 18
+const DANMU_FONT_SIZE_MIN = 12
+const DANMU_FONT_SIZE_MAX = 120
 
 const resources = computed((): VideoResourceItem[] => {
   const video = videoStore.currentVideo
@@ -111,6 +116,8 @@ const switchingQualityLabel = ref('')
 
 const danmuVisible = ref(true)
 const danmuOpacity = ref(1)
+const danmuFontSize = ref(DEFAULT_DANMU_FONT_SIZE)
+let cleanupDanmuFontSizeLiveControl: (() => void) | null = null
 
 // ---- Danmu metadata store (id -> extra info) ----
 interface DanmuMeta {
@@ -141,9 +148,7 @@ const loadedDanmuMeta = new Map<number, DanmuMeta>()
 const getDanmuPlugin = (art: Artplayer | null | undefined = artRef.value) => {
   if (!art) return undefined
 
-  return toRaw(art).plugins?.artplayerPluginDanmuku as
-    | ReturnType<ReturnType<typeof artplayerPluginDanmuku>>
-    | undefined
+  return toRaw(art).plugins?.artplayerPluginDanmuku as DanmuPluginInstance | undefined
 }
 
 const normalizePlayerTime = (time: unknown): number | undefined => {
@@ -297,6 +302,22 @@ const setDanmuOpacity = (opacity: number) => {
   }
 }
 
+const normalizeDanmuFontSize = (fontSize: unknown): number => {
+  if (typeof fontSize === 'number' && Number.isFinite(fontSize)) {
+    return Math.round(Math.min(DANMU_FONT_SIZE_MAX, Math.max(DANMU_FONT_SIZE_MIN, fontSize)))
+  }
+
+  if (typeof fontSize === 'string' && fontSize.endsWith('%')) {
+    const ratio = Number.parseFloat(fontSize) / 100
+    if (Number.isFinite(ratio)) {
+      const height = containerRef.value?.clientHeight ?? 0
+      return normalizeDanmuFontSize(height * ratio)
+    }
+  }
+
+  return DEFAULT_DANMU_FONT_SIZE
+}
+
 const applyVisibleDanmuOpacity = (opacity: number) => {
   const container = containerRef.value
   if (!container) return
@@ -313,13 +334,168 @@ const applyVisibleDanmuOpacity = (opacity: number) => {
   })
 }
 
-const syncDanmuConfig = (option: unknown) => {
-  const opacity = (option as { opacity?: unknown })?.opacity
-  if (typeof opacity !== 'number' || !Number.isFinite(opacity)) return
+const applyVisibleDanmuFontSize = (fontSize: number) => {
+  const container = containerRef.value
+  if (!container) return
 
-  const normalizedOpacity = Math.min(1, Math.max(0, opacity))
-  danmuOpacity.value = normalizedOpacity
-  applyVisibleDanmuOpacity(normalizedOpacity)
+  container.querySelectorAll<HTMLElement>('.art-danmuku > *').forEach((el) => {
+    const isHiddenOriginal = el.style.opacity === '0' && el.style.pointerEvents === 'none'
+    const isActiveDanmu =
+      el.dataset.isDanmuClone === 'true' ||
+      el.dataset.state === 'emit' ||
+      el.dataset.state === 'stop'
+
+    if (isHiddenOriginal || !isActiveDanmu) return
+
+    el.style.fontSize = `${fontSize}px`
+
+    if (el.dataset.mode === '1' || el.dataset.mode === '2') {
+      el.style.marginLeft = `-${el.clientWidth / 2}px`
+    }
+  })
+}
+
+const updateDanmuFontSizeSlider = (fontSize: number) => {
+  const container = containerRef.value
+  if (!container) return
+
+  const slider = container.querySelector<HTMLElement>('.apd-config-fontSize .apd-slider')
+  const value = container.querySelector<HTMLElement>('.apd-config-fontSize .apd-value')
+  if (!slider || !value) return
+
+  const percentage =
+    ((fontSize - DANMU_FONT_SIZE_MIN) / (DANMU_FONT_SIZE_MAX - DANMU_FONT_SIZE_MIN)) * 100
+  const clampedPercentage = Math.min(100, Math.max(0, percentage))
+  const dot = slider.querySelector<HTMLElement>('.apd-slider-dot')
+  const progress = slider.querySelector<HTMLElement>('.apd-slider-progress')
+
+  value.textContent = `${fontSize}px`
+  if (dot) dot.style.left = `${clampedPercentage}%`
+  if (progress) progress.style.width = `${clampedPercentage}%`
+}
+
+const setDanmuFontSize = (fontSize: unknown) => {
+  const normalizedFontSize = normalizeDanmuFontSize(fontSize)
+  danmuFontSize.value = normalizedFontSize
+
+  const plugin = getDanmuPlugin()
+  if (plugin) {
+    plugin.option.fontSize = normalizedFontSize
+  }
+
+  updateDanmuFontSizeSlider(normalizedFontSize)
+  applyVisibleDanmuFontSize(normalizedFontSize)
+}
+
+const stopDanmuFontSizeEvent = (event: Event) => {
+  event.preventDefault()
+  event.stopPropagation()
+  event.stopImmediatePropagation()
+}
+
+const setupDanmuFontSizeLiveControl = (plugin: DanmuPluginInstance) => {
+  let disposed = false
+  let dragging = false
+  let rafId: number | null = null
+  const cleanups: Array<() => void> = []
+
+  const addDisposableListener = (
+    target: EventTarget,
+    type: string,
+    listener: EventListener,
+    options?: AddEventListenerOptions
+  ) => {
+    target.addEventListener(type, listener, options)
+    cleanups.push(() => target.removeEventListener(type, listener, options))
+  }
+
+  const attach = () => {
+    if (disposed) return
+
+    const container = containerRef.value
+    const slider = container?.querySelector<HTMLElement>('.apd-config-fontSize .apd-slider')
+    if (!container || !slider) {
+      rafId = window.requestAnimationFrame(attach)
+      return
+    }
+
+    const getFontSizeFromEvent = (event: PointerEvent | MouseEvent) => {
+      const rect = slider.getBoundingClientRect()
+      const rawRatio = toRaw(artRef.value)?.isRotate
+        ? (event.clientY - rect.top) / rect.height
+        : (event.clientX - rect.left) / rect.width
+      const ratio = Math.min(1, Math.max(0, rawRatio))
+      return Math.round(ratio * (DANMU_FONT_SIZE_MAX - DANMU_FONT_SIZE_MIN) + DANMU_FONT_SIZE_MIN)
+    }
+
+    const commitFromEvent = (event: PointerEvent | MouseEvent) => {
+      setDanmuFontSize(getFontSizeFromEvent(event))
+    }
+
+    const handleClick: EventListener = (event) => {
+      stopDanmuFontSizeEvent(event)
+      commitFromEvent(event as MouseEvent)
+    }
+
+    const handlePointerDown: EventListener = (event) => {
+      const pointerEvent = event as PointerEvent
+      if (pointerEvent.button !== 0) return
+      stopDanmuFontSizeEvent(event)
+      dragging = true
+      commitFromEvent(pointerEvent)
+    }
+
+    const handlePointerMove: EventListener = (event) => {
+      if (!dragging) return
+      stopDanmuFontSizeEvent(event)
+      commitFromEvent(event as PointerEvent)
+    }
+
+    const handlePointerUp: EventListener = (event) => {
+      if (!dragging) return
+      stopDanmuFontSizeEvent(event)
+      dragging = false
+      commitFromEvent(event as PointerEvent)
+    }
+
+    addDisposableListener(slider, 'click', handleClick, { capture: true })
+    addDisposableListener(slider, 'pointerdown', handlePointerDown, { capture: true })
+    addDisposableListener(document, 'pointermove', handlePointerMove, { capture: true })
+    addDisposableListener(document, 'pointerup', handlePointerUp, { capture: true })
+
+    setDanmuFontSize(plugin.option.fontSize)
+  }
+
+  rafId = window.requestAnimationFrame(attach)
+
+  return () => {
+    disposed = true
+    dragging = false
+    if (rafId != null) {
+      window.cancelAnimationFrame(rafId)
+    }
+    cleanups.forEach((cleanup) => cleanup())
+    cleanups.length = 0
+  }
+}
+
+const syncDanmuConfig = (option: unknown) => {
+  if (!option || typeof option !== 'object') return
+
+  const danmuOption = option as { opacity?: unknown; fontSize?: unknown }
+  const opacity = danmuOption.opacity
+  if (typeof opacity === 'number' && Number.isFinite(opacity)) {
+    const normalizedOpacity = Math.min(1, Math.max(0, opacity))
+    danmuOpacity.value = normalizedOpacity
+    applyVisibleDanmuOpacity(normalizedOpacity)
+  }
+
+  if (danmuOption.fontSize !== undefined) {
+    const normalizedFontSize = normalizeDanmuFontSize(danmuOption.fontSize)
+    danmuFontSize.value = normalizedFontSize
+    updateDanmuFontSizeSlider(normalizedFontSize)
+    applyVisibleDanmuFontSize(normalizedFontSize)
+  }
 }
 
 // ---- Hold / Release a single danmu ----
@@ -475,8 +651,10 @@ defineExpose({
   emitDanmu,
   setDanmuVisible,
   setDanmuOpacity,
+  setDanmuFontSize,
   danmuVisible,
   danmuOpacity,
+  danmuFontSize,
   artRef,
   holdDanmu: holdDanmuItem,
   releaseHeldDanmu: releaseHeldDanmuItem,
@@ -666,7 +844,7 @@ const initPlayer = () => {
             danmuku: loadDanmuList,
             speed: 5,
             opacity: 1,
-            fontSize: 18,
+            fontSize: DEFAULT_DANMU_FONT_SIZE,
             color: '#ffffff',
             mode: 0,
             antiOverlap: true,
@@ -674,6 +852,10 @@ const initPlayer = () => {
             emitter: false,
             heatmap: true,
             maxLength: 200,
+            FONT_SIZE: {
+              min: DANMU_FONT_SIZE_MIN,
+              max: DANMU_FONT_SIZE_MAX,
+            },
           }),
         ]
       : [],
@@ -753,6 +935,7 @@ const initPlayer = () => {
 
   const danmuPlugin = getDanmuPlugin(art)
   if (danmuPlugin) {
+    cleanupDanmuFontSizeLiveControl = setupDanmuFontSizeLiveControl(danmuPlugin)
     emit('danmuPlugin', danmuPlugin)
   }
 
@@ -808,6 +991,8 @@ const resetProgressSaveCycle = (art: Artplayer, options?: { immediate?: boolean 
 
 const destroyPlayer = () => {
   clearProgressSaveTimer()
+  cleanupDanmuFontSizeLiveControl?.()
+  cleanupDanmuFontSizeLiveControl = null
   heldDanmu = null
   currentHoverEl = null
   danmuMetaMap.clear()

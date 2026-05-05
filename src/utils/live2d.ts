@@ -4,6 +4,7 @@ const OML2D_VERSION = '0.19.3'
 const OML2D_VERSION_CHECK_URL = 'https://unpkg.com/oh-my-live2d@latest/package.json'
 const ICONFONT_SYMBOL_URL = 'https://at.alicdn.com/t/c/font_4899528_0o2rmtnxrhll.js'
 const LIVE2D_MODEL_BASE = 'https://registry.npmmirror.com/oml2d-models/latest/files/models'
+const LIVE2D_BOOT_DELAY = 3500
 
 type Live2dWindow = Window &
   typeof globalThis & {
@@ -121,12 +122,25 @@ const scheduleAfterFirstPaint = (task: () => void) => {
   const clientWindow = getClientWindow()
   if (!clientWindow) return
 
-  if (typeof clientWindow.requestIdleCallback === 'function') {
-    clientWindow.requestIdleCallback(task, { timeout: 2500 })
+  const runOnIdle = () => {
+    if (typeof clientWindow.requestIdleCallback === 'function') {
+      clientWindow.requestIdleCallback(task, { timeout: 2500 })
+      return
+    }
+
+    clientWindow.setTimeout(task, 1200)
+  }
+
+  const schedule = () => {
+    clientWindow.setTimeout(runOnIdle, LIVE2D_BOOT_DELAY)
+  }
+
+  if (document.readyState === 'complete') {
+    schedule()
     return
   }
 
-  clientWindow.setTimeout(task, 1200)
+  clientWindow.addEventListener('load', schedule, { once: true })
 }
 
 const loadLive2d = async () => {

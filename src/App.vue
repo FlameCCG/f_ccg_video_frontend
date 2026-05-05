@@ -1,13 +1,14 @@
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted } from 'vue'
+import { defineAsyncComponent, ref, onMounted, onUnmounted } from 'vue'
 import { RouterView } from 'vue-router'
 import { Toaster } from '@/components/ui/sonner'
 import { Toaster as ToastToaster } from '@/components/ui/toast'
 import { useAuthStore } from '@/stores/auth'
 import { useThemeStore } from '@/stores/theme'
-import AuthDialog from '@/components/auth/AuthDialog.vue'
-import XaiChatDialog from '@/components/xai/XaiChatDialog.vue'
 import { initLive2d } from '@/utils/live2d'
+
+const AuthDialog = defineAsyncComponent(() => import('@/components/auth/AuthDialog.vue'))
+const XaiChatDialog = defineAsyncComponent(() => import('@/components/xai/XaiChatDialog.vue'))
 
 const authStore = useAuthStore()
 useThemeStore()
@@ -37,9 +38,13 @@ onUnmounted(() => {
 
 <template>
   <RouterView />
-  <AuthDialog :open="showAuthDialog" @update:open="showAuthDialog = $event" />
+  <AuthDialog v-if="showAuthDialog" :open="showAuthDialog" @update:open="showAuthDialog = $event" />
 
-  <XaiChatDialog :open="showChatDialog" @update:open="showChatDialog = $event" />
+  <XaiChatDialog
+    v-if="showChatDialog"
+    :open="showChatDialog"
+    @update:open="showChatDialog = $event"
+  />
 
   <Toaster position="top-center" :duration="3000" rich-colors style="--normal-z: 999999" />
   <ToastToaster />

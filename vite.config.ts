@@ -25,6 +25,12 @@ export default defineConfig({
       },
     },
   },
+  dev: {
+    sourcemap: {
+      js: false,
+      css: false,
+    },
+  },
   build: {
     target: 'esnext',
     minify: 'esbuild',

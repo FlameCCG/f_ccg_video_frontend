@@ -998,9 +998,6 @@ const sendRequest = async () => {
                 (typeof statusData.error_message === 'string' && statusData.error_message) ||
                 '视频生成失败'
               throw new Error(errMsg)
-            } else {
-              // Log to console for debugging intermediate states
-              console.log('Video Poll Tick:', statusData)
             }
           }
         }
@@ -1716,14 +1713,15 @@ const handleSend = () => {
     color-mix(in oklab, var(--bg-surface-0) 94%, transparent),
     var(--bg-surface-1)
   );
-  box-shadow: 0 20px 48px -32px rgba(15, 15, 15, 0.45);
+  box-shadow: 0 20px 48px -32px rgb(15, 15, 15, 0.45);
   padding: 1.15rem 1.25rem;
 }
+
 :deep(.markdown-body h1),
 :deep(.markdown-body h2),
 :deep(.markdown-body h3) {
   font-family:
-    'Inter',
+    Inter,
     system-ui,
     -apple-system,
     sans-serif;
@@ -1734,12 +1732,15 @@ const handleSend = () => {
   margin-bottom: 0.75em;
   color: var(--text-1);
 }
+
 :deep(.markdown-body h1) {
   font-size: 1.75em;
 }
+
 :deep(.markdown-body h2) {
   font-size: 1.4em;
 }
+
 :deep(.markdown-body h3) {
   font-size: 1.15em;
 }
@@ -1751,8 +1752,9 @@ const handleSend = () => {
   text-underline-offset: 4px;
   transition: all 0.3s ease;
 }
+
 :deep(.markdown-body a:hover) {
-  text-decoration-color: currentColor;
+  text-decoration-color: currentcolor;
 }
 
 :deep(.markdown-body .xai-code-block) {
@@ -1761,7 +1763,7 @@ const handleSend = () => {
   border: 1px solid var(--border-color);
   background: var(--bg-surface-0);
   margin: 1.5em 0;
-  box-shadow: 0 24px 44px -36px rgba(15, 15, 15, 0.5);
+  box-shadow: 0 24px 44px -36px rgb(15, 15, 15, 0.5);
 }
 
 :deep(.markdown-body .xai-code-toolbar) {
@@ -1873,6 +1875,7 @@ const handleSend = () => {
   margin-bottom: 1.2em;
   line-height: 1.75;
 }
+
 :deep(.markdown-body p:last-child) {
   margin-bottom: 0;
 }
@@ -1883,6 +1886,7 @@ const handleSend = () => {
   margin: 1.2em 0;
   line-height: 1.75;
 }
+
 :deep(.markdown-body li) {
   margin-bottom: 0.5em;
 }
@@ -1892,13 +1896,16 @@ const handleSend = () => {
   width: 4px;
   height: 4px;
 }
+
 .custom-scrollbar::-webkit-scrollbar-track {
   background: transparent;
 }
+
 .custom-scrollbar::-webkit-scrollbar-thumb {
   background: var(--border-color);
   border-radius: 4px;
 }
+
 .custom-scrollbar:hover::-webkit-scrollbar-thumb {
   background: var(--text-2);
 }
@@ -1909,27 +1916,31 @@ const handleSend = () => {
 }
 
 .zen-modal-enter-active {
-  animation: zenIn 0.5s cubic-bezier(0.16, 1, 0.3, 1) forwards;
-}
-.zen-modal-leave-active {
-  animation: zenOut 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  animation: zen-in 0.5s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
 
-@keyframes zenIn {
+.zen-modal-leave-active {
+  animation: zen-out 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+@keyframes zen-in {
   0% {
     opacity: 0;
     transform: scale(0.98) translateY(20px);
   }
+
   100% {
     opacity: 1;
     transform: scale(1) translateY(0);
   }
 }
-@keyframes zenOut {
+
+@keyframes zen-out {
   0% {
     opacity: 1;
     transform: scale(1) translateY(0);
   }
+
   100% {
     opacity: 0;
     transform: scale(0.98) translateY(10px);
@@ -1937,14 +1948,16 @@ const handleSend = () => {
 }
 
 .animate-slide-up {
-  animation: slideUp 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  animation: slide-up 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards;
   opacity: 0;
 }
-@keyframes slideUp {
+
+@keyframes slide-up {
   0% {
     opacity: 0;
     transform: translateY(15px);
   }
+
   100% {
     opacity: 1;
     transform: translateY(0);
@@ -1958,6 +1971,7 @@ const handleSend = () => {
   max-height: 200px;
   opacity: 1;
 }
+
 .expand-enter-from,
 .expand-leave-to {
   max-height: 0;
@@ -1969,10 +1983,12 @@ const handleSend = () => {
   0% {
     background-position: -200% 0;
   }
+
   100% {
     background-position: 200% 0;
   }
 }
+
 .animate-shimmer {
   animation: shimmer 2.5s infinite linear;
 }

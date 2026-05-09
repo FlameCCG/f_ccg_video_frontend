@@ -361,7 +361,8 @@ watch(
       showPreviewImage.value = false
       previewImageUrl.value = ''
     }
-  }
+  },
+  { immediate: true }
 )
 
 watch(

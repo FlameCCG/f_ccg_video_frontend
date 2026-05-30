@@ -49,11 +49,22 @@ const containerRef = ref<HTMLDivElement | null>(null)
 const artRef = ref<Artplayer | null>(null)
 
 type DanmuPluginInstance = ReturnType<ReturnType<typeof artplayerPluginDanmuku>>
+type DanmuQueueState = 'wait' | 'ready' | 'emit' | 'stop'
+type DanmuQueueItem = {
+  time?: number
+  $state: DanmuQueueState
+}
+type PreciseDanmuPluginInstance = DanmuPluginInstance & {
+  states?: Partial<Record<DanmuQueueState, DanmuQueueItem[]>>
+  __preciseTimeOffsetSchedulerInstalled?: boolean
+}
 
 const VOLUME_STORAGE_KEY = 'artplayer_volume'
-const DEFAULT_DANMU_FONT_SIZE = 18
+const DEFAULT_DANMU_FONT_SIZE = 24
 const DANMU_FONT_SIZE_MIN = 12
 const DANMU_FONT_SIZE_MAX = 120
+const DANMU_TIME_EPSILON_SECONDS = 0.001
+const DANMU_MAX_CATCH_UP_SECONDS = 0.25
 
 const resources = computed((): VideoResourceItem[] => {
   const video = videoStore.currentVideo
@@ -145,10 +156,127 @@ let heldDanmu: HeldDanmu | null = null
 // Keep a map of danmu id -> metadata for items loaded in batch
 const loadedDanmuMeta = new Map<number, DanmuMeta>()
 
+// ---- Segmented Danmu loading ----
+const segmentSize = 60000 // 60 seconds
+const loadedSegments = new Set<number>()
+const loadingSegments = new Set<number>()
+const danmuPoolMap = new Map<number, DanmuItem>()
+const toastShownSegments = new Set<number>()
+
+const clearDanmuState = () => {
+  loadedSegments.clear()
+  loadingSegments.clear()
+  danmuPoolMap.clear()
+  loadedDanmuMeta.clear()
+  toastShownSegments.clear()
+}
+
 const getDanmuPlugin = (art: Artplayer | null | undefined = artRef.value) => {
   if (!art) return undefined
 
   return toRaw(art).plugins?.artplayerPluginDanmuku as DanmuPluginInstance | undefined
+}
+
+const loadSegment = async (idx: number): Promise<void> => {
+  if (loadedSegments.has(idx) || loadingSegments.has(idx)) return
+  const vid = videoStore.currentVideo?.id
+  if (!vid) return
+
+  loadingSegments.add(idx)
+  try {
+    const start = idx * segmentSize
+    const end = start + segmentSize
+    const params: {
+      videoId: number
+      partId?: number
+      start: number
+      end: number
+      pageSize: number
+    } = {
+      videoId: vid,
+      start,
+      end,
+      pageSize: 3000,
+    }
+    if (props.partId) {
+      params.partId = props.partId
+    }
+    const result = await getDanmuList(params)
+    const list = result.list ?? []
+
+    if (result.truncated && !toastShownSegments.has(idx)) {
+      toastShownSegments.add(idx)
+      toast.warning('当前时间段弹幕过多，已自动省略部分弹幕')
+    }
+
+    list.forEach((d: DanmuItem) => {
+      if (!danmuPoolMap.has(d.id)) {
+        danmuPoolMap.set(d.id, d)
+        loadedDanmuMeta.set(d.id, {
+          id: d.id,
+          likeCount: d.likeCount ?? 0,
+          isLiked: d.isLiked ?? false,
+          createdAt: d.createdAt,
+          mode: (d.position ?? 0) as 0 | 1 | 2,
+        })
+      }
+    })
+
+    loadedSegments.add(idx)
+
+    // Convert pool to player format and load to plugin
+    const formattedList = Array.from(danmuPoolMap.values())
+      .map((d: DanmuItem) => ({
+        id: String(d.id),
+        text: d.content,
+        time: danmuMillisecondsToSeconds(
+          d.timeOffset !== undefined
+            ? d.timeOffset
+            : ((d as unknown as Record<string, unknown>).time_offset as number | undefined)
+        ),
+        color: d.color || '#ffffff',
+        mode: (d.position ?? 0) as 0 | 1 | 2,
+      }))
+      .sort((a, b) => a.time - b.time)
+
+    const plugin = getDanmuPlugin()
+    if (plugin) {
+      const queue = (plugin as unknown as { queue?: Array<{ id?: string }> }).queue || []
+      const existingIds = new Set(queue.map((item) => item.id))
+      const newItems = formattedList.filter((item) => !existingIds.has(item.id))
+      if (newItems.length > 0) {
+        await plugin.load(newItems)
+      }
+    }
+  } catch (error) {
+    console.error(`[Danmu Segment] Failed to load segment index ${idx}:`, error)
+  } finally {
+    loadingSegments.delete(idx)
+  }
+}
+
+const ensureSegmentsLoaded = async (currentTimeMs: number): Promise<void> => {
+  const segmentIndex = Math.floor(currentTimeMs / segmentSize)
+  const currentStart = segmentIndex * segmentSize
+  const currentEnd = currentStart + segmentSize
+  const timeToNextSegment = currentEnd - currentTimeMs
+
+  const segmentsToLoad: number[] = []
+
+  if (!loadedSegments.has(segmentIndex)) {
+    segmentsToLoad.push(segmentIndex)
+  }
+
+  const nextSegmentIndex = segmentIndex + 1
+  if (timeToNextSegment <= 10000) {
+    if (!loadedSegments.has(nextSegmentIndex)) {
+      segmentsToLoad.push(nextSegmentIndex)
+    }
+  }
+
+  if (segmentsToLoad.length > 0) {
+    await Promise.all(segmentsToLoad.map((idx) => loadSegment(idx)))
+  }
 }
 
 const normalizePlayerTime = (time: unknown): number | undefined => {
@@ -175,6 +303,62 @@ const getDuration = (art: Artplayer): number => {
   )
 }
 
+let preciseDanmuReadyCursor = 0
+
+const resetPreciseDanmuReadyCursor = (time = getCurrentTime()) => {
+  preciseDanmuReadyCursor = Math.max(0, time - DANMU_TIME_EPSILON_SECONDS)
+}
+
+const getDanmuQueueTime = (danmu: DanmuQueueItem): number => {
+  return normalizePlayerTime(danmu.time) ?? 0
+}
+
+const installPreciseDanmuScheduler = (plugin: DanmuPluginInstance, art: Artplayer) => {
+  const precisePlugin = plugin as PreciseDanmuPluginInstance
+  if (precisePlugin.__preciseTimeOffsetSchedulerInstalled) return
+
+  const originalReadysDescriptor = Object.getOwnPropertyDescriptor(
+    Object.getPrototypeOf(precisePlugin),
+    'readys'
+  )
+
+  resetPreciseDanmuReadyCursor(getCurrentTime(art))
+
+  Object.defineProperty(precisePlugin, 'readys', {
+    configurable: true,
+    get() {
+      const states = precisePlugin.states
+      if (!states) {
+        return originalReadysDescriptor?.get?.call(precisePlugin) ?? []
+      }
+
+      const currentTime = getCurrentTime(art)
+      const currentCursor = preciseDanmuReadyCursor
+      const jumped =
+        currentTime + DANMU_TIME_EPSILON_SECONDS < currentCursor ||
+        currentTime - currentCursor > DANMU_MAX_CATCH_UP_SECONDS
+      const lowerBound = jumped
+        ? Math.max(0, currentTime - DANMU_TIME_EPSILON_SECONDS)
+        : currentCursor - DANMU_TIME_EPSILON_SECONDS
+      const upperBound = currentTime + DANMU_TIME_EPSILON_SECONDS
+
+      preciseDanmuReadyCursor = Math.max(currentCursor, currentTime)
+
+      const readys = [...(states.ready ?? [])]
+      ;(states.wait ?? []).forEach((danmu) => {
+        const time = getDanmuQueueTime(danmu)
+        if (time >= lowerBound && time <= upperBound) {
+          readys.push(danmu)
+        }
+      })
+
+      return readys.sort((left, right) => getDanmuQueueTime(left) - getDanmuQueueTime(right))
+    },
+  })
+
+  precisePlugin.__preciseTimeOffsetSchedulerInstalled = true
+}
+
 const syncPlayerState = (art: Artplayer, playing = art.playing) => {
   videoStore.updatePlayerState({
     currentTime: getCurrentTime(art),
@@ -192,31 +376,27 @@ const loadDanmuList = async (): Promise<
   const hasParts = (videoStore.currentVideo?.parts?.length ?? 0) > 0
   if (hasParts && !props.partId) return []
   try {
-    const params: { videoId: number; partId?: number; pageSize: number } = {
-      videoId: vid,
-      pageSize: 200,
-    }
-    if (props.partId) params.partId = props.partId
-    const result = await getDanmuList(params)
-    const list = result.list ?? []
+    clearDanmuState()
 
-    list.forEach((d: DanmuItem) => {
-      loadedDanmuMeta.set(d.id, {
-        id: d.id,
-        likeCount: d.likeCount ?? 0,
-        isLiked: d.isLiked ?? false,
-        createdAt: d.createdAt,
+    const watchProgress = videoStore.watchProgress || 0
+    const initialTimeMs = watchProgress * 1000
+    resetPreciseDanmuReadyCursor(watchProgress)
+
+    await ensureSegmentsLoaded(initialTimeMs)
+
+    return Array.from(danmuPoolMap.values())
+      .map((d: DanmuItem) => ({
+        id: String(d.id),
+        text: d.content,
+        time: danmuMillisecondsToSeconds(
+          d.timeOffset !== undefined
+            ? d.timeOffset
+            : ((d as unknown as Record<string, unknown>).time_offset as number | undefined)
+        ),
+        color: d.color || '#ffffff',
         mode: (d.position ?? 0) as 0 | 1 | 2,
-      })
-    })
-
-    return list.map((d: DanmuItem) => ({
-      id: String(d.id),
-      text: d.content,
-      time: danmuMillisecondsToSeconds(d.timeOffset),
-      color: d.color || '#ffffff',
-      mode: (d.position ?? 0) as 0 | 1 | 2,
-    }))
+      }))
+      .sort((a, b) => a.time - b.time)
   } catch {
     return []
   }
@@ -278,6 +458,7 @@ const resetVisibleDanmu = () => {
 
   danmuMetaMap.clear()
   danmuIdToEl.clear()
+  resetPreciseDanmuReadyCursor()
   plugin.reset()
 }
 
@@ -847,7 +1028,14 @@ const initPlayer = () => {
             fontSize: DEFAULT_DANMU_FONT_SIZE,
             color: '#ffffff',
             mode: 0,
-            antiOverlap: true,
+            // 弹幕显示区域上下边距：默认底部留 25%，会浪费下半屏且看着不均匀。
+            // 改成上下各 10px，让弹幕铺满整个播放器高度，轨道更多、分布更均匀。
+            margin: [10, 10],
+            // 关闭防重叠：插件的轨道分配本身是"先逐条填满空轨道，满了才挑最空的一行叠加"。
+            // antiOverlap=true 在轨道满时会把弹幕退回队列下一帧重试（延迟/丢弃），
+            // 这会破坏我们自定义的精准 timeOffset 调度。设为 false 后弹幕永远在
+            // 对应时间点立即出现：先均匀铺满，密集到放不下时才重叠，既不延迟也不丢弃。
+            antiOverlap: false,
             synchronousPlayback: true,
             emitter: false,
             heatmap: true,
@@ -866,6 +1054,7 @@ const initPlayer = () => {
   if (watchProgress > 0) {
     art.on('ready', () => {
       art.currentTime = watchProgress
+      resetPreciseDanmuReadyCursor(watchProgress)
     })
   }
 
@@ -875,6 +1064,9 @@ const initPlayer = () => {
 
   art.on('video:timeupdate', () => {
     syncPlayerState(art)
+    if (props.enableDanmu) {
+      void ensureSegmentsLoaded(art.currentTime * 1000)
+    }
   })
 
   art.on('video:play', () => {
@@ -910,11 +1102,15 @@ const initPlayer = () => {
   art.on('video:seeked', () => {
     syncPlayerState(art)
     resetVisibleDanmu()
+    if (props.enableDanmu) {
+      void ensureSegmentsLoaded(art.currentTime * 1000)
+    }
   })
 
   art.on('video:canplay', () => {
     if (qualitySwitchTime > 0) {
       art.currentTime = qualitySwitchTime
+      resetPreciseDanmuReadyCursor(qualitySwitchTime)
       qualitySwitchTime = 0
     }
     if (isSwitchingQuality.value) {
@@ -935,6 +1131,7 @@ const initPlayer = () => {
 
   const danmuPlugin = getDanmuPlugin(art)
   if (danmuPlugin) {
+    installPreciseDanmuScheduler(danmuPlugin, art)
     cleanupDanmuFontSizeLiveControl = setupDanmuFontSizeLiveControl(danmuPlugin)
     emit('danmuPlugin', danmuPlugin)
   }
@@ -998,6 +1195,7 @@ const destroyPlayer = () => {
   danmuMetaMap.clear()
   danmuIdToEl.clear()
   loadedDanmuMeta.clear()
+  clearDanmuState()
 
   if (artRef.value) {
     if (authStore.isLoggedIn && videoStore.videoId) {

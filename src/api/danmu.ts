@@ -60,6 +60,8 @@ export interface DanmuListParams {
   page?: number
   pageSize?: number
   date?: string // YYYY-MM-DD
+  start?: number // milliseconds
+  end?: number // milliseconds
 }
 
 export interface CreatorDanmuItem {
@@ -98,6 +100,15 @@ export interface PaginatedResult<T> {
   total: number
 }
 
+export interface DanmuListResult {
+  list: DanmuItem[]
+  total: number
+  returned?: number
+  truncated?: boolean
+  start?: number
+  end?: number
+}
+
 export interface PlayerDanmuPayload {
   id?: number
   text: string
@@ -110,14 +121,18 @@ export interface PlayerDanmuPayload {
   isSelf?: boolean
 }
 
-export const danmuMillisecondsToSeconds = (timeOffset: number): number => {
-  if (!Number.isFinite(timeOffset) || timeOffset < 0) return 0
-  return timeOffset / 1000
+export const danmuMillisecondsToSeconds = (timeOffset: unknown): number => {
+  if (timeOffset === undefined || timeOffset === null) return 0
+  const num = Number(timeOffset)
+  if (!Number.isFinite(num) || num < 0) return 0
+  return num / 1000
 }
 
-export const danmuSecondsToMilliseconds = (time: number): number => {
-  if (!Number.isFinite(time) || time < 0) return 0
-  return Math.round(time * 1000)
+export const danmuSecondsToMilliseconds = (time: unknown): number => {
+  if (time === undefined || time === null) return 0
+  const num = Number(time)
+  if (!Number.isFinite(num) || num < 0) return 0
+  return Math.round(num * 1000)
 }
 
 // ============================================================================
@@ -177,7 +192,7 @@ export const getDanmuHistory = (
  * 依赖接口: 无
  * 接口说明: 获取房间弹幕列表（按发送时间升序）
  */
-export const getDanmuList = (params: DanmuListParams): Promise<PaginatedResult<DanmuItem>> => {
+export const getDanmuList = (params: DanmuListParams): Promise<DanmuListResult> => {
   return request.get('/common/video/danmu/room/list', { params })
 }
 

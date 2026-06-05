@@ -452,9 +452,11 @@ const resetVisibleDanmu = () => {
   emit('danmuHoldEnd')
 
   activeClones.forEach((clone) => {
+    clearCloneRemovalTimer(clone.el)
     if (clone.el.isConnected) clone.el.remove()
   })
   activeClones.clear()
+  cloneRemovalTimers.clear()
 
   danmuMetaMap.clear()
   danmuIdToEl.clear()
@@ -683,6 +685,28 @@ const syncDanmuConfig = (option: unknown) => {
 
 const activeClones = new Set<HeldDanmu>()
 
+// 每个 clone 的"兜底回收"定时器：transitionend 在过渡被打断（transitioncancel）
+// 或位移为 0 时不会触发，靠定时器确保 clone 一定会被回收，不会永久残留。
+const cloneRemovalTimers = new Map<HTMLElement, ReturnType<typeof setTimeout>>()
+
+const clearCloneRemovalTimer = (el: HTMLElement) => {
+  const timer = cloneRemovalTimers.get(el)
+  if (timer !== undefined) {
+    clearTimeout(timer)
+    cloneRemovalTimers.delete(el)
+  }
+}
+
+// 读取播放器真实播放状态。videoStore.playerState.playing 由 timeupdate/play/pause
+// 事件异步同步，存在滞后；缓冲或 seek 抖动时可能短暂为 false，导致松开 hover 后
+// clone 不恢复飘动而永久卡住。直接读 artplayer 的同步状态可避免该问题。
+const isPlayerPlaying = (): boolean => {
+  const raw = artRef.value ? toRaw(artRef.value) : null
+  const rawPlaying = (raw as { playing?: unknown } | null)?.playing
+  if (typeof rawPlaying === 'boolean') return rawPlaying
+  return videoStore.playerState.playing
+}
+
 watch(
   () => videoStore.playerState.playing,
   (isPlaying) => {
@@ -693,6 +717,8 @@ watch(
       if (isPlaying) {
         resumeCloneAnimation(clone)
       } else {
+        // 暂停时冻结 clone，并清掉兜底回收定时器，避免暂停期间被误删。
+        clearCloneRemovalTimer(clone.el)
         if (clone.mode === 0) {
           const currentX = getCurrentTranslateX(clone.el)
           clone.el.style.transform = `translateX(${currentX}px)`
@@ -704,6 +730,7 @@ watch(
 )
 
 const removeClone = (clone: HeldDanmu) => {
+  clearCloneRemovalTimer(clone.el)
   if (clone.el.isConnected) clone.el.remove()
   activeClones.delete(clone)
 }
@@ -713,6 +740,8 @@ const resumeCloneAnimation = (clone: HeldDanmu) => {
     return removeClone(clone)
   }
 
+  clearCloneRemovalTimer(clone.el)
+
   if (clone.mode === 0 && clone.speedPxPerSec > 0) {
     const currentX = getCurrentTranslateX(clone.el)
     const remainingDistance = Math.abs(clone.targetTranslateX - currentX)
@@ -721,11 +750,16 @@ const resumeCloneAnimation = (clone: HeldDanmu) => {
     clone.el.style.transform = `translateX(${clone.targetTranslateX}px)`
     clone.el.style.transition = `transform ${remainingTime}s linear 0s`
 
+    // transitionend 在过渡被打断（transitioncancel）或剩余位移为 0（无过渡）时不会触发，
+    // 仅靠它回收会让 clone 永久残留。用一个略超过预期时长的定时器兜底回收。
     clone.el.addEventListener('transitionend', () => removeClone(clone), { once: true })
+    const fallbackTimer = setTimeout(() => removeClone(clone), remainingTime * 1000 + 200)
+    cloneRemovalTimers.set(clone.el, fallbackTimer)
   } else {
     clone.el.style.opacity = '0'
     clone.el.style.transition = 'opacity 0.5s ease'
-    setTimeout(() => removeClone(clone), 500)
+    const fallbackTimer = setTimeout(() => removeClone(clone), 500)
+    cloneRemovalTimers.set(clone.el, fallbackTimer)
   }
 }
 
@@ -766,6 +800,9 @@ const holdDanmuItem = (el: HTMLElement, mode: 0 | 1 | 2) => {
   let clone: HTMLElement
   if (isAlreadyClone) {
     clone = el
+    // 再次 hover 同一 clone：取消其恢复飘动时登记的兜底回收定时器，
+    // 否则旧定时器会在 hover 期间把正在查看的 clone 删掉。
+    clearCloneRemovalTimer(clone)
     clone.style.transform = `translateX(${currentX}px)`
     clone.style.transition = 'transform 0s linear 0s'
   } else {
@@ -807,9 +844,11 @@ const resumeHeldDanmu = () => {
   heldDanmu = null
   emit('danmuHoldEnd')
 
-  if (videoStore.playerState.playing) {
+  if (isPlayerPlaying()) {
     resumeCloneAnimation(clone)
   }
+  // 暂停状态下松开 hover：保持 clone 冻结在原地（与暂停时整个弹幕层一致），
+  // 待播放恢复时由 playing 的 watch 统一接管恢复飘动。
 }
 
 const releaseHeldDanmuItem = (reason: 'leave' | 'timeout') => {
@@ -1192,6 +1231,12 @@ const destroyPlayer = () => {
   cleanupDanmuFontSizeLiveControl = null
   heldDanmu = null
   currentHoverEl = null
+  cloneRemovalTimers.forEach((timer) => clearTimeout(timer))
+  cloneRemovalTimers.clear()
+  activeClones.forEach((clone) => {
+    if (clone.el.isConnected) clone.el.remove()
+  })
+  activeClones.clear()
   danmuMetaMap.clear()
   danmuIdToEl.clear()
   loadedDanmuMeta.clear()

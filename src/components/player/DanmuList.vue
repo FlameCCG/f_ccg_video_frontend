@@ -26,6 +26,7 @@ const viewMode = ref<'current' | 'history'>('current')
 const selectedDate = ref('')
 const showCalendar = ref(false)
 const availableDates = ref<Set<string>>(new Set())
+const probedMonths = ref<Set<string>>(new Set())
 const loadingDates = ref(false)
 
 const today = new Date()
@@ -86,13 +87,17 @@ const calendarDays = computed((): CalendarDay[] => {
 
   for (let d = 1; d <= daysInMonth; d++) {
     const dateStr = `${y}-${String(m + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`
+    const isToday = dateStr === todayStr
     days.push({
       day: d,
       dateStr,
       isCurrentMonth: true,
-      isToday: dateStr === todayStr,
+      isToday,
       isSelected: selectedDate.value === dateStr,
-      hasData: availableDates.value.has(dateStr),
+      // Today is always selectable: its danmu live in the realtime room and
+      // may not be returned by the date-indexed history probe, so don't gate
+      // it on `availableDates` or it becomes permanently un-clickable.
+      hasData: availableDates.value.has(dateStr) || isToday,
     })
   }
 
@@ -136,11 +141,18 @@ const nextMonth = () => {
 
 const probeMonthDates = async () => {
   if (!props.videoId) return
-  loadingDates.value = true
   const y = calendarYear.value
   const m = calendarMonth.value
+  const monthKey = `${y}-${m}`
+  // Probe each month only once. Re-firing the burst on every calendar reopen
+  // could partially fail (errors are swallowed), wiping previously-found dates
+  // and leaving them un-clickable.
+  if (probedMonths.value.has(monthKey)) return
+
+  loadingDates.value = true
   const daysInMonth = new Date(y, m + 1, 0).getDate()
-  const newDates = new Set<string>()
+  const found = new Set<string>()
+  let hadError = false
 
   const probes: Promise<void>[] = []
   for (let d = 1; d <= daysInMonth; d++) {
@@ -157,20 +169,35 @@ const probeMonthDates = async () => {
       })
         .then((res) => {
           if ((res.list?.length ?? 0) > 0 || (res.total ?? 0) > 0) {
-            newDates.add(dateStr)
+            found.add(dateStr)
           }
         })
-        .catch(() => {})
+        .catch(() => {
+          hadError = true
+        })
     )
   }
 
   await Promise.all(probes)
-  availableDates.value = newDates
+  // Merge into existing dates rather than replacing, so dates found earlier
+  // (or in other months) stay clickable.
+  const merged = new Set(availableDates.value)
+  found.forEach((d) => merged.add(d))
+  availableDates.value = merged
+  // Only cache the month when every probe succeeded; otherwise allow a retry
+  // so a transient failure doesn't permanently disable a date.
+  if (!hadError) probedMonths.value.add(monthKey)
   loadingDates.value = false
 }
 
 const selectDate = (day: CalendarDay) => {
   if (!day.isCurrentMonth || !day.hasData) return
+  // Clicking "today" returns to the live/current view so today's danmu always
+  // reload — the date-indexed history query may not include them.
+  if (day.isToday) {
+    exitHistoryMode()
+    return
+  }
   selectedDate.value = day.dateStr
   showCalendar.value = false
   void fetchList(day.dateStr)
@@ -210,7 +237,7 @@ const fetchList = async (date?: string) => {
       date?: string
     } = {
       videoId: props.videoId,
-      pageSize: 200,
+      pageSize: 500,
     }
     if (props.partId) params.partId = props.partId
     if (date) params.date = date
@@ -296,6 +323,8 @@ watch(
     viewMode.value = 'current'
     selectedDate.value = ''
     showCalendar.value = false
+    availableDates.value = new Set()
+    probedMonths.value = new Set()
     void fetchList()
   }
 )

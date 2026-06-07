@@ -11,6 +11,14 @@ import {
   type PlayerDanmuPayload,
 } from '@/api/danmu'
 import type { VideoResourceItem } from '@/api/video'
+import {
+  isDashResource,
+  isDashSupported,
+  createMpdLoader,
+  destroyDash,
+  setupDashQualityMenu,
+} from '@/utils/dash'
+import type { ArtWithDash } from '@/utils/dash'
 import { toast } from 'vue-sonner'
 
 const props = withDefaults(
@@ -77,34 +85,74 @@ const resources = computed((): VideoResourceItem[] => {
   return video.resources ?? []
 })
 
+// 是否 VIP 用户。后端用户模型暂无 VIP 字段，这里作为单点开关：
+// 一旦后端在用户信息上暴露 isVip/vip，即自动生效；当前默认按非 VIP 处理。
+const isVipUser = computed<boolean>(() => {
+  const user = authStore.user as
+    | (NonNullable<typeof authStore.user> & { isVip?: boolean; vip?: boolean })
+    | null
+  return !!(user?.isVip ?? user?.vip ?? false)
+})
+
+// 该资源当前用户是否可播放（VIP 档仅 VIP 可见/可选）。
+const canPlayResource = (resource: VideoResourceItem): boolean => !resource.isVip || isVipUser.value
+
+// DASH 清单条目：用 format 判断，不依赖后端返回顺序。
+const dashResource = computed(() => resources.value.find(isDashResource))
+
+// 各清晰度直链 MP4（混合模式仍保留）：用于不支持 DASH 时兜底、下载、手动清晰度菜单。
+const mp4Resources = computed(() => resources.value.filter((r) => !isDashResource(r)))
+
+// 当前用户可见的 MP4 档（过滤掉不可选的 VIP 档）。
+const playableMp4Resources = computed(() => mp4Resources.value.filter(canPlayResource))
+
 const pickDefaultResource = (list: VideoResourceItem[]): VideoResourceItem | undefined => {
   if (!list.length) return undefined
 
-  const publicResources = list.filter((resource) => !resource.isVip)
-  const candidates = publicResources.length ? publicResources : list
-
   const preferredPatterns = [/720p/i, /1080p(?!.*高码率)/i, /480p/i, /360p/i]
   for (const pattern of preferredPatterns) {
-    const matched = candidates.find((resource) => pattern.test(resource.resolution || ''))
+    const matched = list.find((resource) => pattern.test(resource.resolution || ''))
     if (matched) return matched
   }
 
   const bitrateTarget = 2000
-  const bitrateSorted = [...candidates]
+  const bitrateSorted = [...list]
     .filter((resource) => resource.bitrate > 0)
     .sort((left, right) => {
       return Math.abs(left.bitrate - bitrateTarget) - Math.abs(right.bitrate - bitrateTarget)
     })
 
-  return bitrateSorted[0] ?? candidates[0] ?? list[0]
+  return bitrateSorted[0] ?? list[0]
 }
 
-const defaultResource = computed(() => pickDefaultResource(resources.value))
-
-const qualityList = computed(() => {
-  const list = resources.value
+// 取「最佳」MP4：用于 DASH 致命错误兜底（优先源视频，否则最高码率）。
+const pickBestResource = (list: VideoResourceItem[]): VideoResourceItem | undefined => {
   if (!list.length) return undefined
-  const preferred = defaultResource.value
+  const source = list.find((resource) => resource.isSource)
+  if (source) return source
+  return [...list].sort((left, right) => (right.bitrate || 0) - (left.bitrate || 0))[0]
+}
+
+// MP4 模式默认清晰度（优先可播放档，全不可播放时退回原始 MP4 列表）。
+const defaultMp4 = computed(
+  () => pickDefaultResource(playableMp4Resources.value) ?? pickDefaultResource(mp4Resources.value)
+)
+
+// DASH 致命失败时的兜底直链（优先可播放档，确保用户真能播）。
+const bestMp4 = computed(
+  () => pickBestResource(playableMp4Resources.value) ?? pickBestResource(mp4Resources.value)
+)
+
+// 下载资源：优先源视频（一般最高画质 MP4），其次最高码率直链。
+const downloadResource = computed(
+  () => mp4Resources.value.find((r) => r.isSource) ?? pickBestResource(mp4Resources.value)
+)
+
+// MP4 模式的 Artplayer quality 菜单（不含 DASH，且尊重 VIP 可见性）。
+const qualityList = computed(() => {
+  const list = playableMp4Resources.value
+  if (!list.length) return undefined
+  const preferred = defaultMp4.value
 
   return list.map((r, i) => ({
     default: preferred ? r.id === preferred.id : i === 0,
@@ -113,9 +161,36 @@ const qualityList = computed(() => {
   }))
 })
 
-const primaryUrl = computed(() => {
-  return defaultResource.value?.fileUrl ?? resources.value[0]?.fileUrl ?? ''
-})
+// 是否有可播放的媒体（DASH 清单 或 任一 MP4 直链）。
+const hasPlayableMedia = computed(() => !!dashResource.value || mp4Resources.value.length > 0)
+
+// ---- DASH / 选流运行时状态 ----
+// 运行期是否禁用 DASH：致命错误后在「本视频内」降级到 MP4。
+// 用普通变量而非 ref，避免参与响应式而触发额外重建级联。
+let dashDisabled = false
+// 跨「DASH→MP4 兜底重建」保留的续播位置。
+let pendingSeekTime: number | null = null
+// DASH 手动码率菜单的清理函数。
+let cleanupDashMenu: (() => void) | null = null
+
+// 本次加载是否走 DASH：有 DASH 清单 + 浏览器支持 + 未被运行期禁用。
+const shouldUseDash = (): boolean => !!dashResource.value && isDashSupported() && !dashDisabled
+
+// DASH 致命失败兜底：切到最佳 MP4 直链并重建实例，保留播放进度。
+const handleDashFatal = (art: ArtWithDash): void => {
+  if (!bestMp4.value) {
+    art.notice.show = 'DASH 播放失败，且没有可用的 MP4 备用源'
+    return
+  }
+  pendingSeekTime = getCurrentTime(art)
+  dashDisabled = true
+  toast.warning('DASH 自适应播放异常，已切换为 MP4 兜底')
+  // 脱离 dash.js 的错误回调栈后再拆/重建，避免重入。
+  window.setTimeout(() => {
+    destroyPlayer()
+    if (hasPlayableMedia.value) initPlayer()
+  }, 0)
+}
 
 let progressSaveTimer: ReturnType<typeof setTimeout> | null = null
 const PROGRESS_SAVE_INTERVAL = 15000
@@ -880,6 +955,8 @@ defineExpose({
   releaseHeldDanmu: releaseHeldDanmuItem,
   updateDanmuMeta,
   getCurrentTime,
+  // MP4 直链下载资源（优先源视频），供下载入口复用；DASH 不参与下载。
+  downloadResource,
 })
 
 // ---- Hover event delegation ----
@@ -990,14 +1067,23 @@ const setupDanmuVisibleObserver = () => {
 }
 
 const initPlayer = () => {
-  if (!containerRef.value || !primaryUrl.value) return
+  if (!containerRef.value || !hasPlayableMedia.value) return
+
+  const useDash = shouldUseDash()
+  // DASH 原样传清单 URL（含查询串，切勿改写）；MP4 取默认清晰度直链。
+  const startUrl = useDash ? dashResource.value?.fileUrl : defaultMp4.value?.fileUrl
+  if (!startUrl) return
 
   const savedVolume = parseFloat(localStorage.getItem(VOLUME_STORAGE_KEY) ?? '0.7')
-  const watchProgress = videoStore.watchProgress || 0
+  // 续播：DASH→MP4 兜底重建优先用保留位置，否则用后端 watchProgress。
+  const startAt = pendingSeekTime ?? videoStore.watchProgress ?? 0
+  pendingSeekTime = null
 
   const settings: Setting[] = []
 
-  if (qualityList.value && qualityList.value.length > 1) {
+  // 仅 MP4 模式才用 Artplayer 原生 quality 菜单；DASH 清晰度交给 dash.js ABR，
+  // 手动码率见 setupDashQualityMenu —— 不用 quality 数组混搭 dash/mp4，避免串味。
+  if (!useDash && qualityList.value && qualityList.value.length > 1) {
     settings.push({
       html: '清晰度',
       width: 150,
@@ -1032,9 +1118,25 @@ const initPlayer = () => {
     })
   }
 
+  // DASH 自定义播放类型：dash.js 接管拉流/ABR，失败兜底到 MP4，并注入手动码率菜单。
+  const mpdLoader = useDash
+    ? createMpdLoader({
+        onFatalError: handleDashFatal,
+        onDashCreated: (artInstance, dash) => {
+          cleanupDashMenu = setupDashQualityMenu(artInstance, dash, {
+            labels: mp4Resources.value.map((r) => ({
+              resolution: r.resolution ?? '',
+              bitrate: r.bitrate,
+              fileUrl: r.fileUrl,
+            })),
+          })
+        },
+      })
+    : undefined
+
   const option: Option = {
     container: containerRef.value,
-    url: primaryUrl.value,
+    url: startUrl,
     theme: '#00a1d6',
     volume: savedVolume,
     setting: true,
@@ -1088,12 +1190,17 @@ const initPlayer = () => {
       : [],
   }
 
+  if (useDash && mpdLoader) {
+    option.type = 'mpd'
+    option.customType = { mpd: mpdLoader }
+  }
+
   const art = new Artplayer(option)
 
-  if (watchProgress > 0) {
+  if (startAt > 0) {
     art.on('ready', () => {
-      art.currentTime = watchProgress
-      resetPreciseDanmuReadyCursor(watchProgress)
+      art.currentTime = startAt
+      resetPreciseDanmuReadyCursor(startAt)
     })
   }
 
@@ -1229,6 +1336,8 @@ const destroyPlayer = () => {
   clearProgressSaveTimer()
   cleanupDanmuFontSizeLiveControl?.()
   cleanupDanmuFontSizeLiveControl = null
+  cleanupDashMenu?.()
+  cleanupDashMenu = null
   heldDanmu = null
   currentHoverEl = null
   cloneRemovalTimers.forEach((timer) => clearTimeout(timer))
@@ -1250,23 +1359,39 @@ const destroyPlayer = () => {
       })
       void videoStore.saveProgress()
     }
+    // 先释放 dash.js（销毁事件也会兜底释放，这里显式调用保证确定性、无残留请求）。
+    destroyDash(artRef.value as ArtWithDash)
     artRef.value.destroy(false)
     artRef.value = null
   }
 }
 
-watch(
-  () => [primaryUrl.value, videoStore.currentVideo?.id, props.partId, props.enableDanmu],
-  () => {
-    destroyPlayer()
-    if (primaryUrl.value) {
-      initPlayer()
-    }
+// 视频 / 分P / 弹幕开关 / VIP 可见性 / 资源清单变化时，销毁旧实例并按选流策略重建。
+const rebuildKey = computed(() => {
+  const dashUrl = dashResource.value?.fileUrl ?? ''
+  const mp4Sig = mp4Resources.value.map((r) => `${r.id}:${r.fileUrl}`).join('|')
+  return [
+    videoStore.currentVideo?.id ?? 0,
+    props.partId ?? 0,
+    props.enableDanmu ? 1 : 0,
+    isVipUser.value ? 1 : 0,
+    dashUrl,
+    mp4Sig,
+  ].join('::')
+})
+
+watch(rebuildKey, () => {
+  // 真正换源时允许重新尝试 DASH（清除上一个视频的运行期降级标记）。
+  dashDisabled = false
+  pendingSeekTime = null
+  destroyPlayer()
+  if (hasPlayableMedia.value) {
+    initPlayer()
   }
-)
+})
 
 onMounted(() => {
-  if (primaryUrl.value) {
+  if (hasPlayableMedia.value) {
     initPlayer()
   }
 })

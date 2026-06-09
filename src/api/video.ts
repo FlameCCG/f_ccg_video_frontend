@@ -232,7 +232,7 @@ export interface ReportVideoParams {
 
 export interface VideoPartPayload {
   title?: string
-  filePath: string
+  filePath?: string
   fileName: string
   fileHash: string
 }
@@ -249,7 +249,7 @@ interface PublishVideoBaseParams {
 }
 
 export interface PublishSingleVideoParams extends PublishVideoBaseParams {
-  filePath: string
+  filePath?: string
   fileName: string
   fileHash: string
   parts?: never

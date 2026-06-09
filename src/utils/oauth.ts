@@ -1,4 +1,4 @@
-export type OAuthProvider = 'github' | 'linuxdo' | 'x'
+export type OAuthProvider = 'google' | 'github' | 'linuxdo' | 'x'
 
 export interface OAuthSessionPayload {
   codeVerifier?: string

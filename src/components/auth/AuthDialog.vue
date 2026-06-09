@@ -402,7 +402,8 @@ const startSocialLogin = async (provider: 'qq' | 'google' | OAuthProvider) => {
     }
 
     if (provider === 'google') {
-      window.location.href = await getGoogleLoginUrl()
+      const stateParams = prepareStateLogin(provider)
+      window.location.href = await getGoogleLoginUrl(stateParams)
       return
     }
 

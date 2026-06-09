@@ -309,6 +309,14 @@
     }
   }
 
+  @media (prefers-reduced-motion: reduce) {
+    .skeleton-shimmer::after {
+      animation: none;
+      transform: none;
+      opacity: 0.35;
+    }
+  }
+
   .hover-lift {
     transition:
       transform var(--duration-normal) var(--ease-out-expo),

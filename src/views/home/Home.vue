@@ -11,6 +11,7 @@ import Carousel from '@/components/common/Carousel.vue'
 // State
 const banners = ref<BannerItem[]>([])
 const videos = ref<FeedItem[]>([])
+const bannerLoading = ref(true)
 const loading = ref(false)
 const finished = ref(false)
 const page = ref(1)
@@ -23,18 +24,31 @@ let heroResizeObserver: ResizeObserver | null = null
 // Featured videos count (shown next to carousel - 3 columns x 2 rows)
 const FEATURED_COUNT = 6
 
-// Computed: Featured videos (first 8 for hero section)
-const featuredVideos = computed(() => videos.value.slice(0, FEATURED_COUNT))
+// Computed: Featured videos (first 6 for hero section)
+const featuredVideos = computed(() => {
+  if (!bannerLoading.value && banners.value.length === 0) {
+    return []
+  }
+  return videos.value.slice(0, FEATURED_COUNT)
+})
 
 // Computed: Remaining videos (after featured)
-const remainingVideos = computed(() => videos.value.slice(FEATURED_COUNT))
+const remainingVideos = computed(() => {
+  if (!bannerLoading.value && banners.value.length === 0) {
+    return videos.value
+  }
+  return videos.value.slice(FEATURED_COUNT)
+})
 
 // Fetch banners
 const fetchBanners = async () => {
+  bannerLoading.value = true
   try {
     banners.value = await getHomeCarouselBanners()
   } catch (error) {
     console.error('Failed to fetch banners:', error)
+  } finally {
+    bannerLoading.value = false
   }
 }
 
@@ -98,6 +112,10 @@ const updateHeroBannerHeight = () => {
 }
 
 onMounted(async () => {
+  // Initialize banner height immediately on mount so the skeleton is sized correctly
+  await nextTick()
+  updateHeroBannerHeight()
+
   // Parallel fetch
   await Promise.all([fetchBanners(), fetchVideos(), siteTouchOnce()])
   await nextTick()
@@ -119,13 +137,19 @@ onBeforeUnmount(() => {
 
 <template>
   <div class="mx-auto mt-6 pb-8 max-w-[1800px] px-4 sm:px-6 lg:px-8">
-    <div class="mb-6 lg:flex lg:items-start lg:gap-4">
+    <div v-if="bannerLoading || banners.length > 0" class="mb-6 lg:flex lg:items-start lg:gap-4">
       <div
-        class="relative overflow-hidden rounded-[var(--radius-2xl)] border border-border/50 bg-card shadow-raised lg:min-w-0 lg:flex-[2]"
+        class="relative min-h-[220px] overflow-hidden rounded-[var(--radius-2xl)] border border-border/50 bg-card shadow-raised lg:min-w-0 lg:flex-[2]"
         :style="heroBannerHeight ? { height: `${heroBannerHeight}px` } : undefined"
       >
         <div class="home-hero-carousel block h-full w-full lg:absolute lg:inset-0">
-          <Carousel :items="banners" :autoplay="true" :interval="5000" class="h-full w-full" />
+          <Carousel
+            :items="banners"
+            :loading="bannerLoading"
+            :autoplay="true"
+            :interval="5000"
+            class="h-full w-full"
+          />
         </div>
       </div>
 
@@ -160,13 +184,15 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
-.home-hero-carousel :deep(.group) {
-  height: 100%;
-}
+@media (width >= 1024px) {
+  .home-hero-carousel :deep(.group) {
+    height: 100%;
+  }
 
-.home-hero-carousel :deep(.group > div:first-child) {
-  height: 100%;
-  min-height: 0;
-  aspect-ratio: auto;
+  .home-hero-carousel :deep(.group > div:first-child) {
+    height: 100%;
+    min-height: 0;
+    aspect-ratio: auto;
+  }
 }
 </style>

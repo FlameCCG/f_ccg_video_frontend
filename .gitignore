@@ -38,3 +38,5 @@ test-*.png
 *.njsproj
 *.sln
 *.sw?
+.claude
+.mcp.json

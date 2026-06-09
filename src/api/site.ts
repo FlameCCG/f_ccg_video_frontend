@@ -80,6 +80,10 @@ export interface GetGithubLoginUrlParams {
   codeChallengeMethod?: 'S256'
 }
 
+export interface GetGoogleLoginUrlParams {
+  state: string
+}
+
 export interface GetLinuxDoLoginUrlParams {
   state: string
 }
@@ -148,8 +152,8 @@ export const getQQLoginUrl = (): Promise<string> => {
  * 依赖接口: 无
  * 接口说明: 获取 Google OAuth 登录跳转 URL
  */
-export const getGoogleLoginUrl = (): Promise<string> => {
-  return request.get('/common/site/google-url')
+export const getGoogleLoginUrl = (params?: GetGoogleLoginUrlParams): Promise<string> => {
+  return request.get('/common/site/google-url', { params })
 }
 
 /**

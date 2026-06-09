@@ -3,6 +3,7 @@ import { onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { Loader2, AlertCircle } from 'lucide-vue-next'
 import { useAuthStore } from '@/stores/auth'
+import { clearOAuthSession, consumeOAuthSession } from '@/utils/oauth'
 
 const route = useRoute()
 const router = useRouter()
@@ -13,22 +14,39 @@ const errorMessage = ref('')
 
 const handleGoogleCallback = async () => {
   const code = route.query.code as string | undefined
+  const state = route.query.state as string | undefined
   const oauthError = route.query.error as string | undefined
+  const oauthErrorDescription = route.query.error_description as string | undefined
 
   if (oauthError) {
-    errorMessage.value = 'Google 授权已取消或失败，请重新登录'
+    clearOAuthSession('google')
+    errorMessage.value = oauthErrorDescription || 'Google 授权已取消或失败，请重新登录'
     isLoading.value = false
     return
   }
 
   if (!code) {
+    clearOAuthSession('google')
     errorMessage.value = '缺少授权码，请重新登录'
     isLoading.value = false
     return
   }
 
+  const session = consumeOAuthSession('google')
+  if (!session?.state) {
+    errorMessage.value = 'Google 登录状态已失效，请重新发起登录'
+    isLoading.value = false
+    return
+  }
+
+  if (!state || state !== session.state) {
+    errorMessage.value = 'Google 登录状态校验失败，请重新发起登录'
+    isLoading.value = false
+    return
+  }
+
   try {
-    const success = await authStore.loginWithGoogle({ code })
+    const success = await authStore.loginWithGoogle({ code, state })
     if (success) {
       void router.replace('/')
     } else {

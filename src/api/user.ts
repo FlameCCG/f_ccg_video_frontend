@@ -25,6 +25,7 @@ export interface LoginQQParams {
 
 export interface LoginGoogleParams {
   code: string
+  state: string
 }
 
 export interface LoginGithubParams {

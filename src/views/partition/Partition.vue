@@ -29,7 +29,11 @@ let heroResizeObserver: ResizeObserver | null = null
 const FEATURED_COUNT = 6
 
 const shouldShowHero = computed(
-  () => bannerLoading.value || banners.value.length > 0 || videos.value.length > 0
+  () =>
+    initialLoading.value ||
+    bannerLoading.value ||
+    banners.value.length > 0 ||
+    videos.value.length > 0
 )
 
 // Computed: Featured videos (first 6 for hero section)
@@ -210,7 +214,7 @@ onBeforeUnmount(() => {
         <div class="home-hero-carousel block h-full w-full lg:absolute lg:inset-0">
           <Carousel
             :items="banners"
-            :loading="bannerLoading"
+            :loading="initialLoading || bannerLoading"
             :autoplay="true"
             :interval="5000"
             class="h-full w-full"

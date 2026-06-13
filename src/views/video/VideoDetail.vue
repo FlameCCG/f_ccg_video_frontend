@@ -20,6 +20,7 @@ import DanmuList from '@/components/player/DanmuList.vue'
 import CommentSection from '@/components/comment/CommentSection.vue'
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog'
 import { useDanmuWebSocket } from '@/composables/useDanmuWebSocket'
+import { formatCount } from '@/utils/format'
 import { toast } from 'vue-sonner'
 import {
   Eye,
@@ -368,11 +369,6 @@ const handleDanmuCopy = async () => {
   }
   playerRef.value?.releaseHeldDanmu('leave')
   hideDanmuTooltip()
-}
-
-const formatCount = (count: number): string => {
-  if (count >= 10000) return `${(count / 10000).toFixed(1)}万`
-  return count.toString()
 }
 
 const formatDate = (dateStr: string): string => {

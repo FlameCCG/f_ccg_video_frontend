@@ -4,6 +4,7 @@ import { useRouter } from 'vue-router'
 import { getPlayHistoryList, deletePlayHistory, type HistoryItem } from '@/api/video'
 import { toast } from 'vue-sonner'
 import { Search, Trash2, Loader2, Clock, X, Play, CheckSquare, Square } from 'lucide-vue-next'
+import { formatDuration } from '@/utils/format'
 
 const router = useRouter()
 
@@ -19,14 +20,6 @@ const searchActive = ref(false)
 const batchMode = ref(false)
 const selectedIds = ref<Set<number>>(new Set())
 
-const fmtDuration = (s: number): string => {
-  const h = Math.floor(s / 3600)
-  const m = Math.floor((s % 3600) / 60)
-  const sec = s % 60
-  if (h > 0) return `${h}:${m.toString().padStart(2, '0')}:${sec.toString().padStart(2, '0')}`
-  return `${m}:${sec.toString().padStart(2, '0')}`
-}
-
 const progressPercent = (item: HistoryItem): number => {
   if (!item.duration || item.duration === 0) return 0
   return Math.min((item.progress / item.duration) * 100, 100)
@@ -34,7 +27,7 @@ const progressPercent = (item: HistoryItem): number => {
 
 const progressText = (item: HistoryItem): string => {
   if (progressPercent(item) >= 95) return '已看完'
-  return `看到 ${fmtDuration(item.progress)}`
+  return `看到 ${formatDuration(item.progress)}`
 }
 
 interface TimeGroup {
@@ -306,7 +299,7 @@ watch(searchKeyword, (val) => {
                   </button>
                   <div class="hist-item-cover" @click.stop="handleVideoClick(item.videoId)">
                     <img :src="item.cover" />
-                    <span class="hist-item-dur">{{ fmtDuration(item.duration) }}</span>
+                    <span class="hist-item-dur">{{ formatDuration(item.duration) }}</span>
                     <div class="hist-item-progress-bar">
                       <div
                         class="hist-item-progress-fill"

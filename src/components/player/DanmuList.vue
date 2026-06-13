@@ -7,6 +7,7 @@ import {
   type DanmuItem,
 } from '@/api/danmu'
 import { MoreVertical, ChevronUp, ChevronLeft, ChevronRight, ArrowLeft } from 'lucide-vue-next'
+import { formatClock } from '@/utils/format'
 
 const props = defineProps<{
   videoId: number
@@ -205,9 +206,7 @@ const selectDate = (day: CalendarDay) => {
 
 const formatTime = (ms: number): string => {
   const totalSec = Math.floor(danmuMillisecondsToSeconds(ms))
-  const min = Math.floor(totalSec / 60)
-  const sec = totalSec % 60
-  return `${String(min).padStart(2, '0')}:${String(sec).padStart(2, '0')}`
+  return formatClock(totalSec)
 }
 
 const getRealTime = (ms: number): number => {

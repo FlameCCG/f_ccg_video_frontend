@@ -6,6 +6,7 @@ import { toast } from 'vue-sonner'
 import { ThumbsUp, Coins, Star, Share2, Flag, ChevronDown } from 'lucide-vue-next'
 import FolderPicker from './FolderPicker.vue'
 import { Dialog, DialogContent, DialogTitle, DialogHeader } from '@/components/ui/dialog'
+import { formatCount } from '@/utils/format'
 
 const videoStore = useVideoStore()
 const authStore = useAuthStore()
@@ -49,11 +50,6 @@ const dashOffset = computed(() => {
 let chargeTimer: number | null = null
 let chargeStartTimestamp = 0
 const CHARGE_DURATION = 1500
-
-const formatCount = (count: number): string => {
-  if (count >= 10000) return `${(count / 10000).toFixed(1)}万`
-  return count > 0 ? count.toString() : ''
-}
 
 const requireLogin = (): boolean => {
   if (!authStore.isLoggedIn) {
@@ -389,7 +385,7 @@ onUnmounted(() => {
             />
           </div>
         </div>
-        <span class="action-text">{{ formatCount(likes) || '点赞' }}</span>
+        <span class="action-text">{{ formatCount(likes, { hideZero: true }) || '点赞' }}</span>
       </button>
     </div>
 
@@ -467,7 +463,7 @@ onUnmounted(() => {
             />
           </div>
         </div>
-        <span class="action-text">{{ formatCount(coinCount) || '投币' }}</span>
+        <span class="action-text">{{ formatCount(coinCount, { hideZero: true }) || '投币' }}</span>
       </button>
     </div>
 
@@ -545,7 +541,9 @@ onUnmounted(() => {
             />
           </div>
         </div>
-        <span class="action-text">{{ formatCount(favoriteCount) || '收藏' }}</span>
+        <span class="action-text">{{
+          formatCount(favoriteCount, { hideZero: true }) || '收藏'
+        }}</span>
         <ChevronDown
           class="ml-0.5 h-3 w-3 text-muted-foreground transition-transform relative z-0"
           :class="{ 'rotate-180': showFolderPicker }"

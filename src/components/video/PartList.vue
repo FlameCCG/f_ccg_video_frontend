@@ -2,6 +2,7 @@
 import { computed } from 'vue'
 import type { VideoPartItem } from '@/api/video'
 import { Play } from 'lucide-vue-next'
+import { formatDuration } from '@/utils/format'
 
 const props = defineProps<{
   parts: VideoPartItem[]
@@ -11,12 +12,6 @@ const props = defineProps<{
 const emit = defineEmits<{
   select: [partId: number]
 }>()
-
-const formatDuration = (seconds: number): string => {
-  const mins = Math.floor(seconds / 60)
-  const secs = seconds % 60
-  return `${mins}:${secs.toString().padStart(2, '0')}`
-}
 
 const hasParts = computed(() => props.parts.length > 1)
 </script>

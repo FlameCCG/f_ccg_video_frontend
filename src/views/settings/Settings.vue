@@ -38,6 +38,7 @@ import {
   ChevronLeft,
   ChevronRight,
 } from 'lucide-vue-next'
+import { levelColor } from '@/utils/format'
 
 const router = useRouter()
 const authStore = useAuthStore()
@@ -83,13 +84,6 @@ const coinRecords = ref<UserCoinRecordItem[]>([])
 const coinRecordTotal = ref(0)
 const coinRecordPage = ref(1)
 const coinRecordLoading = ref(false)
-
-const levelColor = (level: number): string => {
-  if (level >= 6) return '#ff6699'
-  if (level >= 4) return '#ffb636'
-  if (level >= 2) return '#7bcfa6'
-  return '#c0c0c0'
-}
 
 const expPct = computed(() => {
   if (!userInfo.value) return 0

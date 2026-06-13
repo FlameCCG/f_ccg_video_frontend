@@ -1,4 +1,4 @@
-export { DialogRoot as Dialog, DialogTrigger, DialogPortal, DialogClose } from 'radix-vue'
+export { DialogRoot as Dialog, DialogTrigger, DialogPortal, DialogClose } from 'reka-ui'
 
 export { default as DialogContent } from './DialogContent.vue'
 export { default as DialogHeader } from './DialogHeader.vue'

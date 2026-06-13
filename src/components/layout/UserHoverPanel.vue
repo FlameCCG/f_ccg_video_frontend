@@ -5,6 +5,7 @@ import { useAuthStore } from '@/stores/auth'
 import { useThemeStore } from '@/stores/theme'
 import { User, LogOut, FileVideo, Sun, Moon } from 'lucide-vue-next'
 import AppAvatar from '@/components/common/AppAvatar.vue'
+import { levelColor, formatCount } from '@/utils/format'
 
 const emit = defineEmits<{
   (e: 'close'): void
@@ -15,18 +16,6 @@ const authStore = useAuthStore()
 const themeStore = useThemeStore()
 
 const isDark = computed(() => themeStore.theme === 'dark')
-
-const levelColor = (level: number): string => {
-  if (level >= 6) return '#ff6699'
-  if (level >= 4) return '#ffb636'
-  if (level >= 2) return '#7bcfa6'
-  return '#c0c0c0'
-}
-
-const formatCount = (n: number): string => {
-  if (n >= 10000) return `${(n / 10000).toFixed(1)}万`
-  return n.toString()
-}
 
 const navigate = (target: RouteLocationRaw) => {
   emit('close')

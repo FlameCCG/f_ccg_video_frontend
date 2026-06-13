@@ -2,6 +2,7 @@
 import { ref, onMounted, watch } from 'vue'
 import { getVideoRecommend, type FeedItem } from '@/api/video'
 import { useRouter } from 'vue-router'
+import { formatCount, formatDuration } from '@/utils/format'
 
 const props = defineProps<{
   videoId: number
@@ -10,22 +11,6 @@ const props = defineProps<{
 const router = useRouter()
 const list = ref<FeedItem[]>([])
 const loading = ref(false)
-
-const formatDuration = (seconds: number): string => {
-  const mins = Math.floor(seconds / 60)
-  const secs = seconds % 60
-  return `${mins}:${secs.toString().padStart(2, '0')}`
-}
-
-const formatViews = (views: number): string => {
-  if (views >= 10000) return `${(views / 10000).toFixed(1)}万`
-  return views.toString()
-}
-
-const formatDanmu = (count: number): string => {
-  if (count >= 10000) return `${(count / 10000).toFixed(1)}万`
-  return count.toString()
-}
 
 const fetchRecommend = async () => {
   if (!props.videoId) return
@@ -101,10 +86,10 @@ watch(() => props.videoId, fetchRecommend)
             class="mt-1 flex items-center gap-2.5 text-[11px] font-medium text-muted-foreground/60"
           >
             <span class="transition-colors group-hover:text-muted-foreground/80"
-              >{{ formatViews(item.views) }}播放</span
+              >{{ formatCount(item.views) }}播放</span
             >
             <span class="transition-colors group-hover:text-muted-foreground/80"
-              >{{ formatDanmu(item.danmuCount) }}弹幕</span
+              >{{ formatCount(item.danmuCount) }}弹幕</span
             >
           </div>
         </div>
@@ -136,10 +121,10 @@ watch(() => props.videoId, fetchRecommend)
     var(--shimmer-color-base) 70%
   );
   background-size: 250% 100%;
-  animation: shimmer 1.8s cubic-bezier(0.37, 0, 0.63, 1) infinite;
+  animation: shimmer-card 1.8s cubic-bezier(0.37, 0, 0.63, 1) infinite;
 }
 
-@keyframes shimmer {
+@keyframes shimmer-card {
   0% {
     background-position: 250% 0;
   }

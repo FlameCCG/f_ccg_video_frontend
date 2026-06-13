@@ -19,6 +19,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
+import { formatClock } from '@/utils/format'
 
 const authStore = useAuthStore()
 const { toast } = useToast()
@@ -66,12 +67,6 @@ const handleTabChange = (tab: 'all' | 'published' | 'private' | 'reviewing') => 
 onMounted(() => {
   void fetchVideos()
 })
-
-const formatTime = (seconds: number) => {
-  const m = Math.floor(seconds / 60)
-  const s = Math.floor(seconds % 60)
-  return `${m}:${s.toString().padStart(2, '0')}`
-}
 
 const formatDate = (dateStr: string) => {
   const date = new Date(dateStr)
@@ -187,7 +182,7 @@ const handleDelete = async () => {
             <div class="relative w-40 aspect-video rounded-lg overflow-hidden shrink-0 bg-muted">
               <img :src="video.cover" :alt="video.title" class="w-full h-full object-cover" />
               <div class="media-chip absolute bottom-1 right-1 rounded px-1.5 py-0.5 text-xs">
-                {{ formatTime(video.duration) }}
+                {{ formatClock(video.duration) }}
               </div>
             </div>
 

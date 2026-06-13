@@ -7,6 +7,7 @@ import type { VideoAuthorBrief } from '@/api/video'
 import { toast } from 'vue-sonner'
 import { UserPlus, UserCheck, Users } from 'lucide-vue-next'
 import AppAvatar from '@/components/common/AppAvatar.vue'
+import { levelColor } from '@/utils/format'
 
 const props = defineProps<{
   author: VideoAuthorBrief
@@ -65,13 +66,6 @@ const handleFollow = async () => {
 
 const goToUserPage = () => {
   void router.push(`/user/${props.author.id}`)
-}
-
-const levelColor = (level: number): string => {
-  if (level >= 6) return '#ff6699'
-  if (level >= 4) return '#ffb636'
-  if (level >= 2) return '#7bcfa6'
-  return '#c0c0c0'
 }
 
 onMounted(fetchRelation)

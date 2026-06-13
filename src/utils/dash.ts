@@ -1,4 +1,3 @@
-import * as dashjs from 'dashjs'
 import type Artplayer from 'artplayer'
 import type {
   ErrorEvent,
@@ -7,6 +6,19 @@ import type {
   Representation,
 } from 'dashjs'
 import type { VideoResourceItem } from '@/api/video'
+
+// dash.js 较重（MSE 自适应内核），只在真正播放 DASH 流时按需加载，避免在每个
+// 视频页都急切拉进主包。模块级缓存确保整个会话只动态 import 一次。
+type DashjsModule = typeof import('dashjs')
+let dashjsModule: DashjsModule | null = null
+
+/** 懒加载并缓存 dash.js 模块（至多加载一次）。仅供真正实例化播放器的辅助函数调用。 */
+const loadDashjs = async (): Promise<DashjsModule> => {
+  if (!dashjsModule) {
+    dashjsModule = await import('dashjs')
+  }
+  return dashjsModule
+}
 
 // ============================================================================
 // MPEG-DASH 接入辅助（dash.js + Artplayer）
@@ -92,14 +104,26 @@ export interface MpdLoaderOptions {
  * - 不改写传入的 .mpd URL（含 MinIO 的 ?response-content-type=...），
  *   分片 mp4 是 manifest 的同目录兄弟文件，dash.js 按相对路径解析。
  * - dash 实例挂到 `art.dash`，并在播放器销毁时一并释放，杜绝内存泄漏。
+ * - dash.js 在此处按需动态加载（仅当真正播放 DASH 流时才拉取该 chunk）。
  */
 export const createMpdLoader = (options: MpdLoaderOptions = {}) => {
-  return function playMpd(video: HTMLVideoElement, url: string, art: ArtWithDash): void {
+  return async function playMpd(
+    video: HTMLVideoElement,
+    url: string,
+    art: ArtWithDash
+  ): Promise<void> {
     if (!window.MediaSource) {
       art.notice.show = '当前浏览器不支持 DASH 自适应播放'
       options.onFatalError?.(art)
       return
     }
+
+    // 真正需要 DASH 时才动态加载 dash.js（非 DASH 路径完全不触达该 chunk）。
+    const dashjs = await loadDashjs()
+
+    // 动态加载 dash.js 期间播放器可能已被销毁/重建（快速切换分P或视频）。
+    // 此时原 <video> 已从 DOM 卸载，直接退出以避免在已废弃实例上创建残留 dash 实例。
+    if (!video.isConnected) return
 
     // 防御：同一实例上不残留上一个 dash。
     destroyDash(art)
@@ -148,12 +172,19 @@ export interface DashQualityMenuOptions {
  * 默认走自动 ABR；选择固定档则关闭 ABR 并锁定到对应 representation。
  * 清单解析后（STREAM_INITIALIZED）才知道码率列表，故内部等待该事件。
  * 任何异常都被吞掉（不影响 ABR 正常播放），返回清理函数。
+ *
+ * 仅在 createMpdLoader 已实例化 dash.js 后（onDashCreated 回调内）调用，
+ * 故 dash.js 模块此刻必已加载完成，这里同步读取缓存即可，无需再次 await。
  */
 export const setupDashQualityMenu = (
   art: ArtWithDash,
   dash: MediaPlayerClass,
   options: DashQualityMenuOptions = {}
 ): (() => void) => {
+  // dash.js 在 createMpdLoader 中已按需加载并缓存；此处仅同步取用其事件常量。
+  const dashjs = dashjsModule
+  if (!dashjs) return () => {}
+
   const autoLabel = options.autoLabel ?? '自动'
   const autoPendingLabel = `${autoLabel}评估中`
   const AUTO_EVALUATION_SETTLE_MS = 1200

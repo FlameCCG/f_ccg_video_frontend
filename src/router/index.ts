@@ -97,12 +97,6 @@ const routes: RouteRecordRaw[] = [
         component: () => import('@/views/favorites/Favorites.vue'),
         meta: { requiresAuth: true },
       },
-      {
-        path: 'favorites',
-        name: 'favorites',
-        component: () => import('@/views/favorites/Favorites.vue'),
-        meta: { requiresAuth: true },
-      },
     ],
   },
   // Message Center Layout

@@ -60,12 +60,15 @@ export const useAuthStore = defineStore(
     }
 
     /**
-     * 用户名密码登录
+     * 通用登录处理：执行登录请求、写入 Token、拉取用户信息并提示
      */
-    const login = async (params: LoginPwdParams): Promise<boolean> => {
+    const handleLogin = async <P>(
+      apiCall: (p: P) => Promise<JwtToken>,
+      params: P
+    ): Promise<boolean> => {
       isLoading.value = true
       try {
-        const tokens = await loginByPassword(params)
+        const tokens = await apiCall(params)
         setAuthTokens(tokens)
         await fetchUserInfo()
         toast.success('登录成功')
@@ -79,94 +82,37 @@ export const useAuthStore = defineStore(
     }
 
     /**
+     * 用户名密码登录
+     */
+    const login = (params: LoginPwdParams): Promise<boolean> => handleLogin(loginByPassword, params)
+
+    /**
      * QQ 登录
      */
-    const loginWithQQ = async (params: LoginQQParams): Promise<boolean> => {
-      isLoading.value = true
-      try {
-        const tokens = await loginByQQ(params)
-        setAuthTokens(tokens)
-        await fetchUserInfo()
-        toast.success('登录成功')
-        return true
-      } catch {
-        return false
-      } finally {
-        isLoading.value = false
-      }
-    }
+    const loginWithQQ = (params: LoginQQParams): Promise<boolean> => handleLogin(loginByQQ, params)
 
     /**
      * Google 登录
      */
-    const loginWithGoogle = async (params: LoginGoogleParams): Promise<boolean> => {
-      isLoading.value = true
-      try {
-        const tokens = await loginByGoogle(params)
-        setAuthTokens(tokens)
-        await fetchUserInfo()
-        toast.success('登录成功')
-        return true
-      } catch {
-        return false
-      } finally {
-        isLoading.value = false
-      }
-    }
+    const loginWithGoogle = (params: LoginGoogleParams): Promise<boolean> =>
+      handleLogin(loginByGoogle, params)
 
     /**
      * GitHub 登录
      */
-    const loginWithGithub = async (params: LoginGithubParams): Promise<boolean> => {
-      isLoading.value = true
-      try {
-        const tokens = await loginByGithub(params)
-        setAuthTokens(tokens)
-        await fetchUserInfo()
-        toast.success('登录成功')
-        return true
-      } catch {
-        return false
-      } finally {
-        isLoading.value = false
-      }
-    }
+    const loginWithGithub = (params: LoginGithubParams): Promise<boolean> =>
+      handleLogin(loginByGithub, params)
 
     /**
      * LinuxDo 登录
      */
-    const loginWithLinuxDo = async (params: LoginLinuxDoParams): Promise<boolean> => {
-      isLoading.value = true
-      try {
-        const tokens = await loginByLinuxDo(params)
-        setAuthTokens(tokens)
-        await fetchUserInfo()
-        toast.success('登录成功')
-        return true
-      } catch {
-        return false
-      } finally {
-        isLoading.value = false
-      }
-    }
+    const loginWithLinuxDo = (params: LoginLinuxDoParams): Promise<boolean> =>
+      handleLogin(loginByLinuxDo, params)
 
     /**
      * X 登录
      */
-    const loginWithX = async (params: LoginXParams): Promise<boolean> => {
-      isLoading.value = true
-      try {
-        const tokens = await loginByX(params)
-        setAuthTokens(tokens)
-        await fetchUserInfo()
-        toast.success('登录成功')
-        return true
-      } catch {
-        return false
-      } finally {
-        isLoading.value = false
-      }
-    }
+    const loginWithX = (params: LoginXParams): Promise<boolean> => handleLogin(loginByX, params)
 
     /**
      * 退出登录

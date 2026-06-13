@@ -1,5 +1,8 @@
 import type { BannerItem } from './banner'
+import type { PaginatedResult, PaginationParams, SearchHighlight, Tag } from './types'
 import request from './request'
+
+export type { PaginatedResult, PaginationParams, SearchHighlight, Tag } from './types'
 
 // ============================================================================
 // Type Definitions
@@ -123,10 +126,6 @@ export interface UpdateUserInfoParams {
 }
 
 // User Search Types
-export interface SearchHighlight {
-  [key: string]: string[]
-}
-
 export interface SearchUserHit {
   id: number
   username: string
@@ -246,16 +245,6 @@ export interface UserCoinRecordItem {
   createdAt: string
 }
 
-export interface PaginationParams {
-  page?: number
-  pageSize?: number
-}
-
-export interface PaginatedResult<T> {
-  list: T[]
-  total: number
-}
-
 // Creator Analytics Types
 export type CreatorAnalyticsRange = '7d' | '30d' | 'month'
 
@@ -314,11 +303,6 @@ export interface DeleteVideoParams {
 }
 
 export interface CreateTagParams {
-  name: string
-}
-
-export interface Tag {
-  id: number
   name: string
 }
 

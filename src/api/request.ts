@@ -91,7 +91,8 @@ const refreshAccessToken = async (): Promise<string | null> => {
   try {
     const response = await axios.post<ApiResponse<{ accessToken: string; refreshToken: string }>>(
       '/v1/common/user/login/refresh',
-      { refreshToken }
+      { refreshToken },
+      { timeout: 15000 }
     )
 
     if (response.data.code === 0) {

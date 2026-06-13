@@ -1,4 +1,7 @@
+import type { PaginatedResult } from './types'
 import request from './request'
+
+export type { PaginatedResult } from './types'
 
 // ============================================================================
 // Type Definitions
@@ -93,11 +96,6 @@ export interface ReportDanmuParams {
   danmuId: number
   reason: string
   detail?: string
-}
-
-export interface PaginatedResult<T> {
-  list: T[]
-  total: number
 }
 
 export interface DanmuListResult {

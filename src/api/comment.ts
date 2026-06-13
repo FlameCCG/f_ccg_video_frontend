@@ -1,18 +1,7 @@
+import type { PaginatedResult, PaginationParams } from './types'
 import request from './request'
 
-// ============================================================================
-// Type Definitions
-// ============================================================================
-
-export interface PaginationParams {
-  page?: number
-  pageSize?: number
-}
-
-export interface PaginatedResult<T> {
-  list: T[]
-  total: number
-}
+export type { PaginatedResult, PaginationParams } from './types'
 
 // ============================================================================
 // Comment Types

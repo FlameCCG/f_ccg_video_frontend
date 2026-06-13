@@ -439,3 +439,16 @@
     opacity: 0.8;
   }
 }
+
+/* Global accessibility guard: respect the user's reduced-motion preference.
+   Un-layered so it overrides component/utility transitions and animations. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}

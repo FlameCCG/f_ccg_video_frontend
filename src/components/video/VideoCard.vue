@@ -2,6 +2,8 @@
 import { computed } from 'vue'
 import { useRouter } from 'vue-router'
 import type { FeedItem } from '@/api/video'
+import { formatCount, formatDuration } from '@/utils/format'
+import DOMPurify from 'dompurify'
 
 interface Props {
   video: FeedItem
@@ -27,34 +29,20 @@ const sanitizedTitleHtml = computed(() => {
     return escapeHtml(props.video.title)
   }
 
-  return highlightedTitle.replace(/<(?!\/?em\b)[^>]*>/g, '')
+  return DOMPurify.sanitize(highlightedTitle, {
+    ALLOWED_TAGS: ['em'],
+    ALLOWED_ATTR: [],
+  })
 })
 
 // Format duration from seconds to mm:ss
-const formattedDuration = computed(() => {
-  const seconds = props.video.duration
-  const mins = Math.floor(seconds / 60)
-  const secs = seconds % 60
-  return `${mins}:${secs.toString().padStart(2, '0')}`
-})
+const formattedDuration = computed(() => formatDuration(props.video.duration))
 
 // Format view count (e.g., 1.2万)
-const formattedViews = computed(() => {
-  const views = props.video.views
-  if (views >= 10000) {
-    return `${(views / 10000).toFixed(1)}万`
-  }
-  return views.toString()
-})
+const formattedViews = computed(() => formatCount(props.video.views))
 
 // Format danmu count
-const formattedDanmu = computed(() => {
-  const count = props.video.danmuCount
-  if (count >= 10000) {
-    return `${(count / 10000).toFixed(1)}万`
-  }
-  return count.toString()
-})
+const formattedDanmu = computed(() => formatCount(props.video.danmuCount))
 
 // Format publish time (relative time)
 const formattedTime = computed(() => {

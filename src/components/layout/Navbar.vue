@@ -25,9 +25,11 @@ import { getDynamicCounts } from '@/api/dynamic'
 import { useAuthStore } from '@/stores/auth'
 import { useNotificationStore } from '@/stores/notification'
 import { useSearchHistory } from '@/composables/useSearchHistory'
+import { useDebounceFn } from '@vueuse/core'
 import AuthDialog from '@/components/auth/AuthDialog.vue'
 import UserHoverPanel from '@/components/layout/UserHoverPanel.vue'
 import AppAvatar from '@/components/common/AppAvatar.vue'
+import DOMPurify from 'dompurify'
 
 const props = withDefaults(defineProps<{ light?: boolean }>(), { light: false })
 
@@ -119,19 +121,23 @@ onMounted(async () => {
 })
 
 // Search Logic
-const handleSearchInput = async () => {
-  if (!searchQuery.value.trim()) {
-    searchSuggestions.value = []
-    showSuggestions.value = true
-    return
-  }
+// Debounced suggestion fetch to avoid firing a request on every keystroke
+const fetchSuggestions = useDebounceFn(async (prefix: string) => {
   try {
-    const suggestions = await getSearchSuggest({ prefix: searchQuery.value })
-    searchSuggestions.value = suggestions
-    showSuggestions.value = true
+    searchSuggestions.value = await getSearchSuggest({ prefix })
   } catch (error) {
     console.error('Failed to fetch suggestions:', error)
   }
+}, 300)
+
+const handleSearchInput = () => {
+  showSuggestions.value = true
+  // Gate: skip very short queries to cut noise, and clear stale suggestions
+  if (searchQuery.value.trim().length < 2) {
+    searchSuggestions.value = []
+    return
+  }
+  void fetchSuggestions(searchQuery.value)
 }
 
 const handleSearch = (query: string) => {
@@ -182,6 +188,13 @@ onBeforeUnmount(() => {
   document.removeEventListener('click', handleClickOutside)
   if (hoverTimer) clearTimeout(hoverTimer)
 })
+
+const sanitizeHighlight = (html: string) => {
+  return DOMPurify.sanitize(html, {
+    ALLOWED_TAGS: ['em'],
+    ALLOWED_ATTR: [],
+  })
+}
 
 // Nav action items
 const navActions = [
@@ -253,7 +266,7 @@ const navActions = [
               class="search-suggestion-item cursor-pointer px-4 py-2.5 text-sm hover:bg-accent hover:text-accent-foreground flex items-center gap-2"
               @mousedown.prevent="handleSearch(item.value)"
             >
-              <span class="truncate" v-html="item.highlight"></span>
+              <span class="truncate" v-html="sanitizeHighlight(item.highlight)"></span>
             </div>
           </template>
 

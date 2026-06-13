@@ -19,6 +19,8 @@ import {
 } from '@/api/video'
 import { searchUsers, UserSortType, type UserSortValue, type SearchUserHit } from '@/api/user'
 import { useSearchHistory } from '@/composables/useSearchHistory'
+import { useDebounceFn } from '@vueuse/core'
+import DOMPurify from 'dompurify'
 
 const route = useRoute()
 const router = useRouter()
@@ -82,20 +84,24 @@ const mapSearchVideoHit = (video: SearchVideoHit): FeedItem => ({
   highlight: video.highlight,
 })
 
-// Search input handler – fetch suggestions when typing
-const handleSearchInput = async () => {
-  if (!keyword.value.trim()) {
-    searchSuggestions.value = []
-    showDropdown.value = true
-    return
-  }
+// Debounced suggestion fetch to avoid firing a request on every keystroke
+const fetchSuggestions = useDebounceFn(async (prefix: string) => {
   try {
-    const suggestions = await getSearchSuggest({ prefix: keyword.value })
-    searchSuggestions.value = suggestions
-    showDropdown.value = true
+    searchSuggestions.value = await getSearchSuggest({ prefix })
   } catch (error) {
     console.error('Failed to fetch suggestions:', error)
   }
+}, 300)
+
+// Search input handler – fetch suggestions when typing
+const handleSearchInput = () => {
+  showDropdown.value = true
+  // Gate: skip very short queries to cut noise, and clear stale suggestions
+  if (keyword.value.trim().length < 2) {
+    searchSuggestions.value = []
+    return
+  }
+  void fetchSuggestions(keyword.value)
 }
 
 const handleSearch = (query?: string) => {
@@ -235,6 +241,12 @@ onMounted(() => {
     void fetchFullSearch()
   }
 })
+const sanitizeHighlight = (html: string) => {
+  return DOMPurify.sanitize(html, {
+    ALLOWED_TAGS: ['em'],
+    ALLOWED_ATTR: [],
+  })
+}
 </script>
 
 <template>
@@ -273,7 +285,7 @@ onMounted(() => {
                 class="search-suggestion-item cursor-pointer px-4 py-2.5 text-sm hover:bg-accent hover:text-accent-foreground flex items-center gap-2"
                 @mousedown.prevent="handleSearch(item.value)"
               >
-                <span class="truncate" v-html="item.highlight"></span>
+                <span class="truncate" v-html="sanitizeHighlight(item.highlight)"></span>
               </div>
             </template>
 

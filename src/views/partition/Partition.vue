@@ -4,6 +4,7 @@ import { useRoute } from 'vue-router'
 import { getHomeVideos, getPartitions, type FeedItem, type Partition } from '@/api/video'
 import { getHomeCarouselBanners, type BannerItem } from '@/api/banner'
 import { touchSiteStat } from '@/api/site'
+import DOMPurify from 'dompurify'
 import VideoCard from '@/components/video/VideoCard.vue'
 import VideoCardSkeleton from '@/components/common/VideoCardSkeleton.vue'
 import InfiniteScroll from '@/components/common/InfiniteScroll.vue'
@@ -51,6 +52,15 @@ const remainingVideos = computed(() => {
   }
   return videos.value.slice(FEATURED_COUNT)
 })
+
+// Partition icons are server-supplied SVG markup; sanitize before v-html.
+const sanitizedPartitionIcon = computed(() =>
+  activePartition.value?.icon
+    ? DOMPurify.sanitize(activePartition.value.icon, {
+        USE_PROFILES: { svg: true, svgFilters: true },
+      })
+    : ''
+)
 
 // Fetch partition info
 const fetchPartitionInfo = async () => {
@@ -191,7 +201,7 @@ onBeforeUnmount(() => {
       <div class="flex items-center justify-center text-primary">
         <div
           class="h-10 w-10 sm:h-12 sm:w-12 [&>svg]:h-full [&>svg]:w-full [&>svg]:fill-current"
-          v-html="activePartition.icon"
+          v-html="sanitizedPartitionIcon"
         />
       </div>
       <h1 class="text-3xl font-extrabold tracking-tight text-foreground/90 sm:text-4xl">

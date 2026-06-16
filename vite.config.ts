@@ -16,11 +16,7 @@ export default defineConfig({
     host: true,
     proxy: {
       '/v1': {
-        target: 'http://localhost:8080',
-        changeOrigin: true,
-      },
-      '/videos': {
-        target: 'http://localhost:9000',
+        target: 'http://127.0.0.1:8080',
         changeOrigin: true,
       },
     },

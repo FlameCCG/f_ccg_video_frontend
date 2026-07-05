@@ -8,7 +8,7 @@ import { useThemeStore } from '@/stores/theme'
 import { initLive2d } from '@/utils/live2d'
 
 const AuthDialog = defineAsyncComponent(() => import('@/components/auth/AuthDialog.vue'))
-const XaiChatDialog = defineAsyncComponent(() => import('@/components/xai/XaiChatDialog.vue'))
+const AiChatDialog = defineAsyncComponent(() => import('@/components/ai/AiChatDialog.vue'))
 
 const authStore = useAuthStore()
 useThemeStore()
@@ -40,7 +40,7 @@ onUnmounted(() => {
   <RouterView />
   <AuthDialog v-if="showAuthDialog" :open="showAuthDialog" @update:open="showAuthDialog = $event" />
 
-  <XaiChatDialog
+  <AiChatDialog
     v-if="showChatDialog"
     :open="showChatDialog"
     @update:open="showChatDialog = $event"

@@ -3,16 +3,16 @@ import { ref, reactive, nextTick, watch, onBeforeUnmount, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { Send, X, Download, Loader2, Bot, Settings2, UploadCloud } from 'lucide-vue-next'
 import {
-  fetchXaiChatStream,
-  resolveXaiAssetUrl,
-  xaiGenerateImage,
-  xaiEditImage,
-  xaiGenerateVideo,
-  xaiGetVideoStatus,
-  type XaiImageGenParams,
-  type XaiImageEditParams,
-  type XaiVideoGenParams,
-} from '@/api/xai'
+  fetchAiChatStream,
+  resolveAiAssetUrl,
+  aiGenerateImage,
+  aiEditImage,
+  aiGenerateVideo,
+  aiGetVideoStatus,
+  type AiImageGenParams,
+  type AiImageEditParams,
+  type AiVideoGenParams,
+} from '@/api/ai'
 import { toast } from 'vue-sonner'
 import { marked } from 'marked'
 import DOMPurify from 'dompurify'
@@ -21,7 +21,7 @@ import ImageViewer from '@/components/common/ImageViewer.vue'
 import AppAvatar from '@/components/common/AppAvatar.vue'
 import { useCreatorBridgeStore } from '@/stores/creatorBridge'
 import { useAuthStore } from '@/stores/auth'
-import { buildXaiSuggestedTitle, fetchXaiAssetAsFile } from '@/utils/xai-assets'
+import { buildAiSuggestedTitle, fetchAiAssetAsFile } from '@/utils/ai-assets'
 
 const props = withDefaults(
   defineProps<{
@@ -107,23 +107,34 @@ const markdownSanitizeOptions = {
 const pastedImages = ref<{ url: string; file: File }[]>([])
 
 // Advanced form state
-const imgResolution = ref('1k')
+const imgModel = ref('doubao-seedream-5-0-lite-260128')
+const imgResolution = ref('2k')
 const imgRatio = ref('16:9')
 const imgCount = ref(1)
 
-const vidResolution = ref('480p')
+const vidModel = ref('doubao-seedance-1-5-pro-251215')
+const vidResolution = ref('720p')
 const vidRatio = ref('16:9')
 const vidDuration = ref(8)
 
+const IMAGE_MODEL_OPTIONS = [
+  { label: 'Seedream 5.0 Lite', value: 'doubao-seedream-5-0-lite-260128' },
+  { label: 'Seedream 4.5', value: 'doubao-seedream-4-5-251128' },
+] as const
+const VIDEO_MODEL_OPTIONS = [
+  { label: 'Seedance 1.5 Pro', value: 'doubao-seedance-1-5-pro-251215' },
+  { label: 'Seedance 1.0 Fast', value: 'doubao-seedance-1-0-pro-fast-251015' },
+] as const
 const IMAGE_RATIO_OPTIONS = ['1:1', '3:4', '4:3', '9:16', '16:9'] as const
-const IMAGE_RESOLUTION_OPTIONS = ['1k', '2k'] as const
+const IMAGE_RESOLUTION_OPTIONS = ['1k', '2k', '3k', '4k'] as const
 const VIDEO_RATIO_OPTIONS = ['1:1', '16:9', '9:16', '4:3', '3:4'] as const
-const VIDEO_RESOLUTION_OPTIONS = ['480p', '720p'] as const
+const VIDEO_RESOLUTION_OPTIONS = ['480p', '720p', '1080p'] as const
 
 const showSettings = ref(false)
 const isSingleImageEdit = () => activeModel.value === 'image' && pastedImages.value.length === 1
 const isReferenceVideoMode = () => activeModel.value === 'video' && pastedImages.value.length > 1
-const videoDurationMax = () => (isReferenceVideoMode() ? 10 : 15)
+const isFastVideoModel = () => vidModel.value === 'doubao-seedance-1-0-pro-fast-251015'
+const videoDurationMax = () => (isReferenceVideoMode() ? 10 : isFastVideoModel() ? 12 : 15)
 
 // Focus/Blur helpers
 const handleClose = () => {
@@ -369,13 +380,13 @@ watch(
   imgCount,
   (count) => {
     if (count < 1) imgCount.value = 1
-    if (count > 10) imgCount.value = 10
+    if (count > 15) imgCount.value = 15
   },
   { immediate: true }
 )
 
 watch(
-  [vidDuration, () => pastedImages.value.length],
+  [vidDuration, vidModel, () => pastedImages.value.length],
   () => {
     if (vidDuration.value < 1) vidDuration.value = 1
     const max = videoDurationMax()
@@ -406,12 +417,12 @@ marked.use({
         }
       }
       return `
-        <div class="xai-code-block">
-          <div class="xai-code-toolbar">
-            <span class="xai-code-language">${escapeHtml(languageLabel)}</span>
+        <div class="ai-code-block">
+          <div class="ai-code-toolbar">
+            <span class="ai-code-language">${escapeHtml(languageLabel)}</span>
             <button
               type="button"
-              class="xai-code-copy flex items-center justify-center rounded-md p-1.5 hover:bg-[var(--glass-border)] transition-colors group/copy"
+              class="ai-code-copy flex items-center justify-center rounded-md p-1.5 hover:bg-[var(--glass-border)] transition-colors group/copy"
               data-copy-code="${encodedPayload}"
               title="复制代码"
               aria-label="复制代码"
@@ -423,7 +434,7 @@ marked.use({
     },
     image(token: { href: string; title: string | null; text: string }) {
       const { href, title, text } = token
-      const resolved = resolveXaiAssetUrl(href)
+      const resolved = resolveAiAssetUrl(href)
       let out = `<img src="${resolved}" alt="${text || ''}"`
       if (title) {
         out += ` title="${title}"`
@@ -478,7 +489,7 @@ const b64EncodeFile = (file: File): Promise<string> => {
   })
 }
 
-const encodeImageForXAI = async (file: File): Promise<string> => {
+const encodeImageForAI = async (file: File): Promise<string> => {
   const objectUrl = URL.createObjectURL(file)
   try {
     const image = await new Promise<HTMLImageElement>((resolve, reject) => {
@@ -547,10 +558,10 @@ const handleOneClickSubmit = async (
   const actionKey = makeAssetActionKey(messageId, resultIndex, 'submit')
   beginAssetAction(actionKey)
   try {
-    const title = buildXaiSuggestedTitle(prompt || 'AI 视频作品', 'AI 视频作品')
-    const file = await fetchXaiAssetAsFile(resultUrl, title, 'mp4')
+    const title = buildAiSuggestedTitle(prompt || 'AI 视频作品', 'AI 视频作品')
+    const file = await fetchAiAssetAsFile(resultUrl, title, 'mp4')
     creatorBridgeStore.setPendingVideoImport({
-      id: `xai-video-${Date.now()}`,
+      id: `ai-video-${Date.now()}`,
       file,
       title,
       prompt,
@@ -577,9 +588,9 @@ const handleCoverPick = async (
   const actionKey = makeAssetActionKey(messageId, resultIndex, 'cover')
   beginAssetAction(actionKey)
   try {
-    const file = await fetchXaiAssetAsFile(
+    const file = await fetchAiAssetAsFile(
       resultUrl,
-      buildXaiSuggestedTitle(prompt || 'AI 封面', 'AI 封面'),
+      buildAiSuggestedTitle(prompt || 'AI 封面', 'AI 封面'),
       mimeType?.includes('png') ? 'png' : 'jpg'
     )
     emit('cover-pick', { file, sourceUrl: resultUrl, prompt, mimeType })
@@ -611,13 +622,20 @@ const isRecord = (value: unknown): value is Record<string, unknown> => {
   return value !== null && typeof value === 'object' && !Array.isArray(value)
 }
 
+const isVolcAssetUrl = (url: string) =>
+  url.includes('volces.com') ||
+  url.includes('volcengine.com') ||
+  url.includes('byteimg.com') ||
+  url.includes('bytedance.com')
+
 const looksLikeVideoUrl = (url: string, key = '') => {
   const lowerKey = key.toLowerCase()
   const lowerUrl = url.toLowerCase()
   return (
     lowerKey.includes('video') ||
     /\.(mp4|webm|mov|m4v|m3u8)(\?|$)/i.test(lowerUrl) ||
-    lowerUrl.includes('vidgen.x.ai')
+    lowerUrl.includes('vidgen.x.ai') ||
+    (isVolcAssetUrl(lowerUrl) && !lowerKey.includes('image'))
   )
 }
 
@@ -628,7 +646,8 @@ const looksLikeImageUrl = (url: string, key = '') => {
     lowerKey.includes('image') ||
     /^data:image\//i.test(lowerUrl) ||
     /\.(png|jpe?g|webp|gif|bmp|svg|avif)(\?|$)/i.test(lowerUrl) ||
-    lowerUrl.includes('imgen.x.ai')
+    lowerUrl.includes('imgen.x.ai') ||
+    (isVolcAssetUrl(lowerUrl) && !lowerKey.includes('video'))
   )
 }
 
@@ -648,7 +667,7 @@ const pushMediaResult = (
 
   seen.add(url)
   bucket.push({
-    url: resolveXaiAssetUrl(url),
+    url: resolveAiAssetUrl(url),
     mime_type: typeof mimeType === 'string' ? mimeType : undefined,
     duration: typeof duration === 'number' ? duration : undefined,
   })
@@ -816,8 +835,8 @@ const sendRequest = async () => {
       // simplify history just for this prompt to avoid large payloads while testing
       const finalInput = [{ role: 'user', content: latestInput }]
 
-      await fetchXaiChatStream(
-        { model: 'grok-4.20', input: finalInput },
+      await fetchAiChatStream(
+        { model: 'deepseek-v4-flash', input: finalInput },
         (chunk) => {
           reactiveAsstMsg.isLoading = false
           reactiveAsstMsg.content += chunk
@@ -873,44 +892,47 @@ const sendRequest = async () => {
         let res
         if (currentImages.length > 0) {
           const imageRefs = await Promise.all(
-            currentImages.slice(0, 2).map(async (f) => ({
-              url: await encodeImageForXAI(f.file),
+            currentImages.map(async (f) => ({
+              url: await encodeImageForAI(f.file),
               type: 'image_url' as const,
             }))
           )
-          const reqData: XaiImageEditParams =
+          const reqData: AiImageEditParams =
             imageRefs.length === 1
               ? {
+                  model: imgModel.value,
                   prompt: userText || '编辑图片',
                   image: imageRefs[0],
                   n: imgCount.value,
                   resolution: imgResolution.value,
                 }
               : {
+                  model: imgModel.value,
                   prompt: userText || '编辑图片',
                   images: imageRefs,
                   n: imgCount.value,
                   aspect_ratio: imgRatio.value,
                   resolution: imgResolution.value,
                 }
-          res = await xaiEditImage(reqData)
+          res = await aiEditImage(reqData)
         } else {
-          const reqData: XaiImageGenParams = {
+          const reqData: AiImageGenParams = {
+            model: imgModel.value,
             prompt: userText,
             n: imgCount.value,
             aspect_ratio: imgRatio.value,
             resolution: imgResolution.value,
           }
-          res = await xaiGenerateImage(reqData)
+          res = await aiGenerateImage(reqData)
         }
-        // Flexible data mapping to handle different or unexpected xAI response structures
+        // Flexible data mapping to handle different or unexpected AI response structures
         const resObj = res as unknown
         const finalResults = extractMediaResults(resObj, 'image')
 
         if (finalResults.length > 0) {
           reactiveImgMsg.results!.splice(0, reactiveImgMsg.results!.length, ...finalResults)
         } else {
-          console.error('Raw xAI Image Response (invalid format):', resObj)
+          console.error('Raw AI Image Response (invalid format):', resObj)
           reactiveImgMsg.error = '返回数据没有有效数组: ' + JSON.stringify(resObj).substring(0, 150)
           reactiveImgMsg.results!.splice(0, reactiveImgMsg.results!.length)
         }
@@ -936,21 +958,22 @@ const sendRequest = async () => {
       const reactiveVidMsg = messages.value[messages.value.length - 1]!
 
       try {
-        const reqData: XaiVideoGenParams = {
+        const reqData: AiVideoGenParams = {
+          model: vidModel.value,
           prompt: userText || '生成视频',
           duration: vidDuration.value,
           resolution: vidResolution.value,
         }
         if (currentImages.length === 1 && currentImages[0]) {
           reqData.image = {
-            url: await encodeImageForXAI(currentImages[0].file),
+            url: await encodeImageForAI(currentImages[0].file),
             type: 'image_url',
           }
         } else if (currentImages.length > 1) {
           reqData.aspect_ratio = vidRatio.value
           reqData.reference_images = await Promise.all(
             currentImages.slice(0, 7).map(async (f) => ({
-              url: await encodeImageForXAI(f.file),
+              url: await encodeImageForAI(f.file),
               type: 'image_url' as const,
             }))
           )
@@ -958,7 +981,7 @@ const sendRequest = async () => {
           reqData.aspect_ratio = vidRatio.value
         }
 
-        const res = await xaiGenerateVideo(reqData)
+        const res = await aiGenerateVideo(reqData)
         // Interceptor already unwraps { code, data, msg } → data
         const requestId = extractRequestId(res)
         if (!requestId) throw new Error('未获取到任务ID')
@@ -967,7 +990,7 @@ const sendRequest = async () => {
         let polling = true
         while (polling) {
           await sleep(3000)
-          const statusRes = await xaiGetVideoStatus(requestId)
+          const statusRes = await aiGetVideoStatus(requestId)
           const statusData = statusRes as unknown
           if (statusData) {
             const nextProgress = extractVideoProgress(statusData)
@@ -984,7 +1007,7 @@ const sendRequest = async () => {
               if (videoResults.length > 0) {
                 reactiveVidMsg.results!.splice(0, reactiveVidMsg.results!.length, ...videoResults)
               } else {
-                console.error('Raw xAI Video Response (no url):', statusData)
+                console.error('Raw AI Video Response (no url):', statusData)
                 throw new Error(
                   '未在响应中找到视频链接: ' + JSON.stringify(statusData).substring(0, 150)
                 )
@@ -1139,7 +1162,7 @@ const handleSend = () => {
                   :class="[
                     msg.role === 'user'
                       ? 'px-6 py-4 bg-[var(--bg-surface-2)] text-[var(--text-1)] rounded-[24px] rounded-br-sm border border-[var(--border-color)] shadow-raised font-medium'
-                      : 'markdown-body xai-assistant-bubble text-[var(--text-1)] w-full',
+                      : 'markdown-body ai-assistant-bubble text-[var(--text-1)] w-full',
                   ]"
                   @click="msg.role === 'assistant' ? handleAssistantMarkupClick($event) : undefined"
                   v-html="msg.role === 'assistant' ? getRenderedHtml(msg) : msg.content"
@@ -1306,7 +1329,7 @@ const handleSend = () => {
                         <button
                           class="w-10 h-10 flex items-center justify-center rounded-full bg-[var(--glass-bg)] border border-[var(--glass-border)] text-[var(--text-1)] hover:text-[var(--brand-blue)] transition-colors shadow-overlay backdrop-blur-md"
                           title="下载图片"
-                          @click.stop.prevent="void downloadAsset(res.url, `xai-${Date.now()}.png`)"
+                          @click.stop.prevent="void downloadAsset(res.url, `ai-${Date.now()}.png`)"
                         >
                           <Download class="w-4 h-4" />
                         </button>
@@ -1407,7 +1430,7 @@ const handleSend = () => {
                         @click.prevent="
                           void downloadAsset(
                             msg.results?.[0]?.url || '',
-                            `xai-vid-${Date.now()}.mp4`
+                            `ai-vid-${Date.now()}.mp4`
                           )
                         "
                       >
@@ -1527,12 +1550,28 @@ const handleSend = () => {
                     >
                       <template v-if="activeModel === 'image'">
                         <label class="flex items-center gap-3 shrink-0">
+                          <span class="font-bold">Model</span>
+                          <select
+                            v-model="imgModel"
+                            class="bg-transparent text-[var(--text-1)] border-b border-[var(--border-color)] focus:border-[var(--brand-blue)] outline-none"
+                          >
+                            <option
+                              v-for="model in IMAGE_MODEL_OPTIONS"
+                              :key="model.value"
+                              :value="model.value"
+                              class="bg-[var(--bg-surface-0)] text-[var(--text-1)]"
+                            >
+                              {{ model.label }}
+                            </option>
+                          </select>
+                        </label>
+                        <label class="flex items-center gap-3 shrink-0">
                           <span class="font-bold">Count</span>
                           <input
                             v-model="imgCount"
                             type="number"
                             min="1"
-                            max="10"
+                            max="15"
                             class="w-12 bg-transparent text-[var(--text-1)] border-b border-[var(--border-color)] focus:border-[var(--brand-blue)] outline-none text-center"
                           />
                         </label>
@@ -1576,6 +1615,22 @@ const handleSend = () => {
                         >
                       </template>
                       <template v-if="activeModel === 'video'">
+                        <label class="flex items-center gap-3 shrink-0">
+                          <span class="font-bold">Model</span>
+                          <select
+                            v-model="vidModel"
+                            class="bg-transparent text-[var(--text-1)] border-b border-[var(--border-color)] focus:border-[var(--brand-blue)] outline-none"
+                          >
+                            <option
+                              v-for="model in VIDEO_MODEL_OPTIONS"
+                              :key="model.value"
+                              :value="model.value"
+                              class="bg-[var(--bg-surface-0)] text-[var(--text-1)]"
+                            >
+                              {{ model.label }}
+                            </option>
+                          </select>
+                        </label>
                         <label class="flex items-center gap-3 shrink-0">
                           <span class="font-bold">Seconds</span>
                           <input
@@ -1706,7 +1761,7 @@ const handleSend = () => {
   color: inherit;
 }
 
-:deep(.xai-assistant-bubble) {
+:deep(.ai-assistant-bubble) {
   border-radius: 1.5rem;
   border: 1px solid var(--border-color);
   background: linear-gradient(
@@ -1758,7 +1813,7 @@ const handleSend = () => {
   text-decoration-color: currentcolor;
 }
 
-:deep(.markdown-body .xai-code-block) {
+:deep(.markdown-body .ai-code-block) {
   overflow: hidden;
   border-radius: 1.15rem;
   border: 1px solid var(--border-color);
@@ -1767,7 +1822,7 @@ const handleSend = () => {
   box-shadow: 0 24px 44px -36px rgb(15, 15, 15, 0.5);
 }
 
-:deep(.markdown-body .xai-code-toolbar) {
+:deep(.markdown-body .ai-code-toolbar) {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -1777,14 +1832,14 @@ const handleSend = () => {
   background: color-mix(in oklab, var(--bg-surface-1) 82%, var(--bg-surface-0));
 }
 
-:deep(.markdown-body .xai-code-language) {
+:deep(.markdown-body .ai-code-language) {
   font-size: 0.7rem;
   font-weight: 700;
   letter-spacing: 0.22em;
   color: var(--text-2);
 }
 
-:deep(.markdown-body .xai-code-copy) {
+:deep(.markdown-body .ai-code-copy) {
   min-width: 4.5rem;
   border: 1px solid var(--border-color);
   border-radius: 999px;
@@ -1801,13 +1856,13 @@ const handleSend = () => {
     transform 180ms ease;
 }
 
-:deep(.markdown-body .xai-code-copy:hover) {
+:deep(.markdown-body .ai-code-copy:hover) {
   transform: translateY(-1px);
   border-color: var(--text-2);
   background: var(--bg-surface-1);
 }
 
-:deep(.markdown-body .xai-code-copy[data-copied='true']) {
+:deep(.markdown-body .ai-code-copy[data-copied='true']) {
   background: var(--text-1);
   border-color: var(--text-1);
   color: var(--bg-surface-0);

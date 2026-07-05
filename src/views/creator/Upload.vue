@@ -30,7 +30,7 @@ import {
   DialogTitle,
   DialogFooter,
 } from '@/components/ui/dialog'
-import XaiChatDialog from '@/components/xai/XaiChatDialog.vue'
+import AiChatDialog from '@/components/ai/AiChatDialog.vue'
 import {
   uploadChunk,
   getUploadStatus,
@@ -2169,7 +2169,7 @@ const handlePublish = async () => {
       </DialogContent>
     </Dialog>
 
-    <XaiChatDialog
+    <AiChatDialog
       :open="showAICoverDialog"
       mode="cover-picker"
       initial-model="image"

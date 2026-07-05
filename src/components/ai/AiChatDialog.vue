@@ -65,7 +65,7 @@ export interface ChatMessage {
   images?: string[] // pasted image urls
   // Placeholder/Result fields
   isLoading?: boolean
-  progress?: number // for video percentage
+  status?: string // for video task status
   results?: { url: string; mime_type?: string; duration?: number; error?: string }[]
   error?: string
 }
@@ -744,7 +744,7 @@ const extractRequestId = (payload: unknown): string => {
 const extractVideoStatus = (payload: unknown): string => {
   if (!isRecord(payload)) return ''
   const direct = payload.status || payload.state || payload.phase
-  if (typeof direct === 'string') return direct.toLowerCase()
+  if (typeof direct === 'string') return direct.trim().toLowerCase()
   if (isRecord(payload.video)) {
     const nested = extractVideoStatus(payload.video)
     if (nested) return nested
@@ -754,17 +754,48 @@ const extractVideoStatus = (payload: unknown): string => {
   return ''
 }
 
-const extractVideoProgress = (payload: unknown): number | undefined => {
-  if (!isRecord(payload)) return undefined
-  const direct = payload.progress ?? payload.percentage ?? payload.percent
-  if (typeof direct === 'number' && Number.isFinite(direct)) return direct
-  if (isRecord(payload.video)) {
-    const nested = extractVideoProgress(payload.video)
-    if (nested !== undefined) return nested
+const isVideoSuccessStatus = (status: string) =>
+  ['done', 'completed', 'success', 'succeeded'].includes(status)
+
+const isVideoFailureStatus = (status: string) =>
+  ['failed', 'expired', 'error', 'canceled', 'cancelled'].includes(status)
+
+const formatVideoStatus = (status?: string) => {
+  switch ((status || '').toLowerCase()) {
+    case 'queued':
+      return '排队中'
+    case 'pending':
+      return '等待中'
+    case 'running':
+      return '生成中'
+    case 'succeeded':
+    case 'success':
+    case 'completed':
+    case 'done':
+      return '已完成'
+    case 'failed':
+      return '失败'
+    case 'expired':
+      return '已过期'
+    case 'canceled':
+    case 'cancelled':
+      return '已取消'
+    default:
+      return status || '等待中'
   }
-  if (isRecord(payload.data)) return extractVideoProgress(payload.data)
-  if (isRecord(payload.result)) return extractVideoProgress(payload.result)
-  return undefined
+}
+
+const extractVideoErrorMessage = (payload: unknown): string => {
+  if (!isRecord(payload)) return ''
+  for (const key of ['error', 'error_message', 'message', 'reason']) {
+    const value = payload[key]
+    if (typeof value === 'string' && value.trim()) return value.trim()
+  }
+  for (const key of ['video', 'data', 'result']) {
+    const nested = extractVideoErrorMessage(payload[key])
+    if (nested) return nested
+  }
+  return ''
 }
 
 const markMediaResultError = (message: ChatMessage, index: number, fallbackText: string) => {
@@ -950,7 +981,7 @@ const sendRequest = async () => {
         type: 'video_gen',
         sourcePrompt: userText,
         isLoading: true,
-        progress: 0,
+        status: 'queued',
         results: [],
       }
       messages.value.push(asstMsg)
@@ -985,6 +1016,7 @@ const sendRequest = async () => {
         // Interceptor already unwraps { code, data, msg } → data
         const requestId = extractRequestId(res)
         if (!requestId) throw new Error('未获取到任务ID')
+        reactiveVidMsg.status = extractVideoStatus(res) || 'queued'
 
         // Polling loop
         let polling = true
@@ -993,16 +1025,10 @@ const sendRequest = async () => {
           const statusRes = await aiGetVideoStatus(requestId)
           const statusData = statusRes as unknown
           if (statusData) {
-            const nextProgress = extractVideoProgress(statusData)
-            if (nextProgress !== undefined) reactiveVidMsg.progress = nextProgress
-
             const currentStatus = extractVideoStatus(statusData)
+            if (currentStatus) reactiveVidMsg.status = currentStatus
 
-            if (
-              currentStatus === 'done' ||
-              currentStatus === 'completed' ||
-              currentStatus === 'success'
-            ) {
+            if (isVideoSuccessStatus(currentStatus)) {
               const videoResults = extractMediaResults(statusData, 'video')
               if (videoResults.length > 0) {
                 reactiveVidMsg.results!.splice(0, reactiveVidMsg.results!.length, ...videoResults)
@@ -1013,15 +1039,8 @@ const sendRequest = async () => {
                 )
               }
               polling = false
-            } else if (
-              isRecord(statusData) &&
-              ['failed', 'expired', 'error'].includes(currentStatus)
-            ) {
-              const errMsg =
-                (typeof statusData.error === 'string' && statusData.error) ||
-                (typeof statusData.error_message === 'string' && statusData.error_message) ||
-                '视频生成失败'
-              throw new Error(errMsg)
+            } else if (isVideoFailureStatus(currentStatus)) {
+              throw new Error(extractVideoErrorMessage(statusData) || '视频生成失败')
             }
           }
         }
@@ -1370,43 +1389,27 @@ const handleSend = () => {
                 <div v-if="msg.type === 'video_gen'" class="mt-4">
                   <div
                     v-if="msg.isLoading"
-                    class="relative w-[28rem] sm:w-[38rem] aspect-video rounded-[1.5rem] overflow-hidden bg-[var(--bg-surface-1)] border border-[var(--border-color)] flex flex-col items-center justify-center gap-6 shadow-surface"
+                    class="relative w-[28rem] sm:w-[38rem] aspect-video rounded-[1.5rem] overflow-hidden bg-[var(--bg-surface-1)] border border-[var(--border-color)] flex flex-col items-center justify-center gap-5 shadow-surface"
                   >
                     <div
                       class="absolute inset-0 bg-gradient-to-r from-transparent via-[var(--brand-blue)]/10 to-transparent animate-shimmer"
                       style="background-size: 200% 100%"
                     ></div>
-                    <div class="relative z-10 w-20 h-20 flex items-center justify-center">
-                      <svg class="w-full h-full transform -rotate-90">
-                        <circle
-                          cx="40"
-                          cy="40"
-                          r="36"
-                          stroke="currentColor"
-                          stroke-width="2"
-                          fill="none"
-                          class="opacity-10 text-[var(--text-2)]"
-                        />
-                        <circle
-                          cx="40"
-                          cy="40"
-                          r="36"
-                          stroke="currentColor"
-                          stroke-width="2"
-                          fill="none"
-                          :stroke-dasharray="226"
-                          :stroke-dashoffset="226 - (226 * (msg.progress || 0)) / 100"
-                          class="text-[var(--brand-blue)] transition-all duration-700 ease-out-expo"
-                        />
-                      </svg>
-                      <span class="absolute text-sm font-mono font-bold text-[var(--text-1)]">{{
-                        msg.progress || 0
-                      }}</span>
-                    </div>
-                    <span
-                      class="relative z-10 text-[10px] font-mono tracking-[0.3em] font-bold text-[var(--brand-blue)]"
-                      >SYNTHESIS_IN_PROGRESS</span
+                    <div
+                      class="relative z-10 flex h-16 w-16 items-center justify-center rounded-2xl border border-[var(--border-color)] bg-[var(--bg-surface-0)]/80 shadow-surface"
                     >
+                      <Loader2 class="h-7 w-7 animate-spin text-[var(--brand-blue)]" />
+                    </div>
+                    <div class="relative z-10 flex flex-col items-center gap-2 text-center">
+                      <span
+                        class="text-[10px] font-mono tracking-[0.3em] font-bold text-[var(--brand-blue)]"
+                      >
+                        {{ (msg.status || 'queued').toUpperCase() }}
+                      </span>
+                      <span class="text-sm font-medium text-[var(--text-1)]">
+                        {{ formatVideoStatus(msg.status) }}
+                      </span>
+                    </div>
                   </div>
                   <div
                     v-else-if="msg.results?.length"

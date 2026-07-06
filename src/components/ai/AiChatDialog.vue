@@ -134,6 +134,7 @@ const showSettings = ref(false)
 const isSingleImageEdit = () => activeModel.value === 'image' && pastedImages.value.length === 1
 const isReferenceVideoMode = () => activeModel.value === 'video' && pastedImages.value.length > 1
 const isFastVideoModel = () => vidModel.value === 'doubao-seedance-1-0-pro-fast-251015'
+const videoDurationMin = () => (isFastVideoModel() ? 2 : 4)
 const videoDurationMax = () => (isReferenceVideoMode() ? 10 : isFastVideoModel() ? 12 : 15)
 
 // Focus/Blur helpers
@@ -388,9 +389,16 @@ watch(
 watch(
   [vidDuration, vidModel, () => pastedImages.value.length],
   () => {
-    if (vidDuration.value < 1) vidDuration.value = 1
+    const min = videoDurationMin()
     const max = videoDurationMax()
-    if (vidDuration.value > max) vidDuration.value = max
+    const duration = Number(vidDuration.value)
+    if (!Number.isFinite(duration)) {
+      vidDuration.value = min
+      return
+    }
+    if (duration < min) vidDuration.value = min
+    else if (duration > max) vidDuration.value = max
+    else if (duration !== vidDuration.value) vidDuration.value = duration
   },
   { immediate: true }
 )
@@ -1637,9 +1645,9 @@ const handleSend = () => {
                         <label class="flex items-center gap-3 shrink-0">
                           <span class="font-bold">Seconds</span>
                           <input
-                            v-model="vidDuration"
+                            v-model.number="vidDuration"
                             type="number"
-                            min="1"
+                            :min="videoDurationMin()"
                             :max="videoDurationMax()"
                             class="w-12 bg-transparent text-[var(--text-1)] border-b border-[var(--border-color)] focus:border-[var(--brand-blue)] outline-none text-center"
                           />

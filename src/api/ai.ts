@@ -83,11 +83,11 @@ export const fetchAiChatStream = async (
 }
 
 export interface AiImageGenParams {
- prompt: string
- model?: string
- n?: number
- aspect_ratio?: string
- resolution?: string
+  prompt: string
+  model?: string
+  n?: number
+  aspect_ratio?: string
+  resolution?: string
   size?: string
 }
 

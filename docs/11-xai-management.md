@@ -1,14 +1,14 @@
-# xAI 管理
+# AI 管理
 
-分类说明：xAI 文本生成、图像理解、图片生成/编辑、视频生成与状态查询
+分类说明：AI 文本生成、图像理解、图片生成/编辑、视频生成与状态查询
 
 Base URL：/v1
 
-## [POST] xAI 文本生成 / 图像理解
+## [POST] AI 文本生成 / 图像理解
 
-- 接口路径: POST /common/xai/responses
+- 接口路径: POST /common/ai/responses
 - 认证: 需要登录（客户端全局自动携带 Token）
-- 依赖接口: 后台已配置 `xai` 的 `baseURL/apiKey/systemPrompt`
+- 依赖接口: 后台已配置 `ai` 的 `baseURL/apiKey/systemPrompt`
 - 接口说明: 代理 xAI `/v1/responses`，用于文本对话与图像理解
 - 说明:
   - 当前对外仅保留 `model`、`input` 两个字段
@@ -90,11 +90,11 @@ event: response.output_text.delta
 data: {"type":"response.output_text.delta","delta":"\n[/video_results]"}
 ```
 
-## [POST] xAI 图片生成
+## [POST] AI 图片生成
 
-- 接口路径: POST /common/xai/images/generations
+- 接口路径: POST /common/ai/images/generations
 - 认证: 需要登录（客户端全局自动携带 Token）
-- 依赖接口: 后台已配置 `xai`
+- 依赖接口: 后台已配置 `ai`
 - 接口说明: 代理 xAI `/v1/images/generations`
 - 说明: 支持文生图、批量生成、纵横比与分辨率控制
 - HTTP 状态码: 200（业务码 code 判断成功/失败）
@@ -134,11 +134,11 @@ data: {"type":"response.output_text.delta","delta":"\n[/video_results]"}
 
 
 
-## [POST] xAI 图片编辑
+## [POST] AI 图片编辑
 
-- 接口路径: POST /common/xai/images/edits
+- 接口路径: POST /common/ai/images/edits
 - 认证: 需要登录（客户端全局自动携带 Token）
-- 依赖接口: 后台已配置 `xai`
+- 依赖接口: 后台已配置 `ai`
 - 接口说明: 代理 xAI `/v1/images/edits`
 - 说明:
   - `image` 与 `images` 必须二选一
@@ -160,11 +160,11 @@ data: {"type":"response.output_text.delta","delta":"\n[/video_results]"}
 
 
 
-## [POST] xAI 视频生成
+## [POST] AI 视频生成
 
-- 接口路径: POST /common/xai/videos/generations
+- 接口路径: POST /common/ai/videos/generations
 - 认证: 需要登录（客户端全局自动携带 Token）
-- 依赖接口: 后台已配置 `xai`
+- 依赖接口: 后台已配置 `ai`
 - 接口说明: 代理 xAI `/v1/videos/generations`
 - 说明:
   - 支持文生视频、图生视频、参考图视频
@@ -198,7 +198,7 @@ data: {"type":"response.output_text.delta","delta":"\n[/video_results]"}
 
 ## [GET] 查询 xAI 视频任务状态
 
-- 接口路径: GET /common/xai/videos/{requestID}
+- 接口路径: GET /common/ai/videos/{requestID}
 - 认证: 需要登录（客户端全局自动携带 Token）
 - 依赖接口: 先调用视频生成接口拿到 `request_id`
 - 接口说明: 查询视频生成任务状态

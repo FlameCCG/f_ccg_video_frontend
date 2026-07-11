@@ -1,4 +1,5 @@
 import axios, {
+  type AxiosError,
   type AxiosInstance,
   type AxiosResponse,
   type InternalAxiosRequestConfig,
@@ -17,6 +18,13 @@ export interface ApiResponse<T = unknown> {
 const ACCESS_TOKEN_KEY = 'accessToken'
 const REFRESH_TOKEN_KEY = 'refreshToken'
 
+// 开发态可通过 VITE_API_BASE 直连后端，绕过 Vite 代理（例：http://127.0.0.1:8080/v1）
+const API_BASE = (import.meta.env.VITE_API_BASE || '/v1').replace(/\/$/, '')
+
+// 瞬时失败最多再试 1 次（仅幂等 GET/HEAD）
+const MAX_TRANSIENT_RETRIES = 1
+const TRANSIENT_RETRY_DELAY_MS = 120
+
 // Token management
 export const getAccessToken = (): string | null => localStorage.getItem(ACCESS_TOKEN_KEY)
 export const getRefreshToken = (): string | null => localStorage.getItem(REFRESH_TOKEN_KEY)
@@ -31,7 +39,7 @@ export const clearTokens = (): void => {
 
 // Create axios instance
 const request: AxiosInstance = axios.create({
-  baseURL: '/v1',
+  baseURL: API_BASE,
   timeout: 30000,
   headers: {
     'Content-Type': 'application/json',
@@ -81,6 +89,86 @@ const isTokenBusinessError = (msg: string): boolean => {
   return /(登录|认证).*(过期|失效)/.test(msg)
 }
 
+const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms))
+
+const isIdempotentMethod = (method?: string): boolean => {
+  const m = (method || 'get').toLowerCase()
+  return m === 'get' || m === 'head' || m === 'options'
+}
+
+/**
+ * 判断是否为开发代理/瞬时连通性故障（空 body 500/502、ECONNRESET 等）。
+ * 业务层约定始终 HTTP 200 + code，因此这类非 JSON 5xx 不应当成“业务服务器错误”。
+ */
+const isTransientTransportError = (error: AxiosError): boolean => {
+  if (!error.response) {
+    // 无响应：断连、CORS 失败、浏览器取消以外的网络错误
+    return error.code !== 'ERR_CANCELED'
+  }
+
+  const status = error.response.status
+  if (status !== 500 && status !== 502 && status !== 503 && status !== 504) {
+    return false
+  }
+
+  // Vite proxy 自定义头，或空/非 JSON body
+  const headers = error.response.headers || {}
+  if (headers['x-vite-proxy-error'] === '1') {
+    return true
+  }
+
+  const data = error.response.data
+  if (data == null || data === '' || data === '1') {
+    return true
+  }
+
+  if (typeof data === 'string') {
+    const trimmed = data.trim()
+    if (!trimmed.startsWith('{') && !trimmed.startsWith('[')) {
+      return true
+    }
+    // 我们的代理错误 JSON
+    if (trimmed.includes('开发代理无法连接后端') || trimmed.includes('http proxy error')) {
+      return true
+    }
+  }
+
+  if (typeof data === 'object' && data !== null && 'msg' in data) {
+    const msg = normalizeApiMessage((data as { msg?: unknown }).msg)
+    if (msg.includes('开发代理无法连接后端') || msg.includes('http proxy error')) {
+      return true
+    }
+  }
+
+  return false
+}
+
+const getTransportErrorMessage = (error: AxiosError): string => {
+  if (error.code === 'ECONNABORTED') {
+    return '请求超时，请检查网络连接'
+  }
+
+  if (!error.response) {
+    return '网络错误，请检查连接或确认后端已启动'
+  }
+
+  const data = error.response.data
+  if (typeof data === 'object' && data !== null && 'msg' in data) {
+    const msg = normalizeApiMessage((data as { msg?: unknown }).msg)
+    if (msg) return msg
+  }
+
+  if (typeof data === 'string' && data.includes('开发代理')) {
+    return data
+  }
+
+  if (error.response.status === 502 || isTransientTransportError(error)) {
+    return '暂时无法连接后端，请确认后端已启动后重试'
+  }
+
+  return '服务器错误，请稍后重试'
+}
+
 // Refresh token function
 const refreshAccessToken = async (): Promise<string | null> => {
   const refreshToken = getRefreshToken()
@@ -90,7 +178,7 @@ const refreshAccessToken = async (): Promise<string | null> => {
 
   try {
     const response = await axios.post<ApiResponse<{ accessToken: string; refreshToken: string }>>(
-      '/v1/common/user/login/refresh',
+      `${API_BASE}/common/user/login/refresh`,
       { refreshToken },
       { timeout: 15000 }
     )
@@ -150,6 +238,11 @@ const fixLocalhostUrls = (obj: unknown): unknown => {
 // 统一按文档规则处理：code === 0 为成功，code === 1 为业务失败，错误文案在 msg。
 request.interceptors.response.use(
   async (response: AxiosResponse<ApiResponse>) => {
+    // 代理错误时可能返回非标准 body；有 code 字段才走业务分支
+    if (!response.data || typeof response.data !== 'object' || !('code' in response.data)) {
+      return response
+    }
+
     const { code, msg, data } = response.data
     const normalizedMsg = normalizeApiMessage(msg)
 
@@ -208,25 +301,44 @@ request.interceptors.response.use(
       }
     }
 
+    // 代理失败被改写成 502 + code:1 时，给用户可操作的提示
+    if (
+      code === 1 &&
+      (normalizedMsg.includes('开发代理无法连接后端') || normalizedMsg.includes('暂时无法连接后端'))
+    ) {
+      if (!response.config?.silent) {
+        toast.error(normalizedMsg)
+      }
+      return Promise.reject(new Error(normalizedMsg))
+    }
+
     // Business error - show toast unless caller opted into silent mode
     if (!response.config?.silent) {
       toast.error(normalizedMsg || '请求失败')
     }
     return Promise.reject(new Error(normalizedMsg || '请求失败'))
   },
-  (error) => {
-    // Skip toast for silent requests
-    if (error.config?.silent) {
+  async (error: AxiosError) => {
+    const config = error.config
+
+    // 幂等请求：瞬时代理/连通故障自动重试 1 次
+    if (
+      config &&
+      isIdempotentMethod(config.method) &&
+      isTransientTransportError(error) &&
+      (config._retryCount ?? 0) < MAX_TRANSIENT_RETRIES
+    ) {
+      config._retryCount = (config._retryCount ?? 0) + 1
+      await sleep(TRANSIENT_RETRY_DELAY_MS)
+      return request(config)
+    }
+
+    // Skip toast for silent requests / 用户取消
+    if (config?.silent || error.code === 'ERR_CANCELED') {
       return Promise.reject(error)
     }
-    // Network error
-    if (error.code === 'ECONNABORTED') {
-      toast.error('请求超时，请检查网络连接')
-    } else if (!error.response) {
-      toast.error('网络错误，请检查连接')
-    } else {
-      toast.error('服务器错误，请稍后重试')
-    }
+
+    toast.error(getTransportErrorMessage(error))
     return Promise.reject(error)
   }
 )

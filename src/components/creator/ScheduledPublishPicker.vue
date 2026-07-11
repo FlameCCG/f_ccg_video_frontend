@@ -357,8 +357,8 @@ const displayTimeStr = computed(() => {
 
 <template>
   <div class="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
-    <!-- Timezone Selector -->
-    <DropdownMenuRoot>
+    <!-- Timezone Selector：非 modal，避免打开时锁定 body 滚动条导致页面横向抖动 -->
+    <DropdownMenuRoot :modal="false">
       <DropdownMenuTrigger as-child>
         <button
           class="flex h-11 items-center justify-between gap-3 min-w-[200px] rounded-[14px] border border-border/70 bg-background/60 px-3.5 text-sm font-medium shadow-sm transition-colors hover:bg-accent/40 focus:outline-none focus:ring-2 focus:ring-ring focus:border-transparent data-[state=open]:border-primary/50 data-[state=open]:ring-2 data-[state=open]:ring-primary/20 disabled:cursor-not-allowed disabled:opacity-50"

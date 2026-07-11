@@ -23,7 +23,7 @@ dist-ssr
 # Live2D models (large binary assets)
 public/live2d-models/
 .playwright-mcp
-
+.grok
 # Test artifacts
 testAssets/
 test-*.png

@@ -258,6 +258,7 @@ export const aiGetVideoStatus = (requestId: string) => {
 const AI_PROXY_PATHS = new Set([
   '/v1/common/ai/assets',
   '/common/ai/assets',
+  // 历史路径兼容：旧版接口曾使用 /common/xai/assets
   '/v1/common/xai/assets',
   '/common/xai/assets',
 ])
@@ -269,11 +270,13 @@ const getUrlParseBase = () => {
   return 'http://localhost'
 }
 
+/** 将本站 AI 资源代理路径规范为带 /v1 前缀；兼容旧 xai 路径别名 */
 const normalizeLocalAIAssetPath = (url: string) => {
   if (url.startsWith('/v1/common/ai/assets')) {
     return url
   }
 
+  // 旧路径 → 现行 /common/ai/assets
   if (url.startsWith('/v1/common/xai/assets')) {
     return url.replace('/v1/common/xai/assets', '/v1/common/ai/assets')
   }

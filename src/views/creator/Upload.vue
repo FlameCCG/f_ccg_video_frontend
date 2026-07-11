@@ -56,6 +56,9 @@ const creatorBridgeStore = useCreatorBridgeStore()
 interface VideoPart {
   id: string
   file: File
+  /** 源文件名（含扩展名），与分P标题分离，发布时作为 fileName 提交 */
+  sourceFileName: string
+  /** 分P标题；仅多P时可编辑，单P时不展示/不提交 */
   title: string
   progress: number
   status:
@@ -74,6 +77,25 @@ interface VideoPart {
   errorMessage?: string
   abortController?: AbortController
 }
+
+/** 从源文件名推导默认分P标题（去扩展名），不修改源文件名本身 */
+const getDefaultPartTitle = (fileName: string) => fileName.replace(/\.[^/.]+$/, '')
+
+const createVideoPart = (
+  file: File,
+  overrides: Partial<Omit<VideoPart, 'file' | 'sourceFileName'>> = {}
+): VideoPart => ({
+  id: Math.random().toString(36).substring(2, 9),
+  file,
+  sourceFileName: file.name,
+  title: getDefaultPartTitle(file.name),
+  progress: 0,
+  status: 'pending',
+  hash: '',
+  filePath: '',
+  instant: false,
+  ...overrides,
+})
 
 interface VideoWorkForm {
   title: string
@@ -661,19 +683,12 @@ const importPendingAIVideoDraft = () => {
   if (!draft || importedAIDraftIds.has(draft.id)) return
 
   importedAIDraftIds.add(draft.id)
-  const title = draft.title.trim() || draft.file.name.replace(/\.[^/.]+$/, '')
-  const part: VideoPart = {
-    id: Math.random().toString(36).substring(2, 9),
-    file: draft.file,
-    title,
-    progress: 0,
-    status: 'pending',
-    hash: '',
-    filePath: '',
-    instant: false,
-  }
+  const workTitle = draft.title.trim() || getDefaultPartTitle(draft.file.name)
+  const part = createVideoPart(draft.file, {
+    title: workTitle,
+  })
   const work = createWork([part])
-  work.form.title = title
+  work.form.title = workTitle
   work.form.description = draft.prompt
   works.value.push(work)
   activeWorkIndex.value = works.value.length - 1
@@ -1033,26 +1048,18 @@ const handleFilesSelect = (files: FileList | File[]) => {
   if (validFiles.length === 0) return
   uploadFeedback.value = null
 
-  const newParts: VideoPart[] = validFiles.map((file) => ({
-    id: Math.random().toString(36).substring(2, 9),
-    file,
-    title: file.name.replace(/\.[^/.]+$/, ''),
-    progress: 0,
-    status: 'pending',
-    hash: '',
-    filePath: '',
-    instant: false,
-  }))
+  const newParts: VideoPart[] = validFiles.map((file) => createVideoPart(file))
 
   if (activeWork.value) {
+    // 作品标题默认取首个源文件名（去扩展名），与分P标题字段解耦
     if (!activeWork.value.form.title && newParts[0]) {
-      activeWork.value.form.title = newParts[0].title
+      activeWork.value.form.title = getDefaultPartTitle(newParts[0].sourceFileName)
     }
     activeWork.value.parts.push(...newParts)
   } else {
     newParts.forEach((part) => {
       const work = createWork([part])
-      work.form.title = part.title
+      work.form.title = getDefaultPartTitle(part.sourceFileName)
       works.value.push(work)
     })
     activeWorkIndex.value = 0
@@ -1152,7 +1159,7 @@ const uploadPart = async (part: VideoPart, isResume = false) => {
       const res = await withRetry(
         () =>
           completeUpload(
-            { fileHash: part.hash, fileName: part.file.name, totalChunks },
+            { fileHash: part.hash, fileName: part.sourceFileName, totalChunks },
             { signal, timeout: COMPLETE_UPLOAD_TIMEOUT, silent: true }
           ),
         2,
@@ -1251,18 +1258,9 @@ const onAddWorkFileChange = (e: Event) => {
   }
   uploadFeedback.value = null
   validFiles.forEach((file) => {
-    const part: VideoPart = {
-      id: Math.random().toString(36).substring(2, 9),
-      file,
-      title: file.name.replace(/\.[^/.]+$/, ''),
-      progress: 0,
-      status: 'pending',
-      hash: '',
-      filePath: '',
-      instant: false,
-    }
+    const part = createVideoPart(file)
     const work = createWork([part])
-    work.form.title = part.title
+    work.form.title = getDefaultPartTitle(part.sourceFileName)
     works.value.push(work)
   })
   activeWorkIndex.value = works.value.length - 1
@@ -1302,10 +1300,13 @@ const onReplaceFileChange = (e: Event) => {
     part.abortController.abort()
   }
 
-  const oldName = part.file.name.replace(/\.[^/.]+$/, '')
-  if (part.title === oldName || !part.title) {
-    part.title = file.name.replace(/\.[^/.]+$/, '')
+  const oldDefaultTitle = getDefaultPartTitle(part.sourceFileName)
+  const nextSourceName = file.name
+  // 仅当用户未自定义分P标题时，才跟随新源文件名刷新默认标题
+  if (!part.title || part.title === oldDefaultTitle) {
+    part.title = getDefaultPartTitle(nextSourceName)
   }
+  part.sourceFileName = nextSourceName
 
   if (replaceTargetPartIndex.value === 0) {
     clearAutoCover(activeWork.value)
@@ -1423,15 +1424,17 @@ const handlePublish = async () => {
         publishTime: publishTimeStr,
         ...(work.parts.length === 1
           ? {
+              // 单P：只提交源文件名，不提交分P标题
               filePath: work.parts[0]!.filePath,
-              fileName: work.parts[0]!.file.name,
+              fileName: work.parts[0]!.sourceFileName,
               fileHash: work.parts[0]!.hash,
             }
           : {
+              // 多P：fileName 为源文件名，title 为分P标题（二者分离）
               parts: work.parts.map((p) => ({
-                title: p.title,
+                title: p.title.trim() || getDefaultPartTitle(p.sourceFileName),
                 filePath: p.filePath,
-                fileName: p.file.name,
+                fileName: p.sourceFileName,
                 fileHash: p.hash,
               })),
             }),
@@ -1563,7 +1566,7 @@ const handlePublish = async () => {
           >
             <div class="w-full pr-4">
               <span class="truncate block text-[13px] font-medium w-full text-left">{{
-                work.form.title || work.parts[0]?.file.name || `作品${wIdx + 1}`
+                work.form.title || work.parts[0]?.sourceFileName || `作品${wIdx + 1}`
               }}</span>
             </div>
             <div
@@ -1654,13 +1657,35 @@ const handlePublish = async () => {
                 <Play class="h-4 w-4" />
               </div>
               <div class="flex-grow min-w-0">
-                <div class="flex items-center justify-between mb-1">
-                  <span class="text-sm font-medium truncate" :title="part.file.name">{{
-                    part.file.name
-                  }}</span>
+                <!--
+                  列表只展示「一个」名称字段：
+                  - 单P：只读展示（默认=源文件名去扩展名），不可改
+                  - 多P：可编辑分P标题（默认=源文件名去扩展名）
+                  源文件名 sourceFileName 始终内部保存，发布时作为 fileName 提交，UI 不单独展示
+                -->
+                <div
+                  class="flex items-center justify-between gap-3"
+                  :class="part.status !== 'success' ? 'mb-1' : ''"
+                >
+                  <template v-if="showPartLabels">
+                    <Label :for="`part-title-${part.id}`" class="sr-only">分P标题</Label>
+                    <input
+                      :id="`part-title-${part.id}`"
+                      :value="part.title"
+                      maxlength="200"
+                      class="flex h-8 min-w-0 flex-1 rounded-md border border-input bg-background px-3 py-1.5 text-xs ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                      placeholder="请输入分P标题"
+                      @input="part.title = ($event.target as HTMLInputElement).value"
+                    />
+                  </template>
+                  <span
+                    v-else
+                    class="min-w-0 flex-1 truncate text-sm font-medium"
+                    :title="part.title"
+                  >{{ part.title }}</span>
                   <div
                     v-if="part.status === 'success'"
-                    class="ml-3 flex shrink-0 items-center gap-1.5 text-[var(--status-success-ink)]"
+                    class="flex shrink-0 items-center gap-1.5 text-[var(--status-success-ink)]"
                   >
                     <CheckCircle2
                       class="h-[16px] w-[16px] fill-[var(--status-success)] text-[var(--signal-foreground)]"
@@ -1669,17 +1694,6 @@ const handlePublish = async () => {
                       part?.instant ? '秒传完成' : '上传完成'
                     }}</span>
                   </div>
-                </div>
-                <div class="mb-3">
-                  <Label :for="`part-title-${part.id}`" class="sr-only">分P标题</Label>
-                  <input
-                    :id="`part-title-${part.id}`"
-                    :value="part.title"
-                    maxlength="200"
-                    class="flex h-8 w-full rounded-md border border-input bg-background px-3 py-1.5 text-xs ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-                    placeholder="请输入分P标题"
-                    @input="part.title = ($event.target as HTMLInputElement).value"
-                  />
                 </div>
                 <div v-if="part.status !== 'success'" class="flex items-center gap-3">
                   <div class="flex-grow bg-muted rounded-full h-1.5 overflow-hidden">

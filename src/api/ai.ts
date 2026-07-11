@@ -1,5 +1,65 @@
 ﻿import request, { getAccessToken } from './request'
 
+/** 后端统一响应：HTTP 常为 200，业务成败看 code（0 成功 / 1 失败） */
+interface AiBusinessResponse {
+  code?: number
+  msg?: string
+  data?: unknown
+}
+
+const DEFAULT_AI_ERROR = 'AI 服务暂时不可用，请稍后重试'
+
+/** 将后端技术错误转成对用户更友好的提示 */
+export const formatAiErrorMessage = (msg: unknown, fallback = DEFAULT_AI_ERROR): string => {
+  const text = typeof msg === 'string' ? msg.trim() : ''
+  if (!text) return fallback
+
+  if (/api\s*key|未配置|未初始化/i.test(text)) {
+    return 'AI 服务暂未配置（缺少 API Key），请联系管理员完成配置后重试'
+  }
+
+  return text
+}
+
+const normalizeErrorMessage = (msg: unknown, fallback = DEFAULT_AI_ERROR): string => {
+  return formatAiErrorMessage(msg, fallback)
+}
+
+/** 从失败响应中尽量解析可读错误文案（JSON 业务错误 / 纯文本） */
+const readResponseErrorMessage = async (response: Response): Promise<string> => {
+  const fallback = `请求失败（HTTP ${response.status}）`
+  try {
+    const text = await response.text()
+    if (!text.trim()) return fallback
+
+    try {
+      const body = JSON.parse(text) as AiBusinessResponse
+      return normalizeErrorMessage(body.msg, fallback)
+    } catch {
+      // 非 JSON：截断过长文本，避免把整页 HTML 塞进 UI
+      return text.trim().slice(0, 200) || fallback
+    }
+  } catch {
+    return fallback
+  }
+}
+
+/**
+ * 判断响应是否为业务 JSON（而非 SSE 流）。
+ * 后端失败时走 res.FailWithMsg → application/json + code !== 0。
+ */
+const isJsonContentType = (contentType: string | null): boolean => {
+  if (!contentType) return false
+  return contentType.toLowerCase().includes('application/json')
+}
+
+const parseBusinessJsonError = (body: AiBusinessResponse): Error | null => {
+  if (body && typeof body === 'object' && typeof body.code === 'number' && body.code !== 0) {
+    return new Error(normalizeErrorMessage(body.msg))
+  }
+  return null
+}
+
 export const fetchAiChatStream = async (
   payload: Record<string, unknown>,
   onChunk: (text: string) => void,
@@ -7,6 +67,15 @@ export const fetchAiChatStream = async (
   onComplete: () => void,
   onError: (err: Error) => void
 ) => {
+  let completed = false
+  let receivedDelta = false
+
+  const safeComplete = () => {
+    if (completed) return
+    completed = true
+    onComplete()
+  }
+
   try {
     const token = getAccessToken()
     const response = await fetch('/v1/common/ai/responses', {
@@ -19,17 +88,79 @@ export const fetchAiChatStream = async (
       body: JSON.stringify(payload),
     })
 
+    // HTTP 层失败（非本项目常见路径，但需兜底）
     if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`)
+      throw new Error(await readResponseErrorMessage(response))
+    }
+
+    // 业务失败：HTTP 200 + application/json + code !== 0（如 API Key 未配置）
+    // 若不处理，流式读取会静默结束，前端 isLoading 一直为 true
+    if (isJsonContentType(response.headers.get('content-type'))) {
+      let body: AiBusinessResponse
+      try {
+        body = (await response.json()) as AiBusinessResponse
+      } catch {
+        throw new Error(DEFAULT_AI_ERROR)
+      }
+
+      const bizErr = parseBusinessJsonError(body)
+      if (bizErr) throw bizErr
+
+      // 意外的 JSON 成功体：不是 SSE，无法展示流式内容
+      throw new Error(normalizeErrorMessage(body.msg, 'AI 响应格式异常，请稍后重试'))
     }
 
     if (!response.body) {
-      throw new Error('No response body')
+      throw new Error('AI 响应为空，请稍后重试')
     }
 
     const reader = response.body.getReader()
     const decoder = new TextDecoder('utf-8')
     let buffer = ''
+
+    const handleDataPayload = (dataStr: string) => {
+      if (dataStr === '[DONE]') {
+        safeComplete()
+        return
+      }
+
+      let dataObj: Record<string, unknown> & AiBusinessResponse
+      try {
+        dataObj = JSON.parse(dataStr) as Record<string, unknown> & AiBusinessResponse
+      } catch {
+        // 半包 / 非 JSON：忽略，等后续完整行
+        return
+      }
+
+      // 部分上游会在 SSE data 里塞业务错误 JSON
+      const bizErr = parseBusinessJsonError(dataObj)
+      if (bizErr) throw bizErr
+
+      if (dataObj.type === 'response.output_text.delta' && dataObj.delta) {
+        receivedDelta = true
+        onChunk(String(dataObj.delta))
+        return
+      }
+
+      if (dataObj.type === 'response.reasoning_summary_text.delta' && dataObj.delta) {
+        receivedDelta = true
+        onReasoningChunk(String(dataObj.delta))
+        return
+      }
+
+      if (dataObj.type === 'response.completed' || dataObj.type === 'response.done') {
+        safeComplete()
+        return
+      }
+
+      if (dataObj.type === 'error' || dataObj.type === 'response.failed') {
+        const errMsg =
+          (typeof dataObj.message === 'string' && dataObj.message) ||
+          (typeof dataObj.msg === 'string' && dataObj.msg) ||
+          DEFAULT_AI_ERROR
+        throw new Error(errMsg)
+      }
+    }
 
     while (true) {
       const { value, done } = await reader.read()
@@ -42,41 +173,35 @@ export const fetchAiChatStream = async (
       for (const line of lines) {
         if (line.trim() === '') continue
         if (line.startsWith('data: ')) {
-          const dataStr = line.slice(6)
-          if (dataStr === '[DONE]') continue
-
-          try {
-            const dataObj = JSON.parse(dataStr)
-            if (dataObj.type === 'response.output_text.delta' && dataObj.delta) {
-              onChunk(dataObj.delta)
-            } else if (dataObj.type === 'response.reasoning_summary_text.delta' && dataObj.delta) {
-              onReasoningChunk(dataObj.delta)
-            } else if (dataObj.type === 'response.completed') {
-              onComplete()
-            }
-          } catch {
-            // ignore parse error on partial line
-          }
+          handleDataPayload(line.slice(6))
         }
       }
     }
 
     // final buffer check
-    if (buffer) {
-      if (buffer.startsWith('data: ')) {
-        const dataStr = buffer.slice(6)
+    if (buffer.trim()) {
+      const line = buffer.trim()
+      if (line.startsWith('data: ')) {
+        handleDataPayload(line.slice(6))
+      } else if (line.startsWith('{')) {
+        // 偶发：整段 JSON 错误体被当成 stream 读完（content-type 未标明 json）
         try {
-          const dataObj = JSON.parse(dataStr)
-          if (dataObj.type === 'response.output_text.delta' && dataObj.delta) {
-            onChunk(dataObj.delta)
-          } else if (dataObj.type === 'response.reasoning_summary_text.delta' && dataObj.delta) {
-            onReasoningChunk(dataObj.delta)
-          }
-        } catch {
-          // Ignore parse errors on final buffer check
+          const body = JSON.parse(line) as AiBusinessResponse
+          const bizErr = parseBusinessJsonError(body)
+          if (bizErr) throw bizErr
+        } catch (err) {
+          if (err instanceof Error && !(err instanceof SyntaxError)) throw err
         }
       }
     }
+
+    // 流正常结束但没有任何内容：按失败处理，避免前端一直转圈
+    if (!completed && !receivedDelta) {
+      throw new Error(DEFAULT_AI_ERROR)
+    }
+
+    // 有内容但未收到 completed 事件：仍收尾，避免 isLoading 卡住
+    safeComplete()
   } catch (err) {
     onError(err instanceof Error ? err : new Error(String(err)))
   }

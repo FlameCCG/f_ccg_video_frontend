@@ -4,6 +4,7 @@ import { useRouter } from 'vue-router'
 import { Send, X, Download, Loader2, Bot, Settings2, UploadCloud } from 'lucide-vue-next'
 import {
   fetchAiChatStream,
+  formatAiErrorMessage,
   resolveAiAssetUrl,
   aiGenerateImage,
   aiEditImage,
@@ -904,8 +905,11 @@ const sendRequest = async () => {
           }
         },
         (err) => {
+          // 必须收尾 loading，否则 API Key 未配置等业务错误会让界面一直转圈
           reactiveAsstMsg.isLoading = false
-          reactiveAsstMsg.error = err.message
+          const message = formatAiErrorMessage(err.message)
+          reactiveAsstMsg.error = message
+          toast.error(message)
         }
       )
     } else if (activeModel.value === 'image') {
@@ -976,7 +980,11 @@ const sendRequest = async () => {
           reactiveImgMsg.results!.splice(0, reactiveImgMsg.results!.length)
         }
       } catch (err: unknown) {
-        reactiveImgMsg.error = err instanceof Error ? err.message : String(err)
+        // axios 拦截器已 toast，此处只更新气泡内错误态，避免重复提示
+        reactiveImgMsg.error = formatAiErrorMessage(
+          err instanceof Error ? err.message : String(err),
+          '图像生成失败'
+        )
       } finally {
         reactiveImgMsg.isLoading = false
       }
@@ -1053,7 +1061,11 @@ const sendRequest = async () => {
           }
         }
       } catch (err: unknown) {
-        reactiveVidMsg.error = err instanceof Error ? err.message : String(err)
+        // axios 拦截器已 toast，此处只更新气泡内错误态，避免重复提示
+        reactiveVidMsg.error = formatAiErrorMessage(
+          err instanceof Error ? err.message : String(err),
+          '视频生成失败'
+        )
       } finally {
         reactiveVidMsg.isLoading = false
       }

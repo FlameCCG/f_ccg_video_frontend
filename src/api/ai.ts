@@ -1,4 +1,4 @@
-﻿import request, { getAccessToken } from './request'
+import request, { getAccessToken } from './request'
 
 /** 后端统一响应：HTTP 常为 200，业务成败看 code（0 成功 / 1 失败） */
 interface AiBusinessResponse {
@@ -57,6 +57,13 @@ const parseBusinessJsonError = (body: AiBusinessResponse): Error | null => {
   if (body && typeof body === 'object' && typeof body.code === 'number' && body.code !== 0) {
     return new Error(normalizeErrorMessage(body.msg))
   }
+  return null
+}
+
+/** SSE delta 字段可能是 string / number，拒绝 object 以免变成 [object Object] */
+const asDeltaText = (delta: unknown): string | null => {
+  if (typeof delta === 'string') return delta
+  if (typeof delta === 'number' || typeof delta === 'boolean') return String(delta)
   return null
 }
 
@@ -136,15 +143,21 @@ export const fetchAiChatStream = async (
       const bizErr = parseBusinessJsonError(dataObj)
       if (bizErr) throw bizErr
 
-      if (dataObj.type === 'response.output_text.delta' && dataObj.delta) {
-        receivedDelta = true
-        onChunk(String(dataObj.delta))
+      if (dataObj.type === 'response.output_text.delta') {
+        const text = asDeltaText(dataObj.delta)
+        if (text !== null) {
+          receivedDelta = true
+          onChunk(text)
+        }
         return
       }
 
-      if (dataObj.type === 'response.reasoning_summary_text.delta' && dataObj.delta) {
-        receivedDelta = true
-        onReasoningChunk(String(dataObj.delta))
+      if (dataObj.type === 'response.reasoning_summary_text.delta') {
+        const text = asDeltaText(dataObj.delta)
+        if (text !== null) {
+          receivedDelta = true
+          onReasoningChunk(text)
+        }
         return
       }
 

@@ -10,9 +10,11 @@ import {
   aiEditImage,
   aiGenerateVideo,
   aiGetVideoStatus,
+  getAiOptions,
   type AiImageGenParams,
   type AiImageEditParams,
   type AiVideoGenParams,
+  type AiModelOption,
 } from '@/api/ai'
 import { toast } from 'vue-sonner'
 import { marked } from 'marked'
@@ -107,25 +109,30 @@ const markdownSanitizeOptions = {
 // Pasted media
 const pastedImages = ref<{ url: string; file: File }[]>([])
 
+// Model options from backend GET /common/ai/options
+const chatModelOptions = ref<AiModelOption[]>([])
+const imageModelOptions = ref<AiModelOption[]>([])
+const videoModelOptions = ref<AiModelOption[]>([])
+const thinkingEffortOptions = ref<AiModelOption[]>([])
+const thinkingFeatureEnabled = ref(false)
+const optionsLoaded = ref(false)
+const optionsLoading = ref(false)
+
 // Advanced form state
-const imgModel = ref('doubao-seedream-5-0-lite-260128')
+const chatModel = ref('')
+const chatThinking = ref(true)
+const chatThinkingEffort = ref('high')
+
+const imgModel = ref('')
 const imgResolution = ref('2k')
 const imgRatio = ref('16:9')
 const imgCount = ref(1)
 
-const vidModel = ref('doubao-seedance-1-5-pro-251215')
+const vidModel = ref('')
 const vidResolution = ref('720p')
 const vidRatio = ref('16:9')
 const vidDuration = ref(8)
 
-const IMAGE_MODEL_OPTIONS = [
-  { label: 'Seedream 5.0 Lite', value: 'doubao-seedream-5-0-lite-260128' },
-  { label: 'Seedream 4.5', value: 'doubao-seedream-4-5-251128' },
-] as const
-const VIDEO_MODEL_OPTIONS = [
-  { label: 'Seedance 1.5 Pro', value: 'doubao-seedance-1-5-pro-251215' },
-  { label: 'Seedance 1.0 Fast', value: 'doubao-seedance-1-0-pro-fast-251015' },
-] as const
 const IMAGE_RATIO_OPTIONS = ['1:1', '3:4', '4:3', '9:16', '16:9'] as const
 const IMAGE_RESOLUTION_OPTIONS = ['1k', '2k', '3k', '4k'] as const
 const VIDEO_RATIO_OPTIONS = ['1:1', '16:9', '9:16', '4:3', '3:4'] as const
@@ -134,9 +141,85 @@ const VIDEO_RESOLUTION_OPTIONS = ['480p', '720p', '1080p'] as const
 const showSettings = ref(false)
 const isSingleImageEdit = () => activeModel.value === 'image' && pastedImages.value.length === 1
 const isReferenceVideoMode = () => activeModel.value === 'video' && pastedImages.value.length > 1
-const isFastVideoModel = () => vidModel.value === 'doubao-seedance-1-0-pro-fast-251015'
+/** Seedance 1.0 Pro Fast 模型 ID 后缀约定 */
+const isFastVideoModel = () =>
+  vidModel.value.includes('pro-fast') || vidModel.value.includes('1-0-pro-fast')
 const videoDurationMin = () => (isFastVideoModel() ? 2 : 4)
 const videoDurationMax = () => (isReferenceVideoMode() ? 10 : isFastVideoModel() ? 12 : 15)
+
+const ensureOptionValue = (current: string, options: AiModelOption[], fallback: string) => {
+  if (current && options.some((o) => o.value === current)) return current
+  if (fallback && options.some((o) => o.value === fallback)) return fallback
+  return options[0]?.value || fallback || current || ''
+}
+
+const withDefaultOption = (defaultValue: string, options: AiModelOption[]): AiModelOption[] => {
+  const list = options.filter((o) => o.value)
+  if (!defaultValue) return list
+  if (list.some((o) => o.value === defaultValue)) return list
+  return [{ label: defaultValue, value: defaultValue }, ...list]
+}
+
+const loadAiOptions = async () => {
+  if (optionsLoading.value) return
+  optionsLoading.value = true
+  try {
+    const opts = await getAiOptions()
+    chatModelOptions.value = withDefaultOption(opts.chatModel, opts.chatModels ?? [])
+    imageModelOptions.value = withDefaultOption(opts.imageModel, opts.imageModels ?? [])
+    videoModelOptions.value = withDefaultOption(opts.videoModel, opts.videoModels ?? [])
+    thinkingFeatureEnabled.value = !!opts.thinkingEnabled
+    thinkingEffortOptions.value = withDefaultOption(
+      opts.thinkingEffort || 'high',
+      opts.thinkingEfforts ?? []
+    )
+    if (!thinkingEffortOptions.value.length) {
+      thinkingEffortOptions.value = [
+        { label: 'High', value: 'high' },
+        { label: 'Max', value: 'max' },
+      ]
+    }
+
+    chatModel.value = ensureOptionValue(chatModel.value, chatModelOptions.value, opts.chatModel)
+    imgModel.value = ensureOptionValue(imgModel.value, imageModelOptions.value, opts.imageModel)
+    vidModel.value = ensureOptionValue(vidModel.value, videoModelOptions.value, opts.videoModel)
+    chatThinkingEffort.value = ensureOptionValue(
+      chatThinkingEffort.value,
+      thinkingEffortOptions.value,
+      opts.thinkingEffort || 'high'
+    )
+    // 后台关闭思考能力时，前台强制关闭
+    if (!thinkingFeatureEnabled.value) {
+      chatThinking.value = false
+    } else if (!optionsLoaded.value) {
+      // 首次加载：默认开启思考（与后台开关一致）
+      chatThinking.value = true
+    }
+    optionsLoaded.value = true
+  } catch (err) {
+    console.warn('load AI options failed', err)
+    // 兜底：至少保证有一个可选项，避免下拉为空
+    if (!chatModelOptions.value.length && chatModel.value) {
+      chatModelOptions.value = [{ label: chatModel.value, value: chatModel.value }]
+    }
+    if (!imageModelOptions.value.length && imgModel.value) {
+      imageModelOptions.value = [{ label: imgModel.value, value: imgModel.value }]
+    }
+    if (!videoModelOptions.value.length && vidModel.value) {
+      videoModelOptions.value = [{ label: vidModel.value, value: vidModel.value }]
+    }
+  } finally {
+    optionsLoading.value = false
+  }
+}
+
+watch(
+  () => props.open,
+  (open) => {
+    if (open) void loadAiOptions()
+  },
+  { immediate: true }
+)
 
 // Focus/Blur helpers
 const handleClose = () => {
@@ -875,8 +958,21 @@ const sendRequest = async () => {
       // simplify history just for this prompt to avoid large payloads while testing
       const finalInput = [{ role: 'user', content: latestInput }]
 
+      const streamPayload: Record<string, unknown> = {
+        model: chatModel.value || undefined,
+        input: finalInput,
+      }
+      if (thinkingFeatureEnabled.value) {
+        streamPayload.thinking = chatThinking.value
+        if (chatThinking.value) {
+          streamPayload.thinkingEffort = chatThinkingEffort.value || undefined
+        }
+      } else {
+        streamPayload.thinking = false
+      }
+
       await fetchAiChatStream(
-        { model: 'deepseek-v4-flash', input: finalInput },
+        streamPayload,
         (chunk) => {
           reactiveAsstMsg.isLoading = false
           reactiveAsstMsg.content += chunk
@@ -1552,7 +1648,6 @@ const handleSend = () => {
                     </button>
                   </div>
                   <button
-                    v-if="activeModel !== 'text'"
                     class="w-8 h-8 flex items-center justify-center rounded-xl transition-all duration-300"
                     :class="
                       showSettings
@@ -1567,10 +1662,58 @@ const handleSend = () => {
 
                 <!-- Expansive Inline Options -->
                 <transition name="expand">
-                  <div v-show="showSettings && activeModel !== 'text'" class="overflow-hidden">
+                  <div v-show="showSettings" class="overflow-hidden">
                     <div
                       class="px-4 py-3 mx-2 mb-2 bg-[var(--bg-surface-2)] rounded-[16px] border border-[var(--border-color)] flex gap-8 items-center text-xs font-mono uppercase tracking-widest text-[var(--text-2)] overflow-x-auto custom-scrollbar"
                     >
+                      <template v-if="activeModel === 'text'">
+                        <label class="flex items-center gap-3 shrink-0">
+                          <span class="font-bold">Model</span>
+                          <select
+                            v-model="chatModel"
+                            class="bg-transparent text-[var(--text-1)] border-b border-[var(--border-color)] focus:border-[var(--brand-blue)] outline-none"
+                          >
+                            <option
+                              v-for="model in chatModelOptions"
+                              :key="model.value"
+                              :value="model.value"
+                              class="bg-[var(--bg-surface-0)] text-[var(--text-1)]"
+                            >
+                              {{ model.label }}
+                            </option>
+                          </select>
+                        </label>
+                        <label
+                          v-if="thinkingFeatureEnabled"
+                          class="flex items-center gap-3 shrink-0"
+                        >
+                          <span class="font-bold">Think</span>
+                          <input
+                            v-model="chatThinking"
+                            type="checkbox"
+                            class="w-4 h-4 accent-[var(--brand-blue)] cursor-pointer"
+                          />
+                        </label>
+                        <label
+                          v-if="thinkingFeatureEnabled && chatThinking"
+                          class="flex items-center gap-3 shrink-0"
+                        >
+                          <span class="font-bold">Effort</span>
+                          <select
+                            v-model="chatThinkingEffort"
+                            class="bg-transparent text-[var(--text-1)] border-b border-[var(--border-color)] focus:border-[var(--brand-blue)] outline-none"
+                          >
+                            <option
+                              v-for="effort in thinkingEffortOptions"
+                              :key="effort.value"
+                              :value="effort.value"
+                              class="bg-[var(--bg-surface-0)] text-[var(--text-1)]"
+                            >
+                              {{ effort.label }}
+                            </option>
+                          </select>
+                        </label>
+                      </template>
                       <template v-if="activeModel === 'image'">
                         <label class="flex items-center gap-3 shrink-0">
                           <span class="font-bold">Model</span>
@@ -1579,7 +1722,7 @@ const handleSend = () => {
                             class="bg-transparent text-[var(--text-1)] border-b border-[var(--border-color)] focus:border-[var(--brand-blue)] outline-none"
                           >
                             <option
-                              v-for="model in IMAGE_MODEL_OPTIONS"
+                              v-for="model in imageModelOptions"
                               :key="model.value"
                               :value="model.value"
                               class="bg-[var(--bg-surface-0)] text-[var(--text-1)]"
@@ -1645,7 +1788,7 @@ const handleSend = () => {
                             class="bg-transparent text-[var(--text-1)] border-b border-[var(--border-color)] focus:border-[var(--brand-blue)] outline-none"
                           >
                             <option
-                              v-for="model in VIDEO_MODEL_OPTIONS"
+                              v-for="model in videoModelOptions"
                               :key="model.value"
                               :value="model.value"
                               class="bg-[var(--bg-surface-0)] text-[var(--text-1)]"

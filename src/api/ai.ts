@@ -220,6 +220,29 @@ export const fetchAiChatStream = async (
   }
 }
 
+/** 模型/选项 label-value */
+export interface AiModelOption {
+  label: string
+  value: string
+}
+
+/** GET /common/ai/options — 前台模型与思考配置（不含密钥） */
+export interface AiPublicOptions {
+  chatModel: string
+  chatModels: AiModelOption[]
+  thinkingEnabled: boolean
+  thinkingEffort: string
+  thinkingEfforts: AiModelOption[]
+  imageModel: string
+  imageModels: AiModelOption[]
+  videoModel: string
+  videoModels: AiModelOption[]
+}
+
+export const getAiOptions = (): Promise<AiPublicOptions> => {
+  return request.get('/common/ai/options', { silent: true })
+}
+
 export interface AiImageGenParams {
   prompt: string
   model?: string

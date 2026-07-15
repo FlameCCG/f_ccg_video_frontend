@@ -1,4 +1,4 @@
-# AI 管理
+﻿# AI 管理
 
 分类说明：AI 文本生成、图像理解、图片生成/编辑、视频生成与状态查询
 
@@ -198,7 +198,7 @@ data: {"type":"response.output_text.delta","delta":"\n[/video_results]"}
 
 ## [GET] 查询 xAI 视频任务状态
 
-- 接口路径: GET /common/ai/videos/{requestID}
+- 接口路径: GET /common/ai/videos/status
 - 认证: 需要登录（客户端全局自动携带 Token）
 - 依赖接口: 先调用视频生成接口拿到 `request_id`
 - 接口说明: 查询视频生成任务状态
@@ -228,3 +228,4 @@ data: {"type":"response.output_text.delta","delta":"\n[/video_results]"}
   "msg": "ok"
 }
 ```
+

@@ -265,7 +265,7 @@ export const aiGenerateVideo = (data: AiVideoGenParams) => {
 }
 
 export const aiGetVideoStatus = (requestId: string) => {
-  return request.get(`/common/ai/videos/${requestId}`)
+  return request.get('/common/ai/videos/status', { params: { requestID: requestId } })
 }
 
 const AI_PROXY_PATHS = new Set([

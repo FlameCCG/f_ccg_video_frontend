@@ -453,13 +453,13 @@ export const updateUserInfo = (params: UpdateUserInfoParams): Promise<void> => {
 
 /**
  * 获取用户详情
- * GET /common/user/{id}
+ * GET /common/user/detail?id=
  * 认证: 可选登录（客户端可携带 Token）
  * 依赖接口: 无
  * 接口说明: 根据用户 ID 获取用户公开信息
  */
 export const getUserDetail = (id: number): Promise<UserDetail> => {
-  return request.get(`/common/user/${id}`)
+  return request.get('/common/user/detail', { params: { id } })
 }
 
 /**

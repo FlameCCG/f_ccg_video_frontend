@@ -76,7 +76,7 @@ export const unfollowUser = (params: FocusParams): Promise<void> => {
 
 /**
  * 获取关注列表
- * GET /common/social/{id}/focus
+ * GET /common/social/focus?id=
  * 认证: 需要登录（客户端全局自动携带 Token）
  * 依赖接口: 无
  * 接口说明: 获取指定用户的关注列表（需登录）
@@ -85,12 +85,12 @@ export const getFollowingList = (
   id: number,
   params?: SocialPaginationParams
 ): Promise<SocialListResult> => {
-  return request.get(`/common/social/${id}/focus`, { params })
+  return request.get('/common/social/focus', { params: { id, ...params } })
 }
 
 /**
  * 获取粉丝列表
- * GET /common/social/{id}/fans
+ * GET /common/social/fans?id=
  * 认证: 需要登录（客户端全局自动携带 Token）
  * 依赖接口: 无
  * 接口说明: 获取指定用户的粉丝列表（需登录）
@@ -99,16 +99,16 @@ export const getFansList = (
   id: number,
   params?: SocialPaginationParams
 ): Promise<SocialListResult> => {
-  return request.get(`/common/social/${id}/fans`, { params })
+  return request.get('/common/social/fans', { params: { id, ...params } })
 }
 
 /**
  * 查询关注关系
- * GET /common/social/{id}/relation
+ * GET /common/social/relation?id=
  * 认证: 需要登录（客户端全局自动携带 Token）
  * 依赖接口: 无
  * 接口说明: 查询与指定用户的关注关系（需登录）
  */
 export const getRelation = (id: number): Promise<RelationInfo> => {
-  return request.get(`/common/social/${id}/relation`)
+  return request.get('/common/social/relation', { params: { id } })
 }

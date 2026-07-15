@@ -8,13 +8,13 @@ Base URL：/v1
 
 - 接口路径: POST /common/ai/responses
 - 认证: 需要登录（客户端全局自动携带 Token）
-- 依赖接口: 后台已配置 `ai` 的 `baseURL/apiKey/systemPrompt`
+- 依赖接口: 后台已配置 `ai` 的 `chatModelBaseURL/chatModelAPIKey/chatModel/systemPrompt`
 - 接口说明: 代理 xAI `/v1/responses`，用于文本对话与图像理解
 - 说明:
   - 当前对外仅保留 `model`、`input` 两个字段
   - 若后台配置了 `systemPrompt`，且本轮没有显式传 `system` 消息，后端会自动注入
   - 后端每轮都会根据用户最新文本尝试从站内已发布作品中召回候选数据，并连同 `systemPrompt` 一起发给模型
-  - 如果关键词没有命中任何已发布作品，后端会回退到按最新发布时间取前 `maxInputWorks` 个作品，交给模型自行判断是否值得推荐
+  - 如果关键词没有命中任何已发布作品，后端会回退到按最新发布时间取前 `vectorTopK` 个作品，交给模型自行判断是否值得推荐
   - 是否输出 `video_results` 结果块由模型结合当前对话自主判断；如果不是找视频意图，模型会忽略候选作品并继续正常聊天
   - 找视频时返回的标题会使用 Markdown 链接，路由格式为 `/video/:id/:p?`，便于前端直接渲染和跳转
   - 服务端固定 `store=false`，不会把对话保存到 xAI 服务器

@@ -421,8 +421,13 @@ export const resetPassword = (params: ResetPasswordParams): Promise<void> => {
  * 依赖接口: 无
  * 接口说明: 修改当前用户密码（需登录）
  */
-export const changePassword = (params: ChangePasswordParams): Promise<void> => {
-  return request.put('/common/user/password/change', params)
+export const changePassword = (
+  params: ChangePasswordParams,
+  options?: { silent?: boolean }
+): Promise<void> => {
+  return request.put('/common/user/password/change', params, {
+    silent: options?.silent,
+  })
 }
 
 // ============================================================================
@@ -530,8 +535,13 @@ export const getUserBannerDefaults = (): Promise<UserHomeBannerDefaultsResult> =
  * 接口说明: 绑定邮箱（需登录，邮箱验证码类型 3）
  * 重要说明: 当前实现始终校验邮箱验证码，不受 GET /common/site/config 返回的 data.site.register.emailCaptcha 影响
  */
-export const bindEmail = (params: BindEmailParams): Promise<void> => {
-  return request.post('/common/user/email/bind', params)
+export const bindEmail = (
+  params: BindEmailParams,
+  options?: { silent?: boolean }
+): Promise<void> => {
+  return request.post('/common/user/email/bind', params, {
+    silent: options?.silent,
+  })
 }
 
 /**

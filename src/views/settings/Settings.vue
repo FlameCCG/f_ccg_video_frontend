@@ -1,13 +1,15 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, watch } from 'vue'
+import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
+import { useSiteStore } from '@/stores/site'
 import {
   getCurrentUserInfo,
   updateUserInfo,
   getUserConfig,
   updateUserConfig,
   changePassword,
+  bindEmail,
   getLoginIpRecords,
   getExpRecords,
   getCoinRecords,
@@ -19,8 +21,11 @@ import {
   type UserExpRecordItem,
   type UserCoinRecordItem,
 } from '@/api/user'
+import { sendEmailCaptcha } from '@/api/captcha'
 import { uploadImage, type ImageUploadResult } from '@/api/upload'
 import AppAvatar from '@/components/common/AppAvatar.vue'
+import GraphicsCaptcha from '@/components/captcha/GraphicsCaptcha.vue'
+import SlideCaptchaDialog from '@/components/captcha/SlideCaptchaDialog.vue'
 import { toast } from 'vue-sonner'
 import {
   Home,
@@ -37,11 +42,38 @@ import {
   Coins,
   ChevronLeft,
   ChevronRight,
+  Mail,
+  Send,
+  Loader2,
 } from 'lucide-vue-next'
 import { levelColor } from '@/utils/format'
 
+interface SlideCaptchaExposed {
+  success: (result?: { token: string; x: number; y: number }) => void
+  fail: () => void
+  refresh: () => void
+  reset: () => void
+}
+
+/** 仅滑块/图形验证码校验失败（不含发送频率等业务错误） */
+const isCaptchaBusinessError = (message: string): boolean => {
+  const lower = message.toLowerCase()
+  return (
+    lower.includes('验证码错误') ||
+    lower.includes('验证码验证失败') ||
+    lower.includes('验证码已过期') ||
+    lower.includes('请填写图形验证码') ||
+    lower.includes('图形验证码') ||
+    lower.includes('captcha verification') ||
+    lower.includes('captcha expired') ||
+    lower.includes('slide captcha') ||
+    lower.includes('invalid slide captcha')
+  )
+}
+
 const router = useRouter()
 const authStore = useAuthStore()
+const siteStore = useSiteStore()
 
 type SideTab = 'profile' | 'privacy' | 'security' | 'records'
 type RecordTab = 'login' | 'exp' | 'coin'
@@ -65,8 +97,25 @@ const newPassword = ref('')
 const confirmPassword = ref('')
 const showOldPwd = ref(false)
 const showNewPwd = ref(false)
+const showConfirmPwd = ref(false)
 const changingPwd = ref(false)
 const thirdPartyRegisterSources = ['qq', 'google', 'github', 'x', 'linuxdo'] as const
+
+// 绑定 / 换绑邮箱
+const bindEmailAddress = ref('')
+const bindEmailCode = ref('')
+const bindEmailID = ref('')
+const bindingEmail = ref(false)
+const isSendingBindEmail = ref(false)
+const bindEmailCountdown = ref(0)
+let bindEmailCountdownTimer: ReturnType<typeof setInterval> | null = null
+const graphicsCaptchaRef = ref<InstanceType<typeof GraphicsCaptcha> | null>(null)
+const graphicsCaptchaValue = ref<{ captchaID: string; captchaCode: string }>({
+  captchaID: '',
+  captchaCode: '',
+})
+const slideCaptchaOpen = ref(false)
+const slideCaptchaDialogRef = ref<SlideCaptchaExposed | null>(null)
 
 const RECORD_PAGE_SIZE = 8
 
@@ -104,13 +153,67 @@ const expNext = computed(() => {
   return thresholds[lv + 1] ?? thresholds[6]!
 })
 
+/**
+ * 后端以 OpenID 是否为空决定是否校验旧密码。
+ * 前端无 openID 字段，按注册来源近似：第三方登录首次设密可不填旧密码。
+ * 已用邮箱/密码注册的用户始终要求旧密码。
+ */
 const requiresOldPassword = computed(() => {
-  const registerSource = userInfo.value?.registerSource
-  if (!registerSource) return true
+  const registerSource = (userInfo.value?.registerSource || '').toLowerCase()
+  if (!registerSource || registerSource === 'email' || registerSource === 'pwd') {
+    return true
+  }
   return !thirdPartyRegisterSources.includes(
     registerSource as (typeof thirdPartyRegisterSources)[number]
   )
 })
+
+const canSendBindEmail = computed(() => {
+  if (bindEmailCountdown.value > 0 || isSendingBindEmail.value) return false
+  const email = bindEmailAddress.value.trim()
+  if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return false
+  // 换绑时不允许与当前邮箱相同
+  if (userInfo.value?.email && email.toLowerCase() === userInfo.value.email.toLowerCase()) {
+    return false
+  }
+  if (
+    siteStore.isRegisterGraphicsCaptchaEnabled &&
+    !graphicsCaptchaValue.value.captchaCode.trim()
+  ) {
+    return false
+  }
+  return true
+})
+
+const refreshGraphicsCaptcha = () => {
+  if (siteStore.isRegisterGraphicsCaptchaEnabled && graphicsCaptchaRef.value) {
+    void graphicsCaptchaRef.value.loadCaptcha()
+  }
+}
+
+const buildBindEmailCaptchaPayload = () => {
+  const payload: {
+    type: 3
+    email: string
+    captchaID?: string
+    captchaCode?: string
+    slideCaptchaToken?: string
+    slideCaptchaX?: number
+    slideCaptchaY?: number
+  } = {
+    type: 3,
+    email: bindEmailAddress.value.trim(),
+  }
+
+  if (siteStore.isRegisterGraphicsCaptchaEnabled) {
+    payload.captchaID = graphicsCaptchaValue.value.captchaID
+    payload.captchaCode = graphicsCaptchaValue.value.captchaCode
+  }
+
+  return payload
+}
+
+const bindEmailActionLabel = computed(() => (userInfo.value?.email ? '换绑邮箱' : '绑定邮箱'))
 
 const genderOptions = [
   { value: 0, label: '保密' },
@@ -411,7 +514,7 @@ const handleChangePwd = async () => {
     toast.warning('请填写完整')
     return
   }
-  if (requiresOldPassword.value && !oldPassword.value) {
+  if (requiresOldPassword.value && !oldPassword.value.trim()) {
     toast.warning('请输入当前密码')
     return
   }
@@ -425,21 +528,179 @@ const handleChangePwd = async () => {
   }
   changingPwd.value = true
   try {
-    await changePassword({
-      oldPassword: requiresOldPassword.value ? oldPassword.value : '',
+    const params: { oldPassword?: string; newPassword: string } = {
       newPassword: newPassword.value,
-    })
+    }
+    if (requiresOldPassword.value) {
+      params.oldPassword = oldPassword.value
+    } else if (oldPassword.value.trim()) {
+      // 第三方用户若主动填写了旧密码，一并提交
+      params.oldPassword = oldPassword.value
+    }
+
+    await changePassword(
+      {
+        oldPassword: params.oldPassword ?? '',
+        newPassword: params.newPassword,
+      },
+      { silent: true }
+    )
     toast.success('密码修改成功，请重新登录')
-    authStore.logout()
+    oldPassword.value = ''
+    newPassword.value = ''
+    confirmPassword.value = ''
+    // 使用 clearAuth 避免 logout 再弹一次「已退出登录」
+    authStore.clearAuth()
     void router.push('/')
-  } catch {
-    toast.error('密码修改失败')
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : '密码修改失败'
+    toast.error(message || '密码修改失败')
   } finally {
     changingPwd.value = false
   }
 }
 
-onMounted(fetchData)
+const startBindEmailCountdown = () => {
+  bindEmailCountdown.value = 60
+  if (bindEmailCountdownTimer) clearInterval(bindEmailCountdownTimer)
+  bindEmailCountdownTimer = setInterval(() => {
+    bindEmailCountdown.value--
+    if (bindEmailCountdown.value <= 0) {
+      if (bindEmailCountdownTimer) clearInterval(bindEmailCountdownTimer)
+      bindEmailCountdownTimer = null
+    }
+  }, 1000)
+}
+
+const handleSendBindEmailCode = () => {
+  if (!canSendBindEmail.value) {
+    if (
+      userInfo.value?.email &&
+      bindEmailAddress.value.trim().toLowerCase() === userInfo.value.email.toLowerCase()
+    ) {
+      toast.warning('新邮箱不能与当前邮箱相同')
+    } else if (!bindEmailAddress.value.trim()) {
+      toast.warning('请输入邮箱')
+    } else if (
+      siteStore.isRegisterGraphicsCaptchaEnabled &&
+      !graphicsCaptchaValue.value.captchaCode.trim()
+    ) {
+      toast.warning('请填写图形验证码')
+    }
+    return
+  }
+
+  if (siteStore.isRegisterSlideCaptchaEnabled) {
+    slideCaptchaOpen.value = true
+    return
+  }
+
+  void sendBindEmailCodeWithoutSlide()
+}
+
+const sendBindEmailCodeWithoutSlide = async () => {
+  isSendingBindEmail.value = true
+  try {
+    const result = await sendEmailCaptcha(buildBindEmailCaptchaPayload())
+    bindEmailID.value = result.emailID
+    toast.success('验证码已发送到您的邮箱')
+    startBindEmailCountdown()
+    refreshGraphicsCaptcha()
+  } catch {
+    refreshGraphicsCaptcha()
+    // toast 由 request 拦截器处理
+  } finally {
+    isSendingBindEmail.value = false
+  }
+}
+
+const handleSlideCaptchaConfirm = async (value: { token: string; x: number; y: number }) => {
+  isSendingBindEmail.value = true
+  try {
+    const result = await sendEmailCaptcha(
+      {
+        ...buildBindEmailCaptchaPayload(),
+        slideCaptchaToken: value.token,
+        slideCaptchaX: value.x,
+        slideCaptchaY: value.y,
+      },
+      { silent: true }
+    )
+    bindEmailID.value = result.emailID
+    slideCaptchaDialogRef.value?.success(value)
+    toast.success('验证码已发送到您的邮箱')
+    startBindEmailCountdown()
+    refreshGraphicsCaptcha()
+  } catch (error: unknown) {
+    slideCaptchaDialogRef.value?.fail()
+    refreshGraphicsCaptcha()
+    const message = error instanceof Error ? error.message : ''
+    if (message && (message.includes('图形验证码') || !isCaptchaBusinessError(message))) {
+      toast.error(message)
+    }
+  } finally {
+    isSendingBindEmail.value = false
+  }
+}
+
+const handleBindEmail = async () => {
+  const email = bindEmailAddress.value.trim()
+  const code = bindEmailCode.value.trim()
+  if (!email) {
+    toast.warning('请输入邮箱')
+    return
+  }
+  if (!bindEmailID.value || !code) {
+    toast.warning('请先获取并填写邮箱验证码')
+    return
+  }
+  if (userInfo.value?.email && email.toLowerCase() === userInfo.value.email.toLowerCase()) {
+    toast.warning('新邮箱不能与当前邮箱相同')
+    return
+  }
+
+  bindingEmail.value = true
+  try {
+    await bindEmail(
+      {
+        email,
+        emailID: bindEmailID.value,
+        emailCode: code,
+      },
+      { silent: true }
+    )
+    toast.success(userInfo.value?.email ? '邮箱换绑成功' : '邮箱绑定成功')
+    if (userInfo.value) {
+      userInfo.value.email = email
+    }
+    authStore.updateUser({ email })
+    bindEmailAddress.value = ''
+    bindEmailCode.value = ''
+    bindEmailID.value = ''
+    bindEmailCountdown.value = 0
+    if (bindEmailCountdownTimer) {
+      clearInterval(bindEmailCountdownTimer)
+      bindEmailCountdownTimer = null
+    }
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : '绑定失败'
+    toast.error(message || '绑定失败')
+  } finally {
+    bindingEmail.value = false
+  }
+}
+
+onMounted(() => {
+  void siteStore.fetchConfig()
+  void fetchData()
+})
+
+onUnmounted(() => {
+  if (bindEmailCountdownTimer) {
+    clearInterval(bindEmailCountdownTimer)
+    bindEmailCountdownTimer = null
+  }
+})
 
 watch(activeTab, (tab) => {
   if (tab === 'records') {
@@ -839,12 +1100,72 @@ watch(activeRecordTab, (tab) => {
           <h3 class="form-title">账号安全</h3>
           <div class="sec-info">
             <div class="sec-row">
-              <span>邮箱</span><span>{{ userInfo?.email || '未绑定' }}</span>
+              <span>当前邮箱</span><span>{{ userInfo?.email || '未绑定' }}</span>
             </div>
             <div class="sec-row">
               <span>注册来源</span><span>{{ formatRegisterSource(userInfo?.registerSource) }}</span>
             </div>
           </div>
+
+          <h3 class="form-title" style="margin-top: 28px">{{ bindEmailActionLabel }}</h3>
+          <p class="form-sub">
+            {{
+              userInfo?.email
+                ? '换绑后将使用新邮箱接收验证码与通知，请确保邮箱可用。'
+                : '绑定邮箱后可用于找回密码与安全验证。'
+            }}
+          </p>
+          <div class="fg">
+            <label class="fl">{{ userInfo?.email ? '新邮箱' : '邮箱' }}</label>
+            <div class="fi-wrap">
+              <input
+                v-model="bindEmailAddress"
+                type="email"
+                class="fi"
+                placeholder="请输入要绑定的邮箱"
+                autocomplete="email"
+              />
+              <span class="fi-icon fi-icon-static"><Mail :size="15" /></span>
+            </div>
+          </div>
+          <div v-if="siteStore.isRegisterGraphicsCaptchaEnabled" class="fg">
+            <label class="fl">图形验证码</label>
+            <GraphicsCaptcha ref="graphicsCaptchaRef" v-model="graphicsCaptchaValue" />
+          </div>
+          <div class="fg">
+            <label class="fl">邮箱验证码</label>
+            <div class="bind-code-row">
+              <input
+                v-model="bindEmailCode"
+                type="text"
+                class="fi"
+                placeholder="请输入邮箱验证码"
+                autocomplete="one-time-code"
+              />
+              <button
+                type="button"
+                class="btn-send-code"
+                :disabled="!canSendBindEmail || bindEmailCountdown > 0"
+                @click="handleSendBindEmailCode"
+              >
+                <Loader2 v-if="isSendingBindEmail" :size="14" class="spin" />
+                <Send v-else-if="bindEmailCountdown <= 0" :size="14" />
+                <span>
+                  {{
+                    isSendingBindEmail
+                      ? '发送中'
+                      : bindEmailCountdown > 0
+                        ? `${bindEmailCountdown}s`
+                        : '发送验证码'
+                  }}
+                </span>
+              </button>
+            </div>
+          </div>
+          <button type="button" class="btn-pri" :disabled="bindingEmail" @click="handleBindEmail">
+            <Mail :size="14" />
+            {{ bindingEmail ? '提交中...' : bindEmailActionLabel }}
+          </button>
 
           <h3 class="form-title" style="margin-top: 28px">修改密码</h3>
           <p v-if="!requiresOldPassword" class="form-sub">
@@ -858,8 +1179,9 @@ watch(activeRecordTab, (tab) => {
                 :type="showOldPwd ? 'text' : 'password'"
                 class="fi"
                 placeholder="请输入当前密码"
+                autocomplete="current-password"
               />
-              <button class="fi-icon" @click="showOldPwd = !showOldPwd">
+              <button type="button" class="fi-icon" @click="showOldPwd = !showOldPwd">
                 <component :is="showOldPwd ? EyeOff : Eye" :size="15" />
               </button>
             </div>
@@ -872,27 +1194,45 @@ watch(activeRecordTab, (tab) => {
                 :type="showNewPwd ? 'text' : 'password'"
                 class="fi"
                 placeholder="请输入新密码（至少6位）"
+                autocomplete="new-password"
               />
-              <button class="fi-icon" @click="showNewPwd = !showNewPwd">
+              <button type="button" class="fi-icon" @click="showNewPwd = !showNewPwd">
                 <component :is="showNewPwd ? EyeOff : Eye" :size="15" />
               </button>
             </div>
           </div>
           <div class="fg">
             <label class="fl">确认新密码</label>
-            <input
-              v-model="confirmPassword"
-              type="password"
-              class="fi"
-              placeholder="请再次输入新密码"
-            />
+            <div class="fi-wrap">
+              <input
+                v-model="confirmPassword"
+                :type="showConfirmPwd ? 'text' : 'password'"
+                class="fi"
+                placeholder="请再次输入新密码"
+                autocomplete="new-password"
+              />
+              <button type="button" class="fi-icon" @click="showConfirmPwd = !showConfirmPwd">
+                <component :is="showConfirmPwd ? EyeOff : Eye" :size="15" />
+              </button>
+            </div>
           </div>
-          <button class="btn-pri btn-danger" :disabled="changingPwd" @click="handleChangePwd">
+          <button
+            type="button"
+            class="btn-pri btn-danger"
+            :disabled="changingPwd"
+            @click="handleChangePwd"
+          >
             <Lock :size="14" /> {{ changingPwd ? '修改中...' : '修改密码' }}
           </button>
         </section>
       </main>
     </div>
+
+    <SlideCaptchaDialog
+      ref="slideCaptchaDialogRef"
+      v-model:open="slideCaptchaOpen"
+      @confirm="handleSlideCaptchaConfirm"
+    />
   </div>
 </template>
 
@@ -1347,9 +1687,10 @@ watch(activeRecordTab, (tab) => {
 }
 
 .form-sub {
-  font-size: 12px;
-  color: var(--color-muted-foreground);
   margin: -8px 0 16px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--color-muted-foreground);
 }
 
 .fg {
@@ -1502,11 +1843,68 @@ watch(activeRecordTab, (tab) => {
 }
 
 .btn-danger {
-  background: var(--color-accent);
+  background: var(--status-danger, var(--color-destructive));
+  color: var(--color-primary-foreground, #fff);
 }
 
 .btn-danger:hover:not(:disabled) {
-  background: oklch(from var(--color-accent) calc(l - 0.08) c h);
+  filter: brightness(0.95);
+}
+
+.bind-code-row {
+  display: flex;
+  gap: 10px;
+  align-items: stretch;
+}
+
+.bind-code-row .fi {
+  flex: 1;
+  min-width: 0;
+}
+
+.btn-send-code {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  flex-shrink: 0;
+  min-width: 110px;
+  padding: 0 12px;
+  border-radius: 6px;
+  border: 1px solid var(--color-border);
+  background: var(--color-card);
+  color: var(--color-foreground);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition:
+    border-color 0.15s,
+    background-color 0.15s,
+    opacity 0.15s;
+}
+
+.btn-send-code:hover:not(:disabled) {
+  border-color: var(--color-primary);
+  background: var(--color-secondary);
+}
+
+.btn-send-code:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.fi-icon-static {
+  pointer-events: none;
+}
+
+.spin {
+  animation: settings-spin 0.8s linear infinite;
+}
+
+@keyframes settings-spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .tag-board {

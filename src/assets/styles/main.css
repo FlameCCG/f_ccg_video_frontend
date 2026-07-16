@@ -255,7 +255,9 @@
   }
 
   html {
+    /* 始终预留滚动条槽位，避免 Dialog 开关时 body 滚动锁导致整页左右跳动 */
     scrollbar-gutter: stable;
+    overflow-y: scroll;
   }
 
   body {
@@ -279,6 +281,16 @@
     transition:
       background-color var(--duration-slow) var(--ease-out-quart),
       color var(--duration-slow) var(--ease-out-quart);
+  }
+
+  /*
+   * reka-ui useBodyScrollLock 会在锁定时给 body 加 padding-right = 滚动条宽度。
+   * 与 html 的 scrollbar-gutter: stable / overflow-y: scroll 叠加时会造成开合瞬间位移。
+   * 关闭该补偿，仅保留 overflow:hidden 的滚动锁定。
+   */
+  body {
+    padding-right: 0 !important;
+    margin-right: 0 !important;
   }
 }
 

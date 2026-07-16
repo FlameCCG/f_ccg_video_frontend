@@ -1682,7 +1682,8 @@ const handlePublish = async () => {
                     v-else
                     class="min-w-0 flex-1 truncate text-sm font-medium"
                     :title="part.title"
-                  >{{ part.title }}</span>
+                    >{{ part.title }}</span
+                  >
                   <div
                     v-if="part.status === 'success'"
                     class="flex shrink-0 items-center gap-1.5 text-[var(--status-success-ink)]"

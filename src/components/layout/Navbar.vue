@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, computed, onBeforeUnmount } from 'vue'
+import { ref, onMounted, computed, onBeforeUnmount, defineAsyncComponent } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useRouter, useRoute } from 'vue-router'
 import {
@@ -26,10 +26,12 @@ import { useAuthStore } from '@/stores/auth'
 import { useNotificationStore } from '@/stores/notification'
 import { useSearchHistory } from '@/composables/useSearchHistory'
 import { useDebounceFn } from '@vueuse/core'
-import AuthDialog from '@/components/auth/AuthDialog.vue'
 import UserHoverPanel from '@/components/layout/UserHoverPanel.vue'
 import AppAvatar from '@/components/common/AppAvatar.vue'
 import DOMPurify from 'dompurify'
+
+/** 登录 Dialog 按需加载，避免首屏同步打包 Lain/验证码等重依赖 */
+const AuthDialog = defineAsyncComponent(() => import('@/components/auth/AuthDialog.vue'))
 
 const props = withDefaults(defineProps<{ light?: boolean }>(), { light: false })
 
@@ -55,12 +57,14 @@ const notificationStore = useNotificationStore()
 const { counts } = storeToRefs(notificationStore)
 const { history, addHistory, removeHistoryItem, clearHistory } = useSearchHistory()
 
-// Auth dialog state
+// Auth dialog state — 首次打开后再挂载，关闭保留实例以便二次打开即时
 const authDialogOpen = ref(false)
 const authDialogMode = ref<'login' | 'register'>('login')
+const authDialogMounted = ref(false)
 
 const openAuthDialog = (mode: 'login' | 'register' = 'login') => {
   authDialogMode.value = mode
+  authDialogMounted.value = true
   authDialogOpen.value = true
 }
 
@@ -516,8 +520,12 @@ const navActions = [
     </div>
   </nav>
 
-  <!-- Auth Dialog -->
-  <AuthDialog v-model:open="authDialogOpen" :initial-mode="authDialogMode" />
+  <!-- Auth Dialog：仅用户触发登录后挂载 -->
+  <AuthDialog
+    v-if="authDialogMounted"
+    v-model:open="authDialogOpen"
+    :initial-mode="authDialogMode"
+  />
 </template>
 
 <style scoped>

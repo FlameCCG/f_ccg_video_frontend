@@ -9,8 +9,9 @@ export const useSiteStore = defineStore('site', () => {
   const isLoaded = ref(false)
 
   // Getters - Login
+  // 配置未加载时一律 false，避免未拉到站点配置前误显 Google 等默认项
   const isQQLoginEnabled = computed(() => config.value?.login.qqLogin ?? false)
-  const isGoogleLoginEnabled = computed(() => config.value?.login.googleLogin ?? true)
+  const isGoogleLoginEnabled = computed(() => config.value?.login.googleLogin ?? false)
   const isGithubLoginEnabled = computed(
     () => config.value?.login.githubLogin ?? config.value?.login.gitHubLogin ?? false
   )
@@ -56,9 +57,23 @@ export const useSiteStore = defineStore('site', () => {
     }
   }
 
+  /**
+   * 强制重新拉取站点配置。
+   * 保留旧 config / isLoaded，避免 UI（如 OAuth 按钮区）在刷新瞬间被拆掉导致闪烁。
+   */
   const refreshConfig = async (): Promise<boolean> => {
-    isLoaded.value = false
-    return fetchConfig()
+    isLoading.value = true
+    try {
+      const result = await getSiteConfig()
+      config.value = result.site
+      isLoaded.value = true
+      return true
+    } catch {
+      // 失败时保留旧配置，不把 isLoaded 打回 false
+      return isLoaded.value
+    } finally {
+      isLoading.value = false
+    }
   }
 
   return {

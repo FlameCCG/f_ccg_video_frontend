@@ -1,4 +1,4 @@
-﻿# AI 管理
+# AI 管理
 
 分类说明：AI 文本生成、图像理解、图片生成/编辑、视频生成与状态查询
 
@@ -9,7 +9,7 @@ Base URL：/v1
 - 接口路径: POST /common/ai/responses
 - 认证: 需要登录（客户端全局自动携带 Token）
 - 依赖接口: 后台已配置 `ai` 的 `chatModelBaseURL/chatModelAPIKey/chatModel/systemPrompt`
-- 接口说明: 代理 xAI `/v1/responses`，用于文本对话与图像理解
+- 接口说明: 代理 AI `/v1/responses`，用于文本对话与图像理解
 - 说明:
   - 当前对外仅保留 `model`、`input` 两个字段
   - 若后台配置了 `systemPrompt`，且本轮没有显式传 `system` 消息，后端会自动注入
@@ -17,7 +17,7 @@ Base URL：/v1
   - 如果关键词没有命中任何已发布作品，后端会回退到按最新发布时间取前 `vectorTopK` 个作品，交给模型自行判断是否值得推荐
   - 是否输出 `video_results` 结果块由模型结合当前对话自主判断；如果不是找视频意图，模型会忽略候选作品并继续正常聊天
   - 找视频时返回的标题会使用 Markdown 链接，路由格式为 `/video/:id/:p?`，便于前端直接渲染和跳转
-  - 服务端固定 `store=false`，不会把对话保存到 xAI 服务器
+  - 服务端固定 `store=false`，不会把对话保存到 AI 服务器
   - 服务端固定走 SSE，不需要前端传 `stream`
 - HTTP 状态码: 200（始终返回 `text/event-stream`，不再包 `code/data/msg`）
 
@@ -95,7 +95,7 @@ data: {"type":"response.output_text.delta","delta":"\n[/video_results]"}
 - 接口路径: POST /common/ai/images/generations
 - 认证: 需要登录（客户端全局自动携带 Token）
 - 依赖接口: 后台已配置 `ai`
-- 接口说明: 代理 xAI `/v1/images/generations`
+- 接口说明: 代理 AI `/v1/images/generations`
 - 说明: 支持文生图、批量生成、纵横比与分辨率控制
 - HTTP 状态码: 200（业务码 code 判断成功/失败）
 
@@ -139,7 +139,7 @@ data: {"type":"response.output_text.delta","delta":"\n[/video_results]"}
 - 接口路径: POST /common/ai/images/edits
 - 认证: 需要登录（客户端全局自动携带 Token）
 - 依赖接口: 后台已配置 `ai`
-- 接口说明: 代理 xAI `/v1/images/edits`
+- 接口说明: 代理 AI `/v1/images/edits`
 - 说明:
   - `image` 与 `images` 必须二选一
   - 单图编辑不支持自定义 `aspect_ratio`
@@ -165,7 +165,7 @@ data: {"type":"response.output_text.delta","delta":"\n[/video_results]"}
 - 接口路径: POST /common/ai/videos/generations
 - 认证: 需要登录（客户端全局自动携带 Token）
 - 依赖接口: 后台已配置 `ai`
-- 接口说明: 代理 xAI `/v1/videos/generations`
+- 接口说明: 代理 AI `/v1/videos/generations`
 - 说明:
   - 支持文生视频、图生视频、参考图视频
   - 不包含 `edit-video` 与 `extend-video`
@@ -196,7 +196,7 @@ data: {"type":"response.output_text.delta","delta":"\n[/video_results]"}
 }
 ```
 
-## [GET] 查询 xAI 视频任务状态
+## [GET] 查询 AI 视频任务状态
 
 - 接口路径: GET /common/ai/videos/status
 - 认证: 需要登录（客户端全局自动携带 Token）

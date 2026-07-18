@@ -15,6 +15,21 @@ const backendAgent = new http.Agent({
 
 const backendTarget = process.env.VITE_DEV_PROXY_TARGET || 'http://127.0.0.1:8080'
 
+/** 规范化 Node remoteAddress（可能是 :ffff:x.x.x.x 或带 zone 的 IPv6） */
+function normalizeProxyClientIP(raw: string | undefined): string {
+  if (!raw) return ''
+  let ip = raw.trim()
+  if (ip.startsWith('::ffff:')) {
+    ip = ip.slice(7)
+  }
+  // 去掉 IPv6 zone id（如 fe80::1%eth0）
+  const zoneIdx = ip.indexOf('%')
+  if (zoneIdx >= 0) {
+    ip = ip.slice(0, zoneIdx)
+  }
+  return ip
+}
+
 // https://vite.dev/config/
 export default defineConfig({
   plugins: [vue(), tailwindcss()],
@@ -31,6 +46,8 @@ export default defineConfig({
         target: backendTarget,
         changeOrigin: true,
         secure: false,
+        // 向后端透传 X-Forwarded-*，便于记录真实客户端 IP（而非 Vite 的 127.0.0.1）
+        xfwd: true,
         // 后端慢查询（如审核稿详情）时避免代理过早断开
         timeout: 60_000,
         proxyTimeout: 60_000,
@@ -60,9 +77,28 @@ export default defineConfig({
             }
           })
 
-          proxy.on('proxyReq', (proxyReq) => {
+          proxy.on('proxyReq', (proxyReq, req) => {
             // 避免上游 keep-alive 半开连接导致偶发失败
             proxyReq.setHeader('Connection', 'keep-alive')
+
+            // 显式写入真实客户端 IP，避免登录记录全部落成 127.0.0.1/内网
+            const remote =
+              req.socket?.remoteAddress ||
+              // Node 旧字段兼容
+              (req as { connection?: { remoteAddress?: string } }).connection?.remoteAddress ||
+              ''
+            const clientIP = normalizeProxyClientIP(remote)
+            if (clientIP) {
+              proxyReq.setHeader('X-Real-IP', clientIP)
+              const existingForwarded = req.headers['x-forwarded-for']
+              if (!existingForwarded) {
+                proxyReq.setHeader('X-Forwarded-For', clientIP)
+              } else if (Array.isArray(existingForwarded)) {
+                proxyReq.setHeader('X-Forwarded-For', existingForwarded.join(', '))
+              } else {
+                proxyReq.setHeader('X-Forwarded-For', existingForwarded)
+              }
+            }
           })
         },
       },

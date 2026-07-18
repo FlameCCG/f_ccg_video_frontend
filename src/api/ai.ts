@@ -291,13 +291,7 @@ export const aiGetVideoStatus = (requestId: string) => {
   return request.get('/common/ai/videos/status', { params: { requestID: requestId } })
 }
 
-const AI_PROXY_PATHS = new Set([
-  '/v1/common/ai/assets',
-  '/common/ai/assets',
-  // 历史路径兼容：旧版接口曾使用 /common/xai/assets
-  '/v1/common/xai/assets',
-  '/common/xai/assets',
-])
+const AI_PROXY_PATHS = new Set(['/v1/common/ai/assets', '/common/ai/assets'])
 
 const getUrlParseBase = () => {
   if (typeof window !== 'undefined' && window.location.origin) {
@@ -306,23 +300,14 @@ const getUrlParseBase = () => {
   return 'http://localhost'
 }
 
-/** 将本站 AI 资源代理路径规范为带 /v1 前缀；兼容旧 xai 路径别名 */
+/** 将本站 AI 资源代理路径规范为带 /v1 前缀 */
 const normalizeLocalAIAssetPath = (url: string) => {
   if (url.startsWith('/v1/common/ai/assets')) {
     return url
   }
 
-  // 旧路径 → 现行 /common/ai/assets
-  if (url.startsWith('/v1/common/xai/assets')) {
-    return url.replace('/v1/common/xai/assets', '/v1/common/ai/assets')
-  }
-
   if (url.startsWith('/common/ai/assets')) {
     return `/v1${url}`
-  }
-
-  if (url.startsWith('/common/xai/assets')) {
-    return `/v1${url.replace('/common/xai/assets', '/common/ai/assets')}`
   }
 
   const withoutDotPrefix = url.replace(/^(?:\.\/)+/, '')
@@ -330,16 +315,8 @@ const normalizeLocalAIAssetPath = (url: string) => {
     return `/${withoutDotPrefix}`
   }
 
-  if (withoutDotPrefix.startsWith('v1/common/xai/assets')) {
-    return `/${withoutDotPrefix.replace('v1/common/xai/assets', 'v1/common/ai/assets')}`
-  }
-
   if (withoutDotPrefix.startsWith('common/ai/assets')) {
     return `/v1/${withoutDotPrefix}`
-  }
-
-  if (withoutDotPrefix.startsWith('common/xai/assets')) {
-    return `/v1/${withoutDotPrefix.replace('common/xai/assets', 'common/ai/assets')}`
   }
 
   return ''
@@ -347,9 +324,6 @@ const normalizeLocalAIAssetPath = (url: string) => {
 
 const isRemoteAiAssetHost = (host: string) => {
   const normalized = host.toLowerCase()
-  if (normalized === 'imgen.x.ai' || normalized === 'vidgen.x.ai') {
-    return true
-  }
   return ['.volces.com', '.volcengine.com', '.byteimg.com', '.bytedance.com'].some(
     (suffix) => normalized.endsWith(suffix) || normalized === suffix.slice(1)
   )

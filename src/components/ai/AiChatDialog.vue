@@ -657,7 +657,6 @@ const looksLikeVideoUrl = (url: string, key = '') => {
   return (
     lowerKey.includes('video') ||
     /\.(mp4|webm|mov|m4v|m3u8)(\?|$)/i.test(lowerUrl) ||
-    lowerUrl.includes('vidgen.x.ai') ||
     (isVolcAssetUrl(lowerUrl) && !lowerKey.includes('image'))
   )
 }
@@ -669,7 +668,6 @@ const looksLikeImageUrl = (url: string, key = '') => {
     lowerKey.includes('image') ||
     /^data:image\//i.test(lowerUrl) ||
     /\.(png|jpe?g|webp|gif|bmp|svg|avif)(\?|$)/i.test(lowerUrl) ||
-    lowerUrl.includes('imgen.x.ai') ||
     (isVolcAssetUrl(lowerUrl) && !lowerKey.includes('video'))
   )
 }

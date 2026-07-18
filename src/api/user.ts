@@ -98,6 +98,10 @@ export interface UserInfo {
   dynamicCount: number
   registerSource: string
   likeTags: string[]
+  /** 是否已设置登录密码；第三方首次登录可能为 false，用于是否要求旧密码 */
+  hasPassword?: boolean
+  /** 是否绑定第三方登录（OpenID 非空） */
+  isThirdParty?: boolean
 }
 
 export interface UserDetail {

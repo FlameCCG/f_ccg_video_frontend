@@ -424,6 +424,8 @@ Base URL：/v1
 | data.fansCount | integer(int64) | 粉丝数 |
 | data.dynamicCount | integer(int64) | 动态数量 |
 | data.registerSource | string | 注册来源 |
+| data.hasPassword | boolean | 是否已设置登录密码（第三方首次登录可能为 false） |
+| data.isThirdParty | boolean | 是否绑定第三方登录（OpenID 非空） |
 
 响应示例:
 
@@ -445,7 +447,9 @@ Base URL：/v1
     "followCount": 1,
     "fansCount": 1,
     "dynamicCount": 1,
-    "registerSource": "email"
+    "registerSource": "email",
+    "hasPassword": true,
+    "isThirdParty": false
   },
   "msg": "获取成功"
 }

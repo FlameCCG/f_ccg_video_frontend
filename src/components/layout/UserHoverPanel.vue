@@ -121,7 +121,7 @@ const toggleTheme = () => {
   </div>
 </template>
 
-<style scoped>
+<style scoped lang="scss">
 .user-hover-panel {
   width: 300px;
   position: relative;
@@ -133,18 +133,6 @@ const toggleTheme = () => {
   animation: panel-enter 0.25s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
-@keyframes panel-enter {
-  0% {
-    opacity: 0;
-    transform: translateY(-8px);
-  }
-
-  100% {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
 .panel-avatar-wrap {
   position: absolute;
   top: -40px;
@@ -153,16 +141,6 @@ const toggleTheme = () => {
   z-index: 20;
   cursor: pointer;
   animation: avatar-enter 0.4s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
-}
-
-@keyframes avatar-enter {
-  0% {
-    transform: translate(0, -24px) scale(0.4);
-  }
-
-  100% {
-    transform: translate(0, 0) scale(1);
-  }
 }
 
 :deep(.panel-avatar) {
@@ -180,7 +158,6 @@ const toggleTheme = () => {
   transform: scale(1.05);
 }
 
-/* User Info Section */
 .user-info {
   display: flex;
   flex-direction: column;
@@ -189,22 +166,22 @@ const toggleTheme = () => {
   padding-bottom: 12px;
 }
 
-.username-row {
-  display: flex;
-  justify-content: center;
-  align-items: center;
-}
-
 .username {
   font-size: 18px;
   font-weight: 700;
   cursor: pointer;
   color: var(--color-foreground);
   transition: color 0.15s;
-}
 
-.username:hover {
-  color: var(--color-primary);
+  &-row {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+  }
+
+  &:hover {
+    color: var(--color-primary);
+  }
 }
 
 .level-row {
@@ -232,7 +209,6 @@ const toggleTheme = () => {
   color: var(--color-muted-foreground);
 }
 
-/* Stats Section */
 .panel-stats {
   display: flex;
   padding: 0 20px 16px;
@@ -247,10 +223,10 @@ const toggleTheme = () => {
   padding: 6px 0;
   border-radius: 6px;
   transition: background 0.15s;
-}
 
-.stat-item:hover {
-  background-color: var(--color-muted);
+  &:hover {
+    background-color: var(--color-muted);
+  }
 }
 
 .stat-value {
@@ -265,7 +241,6 @@ const toggleTheme = () => {
   margin-top: 2px;
 }
 
-/* VIP Banner Section */
 .vip-banner {
   display: flex;
   align-items: center;
@@ -298,13 +273,12 @@ const toggleTheme = () => {
   font-weight: 500;
   cursor: pointer;
   transition: opacity 0.2s;
+
+  &:hover {
+    opacity: 0.9;
+  }
 }
 
-.vip-btn:hover {
-  opacity: 0.9;
-}
-
-/* Menu Section */
 .panel-menu {
   padding: 6px 12px;
   border-top: 1px solid var(--color-border);
@@ -322,13 +296,43 @@ const toggleTheme = () => {
     background 0.15s,
     color 0.15s;
   color: var(--color-foreground);
-}
 
-.menu-item:hover {
-  background-color: var(--color-muted);
+  &:hover {
+    background-color: var(--color-muted);
+  }
 }
 
 .logout-item:hover {
   background-color: var(--color-muted);
 }
+
+@keyframes panel-enter {
+  0% {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes avatar-enter {
+  0% {
+    transform: translate(0, -24px) scale(0.4);
+  }
+
+  100% {
+    transform: translate(0, 0) scale(1);
+  }
+}
+
+/* User Info Section */
+
+/* Stats Section */
+
+/* VIP Banner Section */
+
+/* Menu Section */
 </style>

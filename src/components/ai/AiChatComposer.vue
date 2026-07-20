@@ -282,7 +282,7 @@ const handleSend = () => {
             class="w-8 h-8 flex items-center justify-center rounded-xl border"
             :class="
               showSettings
-                ? 'border-[var(--brand-blue)] text-[var(--brand-blue)] bg-black/5 dark:bg-white/10'
+                ? 'border-primary text-primary surface-tint'
                 : 'text-[var(--text-2)] bg-[var(--bg-surface-2)] border-[var(--border-color)] hover:text-[var(--text-1)]'
             "
             aria-label="设置"
@@ -539,7 +539,7 @@ const handleSend = () => {
   </div>
 </template>
 
-<style scoped>
+<style scoped lang="scss">
 .ai-composer {
   contain: layout style;
 }
@@ -555,17 +555,17 @@ const handleSend = () => {
   border: 0;
   background: transparent;
   cursor: pointer;
-}
 
-.ai-model-tab:disabled {
-  opacity: 0.4;
-  cursor: not-allowed;
-}
+  &:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+  }
 
-.ai-model-tab--active {
-  background: var(--text-1);
-  color: var(--bg-surface-0);
-  box-shadow: var(--shadow-surface);
+  &--active {
+    background: var(--text-1);
+    color: var(--bg-surface-0);
+    box-shadow: var(--shadow-surface);
+  }
 }
 
 .ai-model-tab:not(.ai-model-tab--active, :disabled):hover {
@@ -575,10 +575,10 @@ const handleSend = () => {
 .custom-scrollbar::-webkit-scrollbar {
   width: 4px;
   height: 4px;
-}
 
-.custom-scrollbar::-webkit-scrollbar-thumb {
-  background: var(--border-color);
-  border-radius: 4px;
+  &-thumb {
+    background: var(--border-color);
+    border-radius: 4px;
+  }
 }
 </style>

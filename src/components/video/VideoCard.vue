@@ -182,7 +182,7 @@ const handleClick = () => {
   </div>
 </template>
 
-<style scoped>
+<style scoped lang="scss">
 :deep(em) {
   font-style: normal;
   color: var(--color-primary);

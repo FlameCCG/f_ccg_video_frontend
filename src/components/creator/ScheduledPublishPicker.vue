@@ -562,28 +562,28 @@ const displayTimeStr = computed(() => {
   </div>
 </template>
 
-<style>
+<style lang="scss">
 .mac-scrollbar {
   scrollbar-width: thin;
   scrollbar-color: oklch(var(--foreground) / 0.15) transparent;
-}
 
-.mac-scrollbar::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
-}
+  &::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
 
-.mac-scrollbar::-webkit-scrollbar-track {
-  background: transparent;
-}
+    &-track {
+      background: transparent;
+    }
 
-.mac-scrollbar::-webkit-scrollbar-thumb {
-  border-radius: 999px;
-  background: oklch(var(--foreground) / 0.15);
-  background-clip: padding-box;
-}
+    &-thumb {
+      border-radius: 999px;
+      background: oklch(var(--foreground) / 0.15);
+      background-clip: padding-box;
 
-.mac-scrollbar::-webkit-scrollbar-thumb:hover {
-  background: oklch(var(--foreground) / 0.25);
+      &:hover {
+        background: oklch(var(--foreground) / 0.25);
+      }
+    }
+  }
 }
 </style>

@@ -2195,7 +2195,7 @@ const handlePublish = async () => {
   </div>
 </template>
 
-<style>
+<style lang="scss">
 .upload-feedback-alert {
   position: relative;
   overflow: hidden;
@@ -2209,20 +2209,20 @@ const handlePublish = async () => {
     inset 0 1px 0 color-mix(in oklch, var(--bg-surface-0) 88%, transparent),
     0 22px 56px -40px color-mix(in oklch, var(--status-warning) 34%, transparent);
   backdrop-filter: blur(14px);
-}
 
-.upload-feedback-alert__icon {
-  background: color-mix(in oklch, var(--status-warning) 16%, var(--bg-surface-0));
-  color: color-mix(in oklch, var(--status-warning-ink) 74%, var(--text-1));
-  box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--status-warning-border) 82%, transparent);
-}
+  &__icon {
+    background: color-mix(in oklch, var(--status-warning) 16%, var(--bg-surface-0));
+    color: color-mix(in oklch, var(--status-warning-ink) 74%, var(--text-1));
+    box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--status-warning-border) 82%, transparent);
+  }
 
-.upload-feedback-alert__title {
-  color: color-mix(in oklch, var(--status-warning-ink) 78%, var(--text-1));
-}
+  &__title {
+    color: color-mix(in oklch, var(--status-warning-ink) 78%, var(--text-1));
+  }
 
-.upload-feedback-alert__description {
-  color: color-mix(in oklch, var(--status-warning-ink) 64%, var(--text-2));
+  &__description {
+    color: color-mix(in oklch, var(--status-warning-ink) 64%, var(--text-2));
+  }
 }
 
 .dark .upload-feedback-alert {
@@ -2234,36 +2234,36 @@ const handlePublish = async () => {
 .cover-dialog-scroll {
   scrollbar-width: thin;
   scrollbar-color: oklch(var(--foreground) / 0.15) transparent;
+
+  &::-webkit-scrollbar {
+    width: 6px;
+
+    &-track {
+      background: transparent;
+    }
+
+    &-thumb {
+      border-radius: 999px;
+      background: oklch(var(--foreground) / 0.15);
+      background-clip: padding-box;
+
+      &:hover {
+        background: oklch(var(--foreground) / 0.25);
+      }
+    }
+  }
 }
 
 .upload-tabs-scroll::-webkit-scrollbar {
   height: 4px;
-}
 
-.upload-tabs-scroll::-webkit-scrollbar-track {
-  background: transparent;
-}
+  &-track {
+    background: transparent;
+  }
 
-.upload-tabs-scroll::-webkit-scrollbar-thumb {
-  border-radius: 999px;
-  background: oklch(var(--foreground) / 0.12);
-}
-
-.cover-dialog-scroll::-webkit-scrollbar {
-  width: 6px;
-}
-
-.cover-dialog-scroll::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-.cover-dialog-scroll::-webkit-scrollbar-thumb {
-  border-radius: 999px;
-  background: oklch(var(--foreground) / 0.15);
-  background-clip: padding-box;
-}
-
-.cover-dialog-scroll::-webkit-scrollbar-thumb:hover {
-  background: oklch(var(--foreground) / 0.25);
+  &-thumb {
+    border-radius: 999px;
+    background: oklch(var(--foreground) / 0.12);
+  }
 }
 </style>

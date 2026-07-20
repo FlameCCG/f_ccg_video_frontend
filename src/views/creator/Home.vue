@@ -508,7 +508,7 @@ onBeforeUnmount(() => {
   </div>
 </template>
 
-<style scoped>
+<style scoped lang="scss">
 .flat-home {
   display: block;
 }
@@ -518,23 +518,23 @@ onBeforeUnmount(() => {
   border: 1px solid var(--color-border);
   border-radius: 4px;
   overflow: hidden;
-}
 
-.flat-panel__header {
-  padding: 16px 20px;
-  border-bottom: 1px solid var(--color-border);
-}
+  &__header {
+    padding: 16px 20px;
+    border-bottom: 1px solid var(--color-border);
 
-.flat-panel__header.with-controls {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
+    &.with-controls {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+  }
 
-.flat-panel__title {
-  font-size: 16px;
-  font-weight: 600;
-  color: var(--color-foreground);
+  &__title {
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--color-foreground);
+  }
 }
 
 .flat-grid {
@@ -556,67 +556,66 @@ onBeforeUnmount(() => {
   transition:
     transform 0.2s cubic-bezier(0.16, 1, 0.3, 1),
     box-shadow 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+
+  &:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgb(0, 0, 0, 0.05);
+  }
+
+  &.is-active {
+    background-color: var(--color-primary);
+    transform: translateY(-2px);
+    box-shadow: 0 6px 16px color-mix(in oklch, var(--color-primary) 25%, transparent);
+
+    .flat-card__label {
+      color: color-mix(in oklch, var(--color-primary-foreground) 80%, transparent);
+    }
+
+    .flat-card__growth {
+      color: color-mix(in oklch, var(--color-primary-foreground) 90%, transparent);
+    }
+
+    .flat-card__value {
+      color: var(--color-primary-foreground);
+    }
+  }
+
+  &__top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 12px;
+  }
+
+  &__label {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 14px;
+    color: var(--color-muted-foreground);
+  }
+
+  &__growth {
+    font-size: 12px;
+    color: var(--color-brand-pink);
+
+    &.is-negative {
+      color: var(--color-status-success);
+    }
+  }
+
+  &__bottom {
+    display: block;
+  }
+
+  &__value {
+    font-size: 24px;
+    font-weight: 700;
+    color: var(--color-foreground);
+    line-height: 1;
+  }
 }
 
-.flat-card:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 4px 12px rgb(0, 0, 0, 0.05);
-}
-
-.flat-card.is-active {
-  background-color: var(--color-primary);
-  transform: translateY(-2px);
-  box-shadow: 0 6px 16px color-mix(in oklch, var(--color-primary) 25%, transparent);
-}
-
-.flat-card__top {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 12px;
-}
-
-.flat-card__label {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 14px;
-  color: var(--color-muted-foreground);
-}
-
-.flat-card.is-active .flat-card__label {
-  color: color-mix(in oklch, var(--color-primary-foreground) 80%, transparent);
-}
-
-.flat-card__growth {
-  font-size: 12px;
-  color: var(--color-brand-pink);
-}
-
-.flat-card__growth.is-negative {
-  color: var(--color-status-success);
-}
-
-.flat-card.is-active .flat-card__growth {
-  color: color-mix(in oklch, var(--color-primary-foreground) 90%, transparent);
-}
-
-.flat-card__bottom {
-  display: block;
-}
-
-.flat-card__value {
-  font-size: 24px;
-  font-weight: 700;
-  color: var(--color-foreground);
-  line-height: 1;
-}
-
-.flat-card.is-active .flat-card__value {
-  color: var(--color-primary-foreground);
-}
-
-/* Range Picker */
 .flat-range-picker {
   display: inline-flex;
   gap: 4px;
@@ -633,16 +632,15 @@ onBeforeUnmount(() => {
   border: 0;
   background: transparent;
   cursor: pointer;
+
+  &.is-active {
+    background-color: var(--color-card);
+    color: var(--color-foreground);
+    box-shadow: 0 1px 2px rgb(0, 0, 0, 0.05);
+    font-weight: 500;
+  }
 }
 
-.flat-range-btn.is-active {
-  background-color: var(--color-card);
-  color: var(--color-foreground);
-  box-shadow: 0 1px 2px rgb(0, 0, 0, 0.05);
-  font-weight: 500;
-}
-
-/* Chart */
 .flat-chart-shell {
   position: relative;
   width: 100%;
@@ -679,99 +677,146 @@ onBeforeUnmount(() => {
   cursor: pointer;
 }
 
-/* Chart Skeleton */
 .chart-skeleton {
   display: flex;
   flex-direction: column;
   height: 380px;
   padding: 12px 20px 16px;
   gap: 8px;
+
+  &__legend {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding-bottom: 8px;
+  }
+
+  &__dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+
+  &__label {
+    width: 40px;
+    height: 12px;
+    border-radius: 2px;
+  }
+
+  &__toolbox {
+    margin-left: auto;
+    display: flex;
+    gap: 10px;
+  }
+
+  &__tool {
+    width: 16px;
+    height: 16px;
+    border-radius: 2px;
+  }
+
+  &__grid {
+    flex: 1;
+    position: relative;
+  }
+
+  &__hlines {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    z-index: 0;
+  }
+
+  &__hline {
+    height: 1px;
+    background: var(--color-border);
+    opacity: 0.3;
+  }
+
+  &__wave {
+    position: absolute;
+    inset: 10% 0 20%;
+    width: 100%;
+    height: 60%;
+    z-index: 1;
+  }
+
+  &__area {
+    fill: var(--color-muted);
+    opacity: 0.2;
+  }
+
+  &__line-base {
+    fill: none;
+    stroke: var(--color-muted);
+    stroke-width: 3;
+    stroke-linecap: round;
+    opacity: 0.5;
+  }
+
+  &__line-anim {
+    fill: none;
+    stroke: var(--color-primary);
+    stroke-width: 3;
+    stroke-linecap: round;
+    stroke-dasharray: 400 1500;
+    stroke-dashoffset: 1900;
+    animation: skel-line-flow 2.4s linear infinite;
+    opacity: 0.7;
+  }
+
+  &__xaxis {
+    display: flex;
+    justify-content: space-between;
+    padding-top: 4px;
+  }
+
+  &__xlabel {
+    width: 40px;
+    height: 10px;
+    border-radius: 2px;
+  }
 }
 
-.chart-skeleton__legend {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding-bottom: 8px;
+:global(.dark) .flat-panel {
+  background: var(--color-card);
+  border-color: var(--color-border);
 }
 
-.chart-skeleton__dot {
-  width: 10px;
-  height: 10px;
-  border-radius: 50%;
-  flex-shrink: 0;
+:global(.dark) .flat-card {
+  background: color-mix(in srgb, var(--color-muted) 30%, transparent);
+
+  &.is-active {
+    background-color: var(--color-accent);
+  }
+
+  &__label {
+    color: var(--color-muted-foreground);
+  }
 }
 
-.chart-skeleton__label {
-  width: 40px;
-  height: 12px;
-  border-radius: 2px;
+:global(.dark) .flat-range-picker {
+  background: var(--color-muted);
 }
 
-.chart-skeleton__toolbox {
-  margin-left: auto;
-  display: flex;
-  gap: 10px;
-}
-
-.chart-skeleton__tool {
-  width: 16px;
-  height: 16px;
-  border-radius: 2px;
-}
-
-.chart-skeleton__grid {
-  flex: 1;
-  position: relative;
-}
-
-.chart-skeleton__hlines {
-  position: absolute;
-  inset: 0;
-  display: flex;
-  flex-direction: column;
-  justify-content: space-between;
-  z-index: 0;
-}
-
-.chart-skeleton__hline {
-  height: 1px;
+:global(.dark) .flat-range-btn.is-active {
   background: var(--color-border);
-  opacity: 0.3;
+  color: var(--color-foreground);
 }
 
-.chart-skeleton__wave {
-  position: absolute;
-  inset: 10% 0 20%;
-  width: 100%;
-  height: 60%;
-  z-index: 1;
+:global(.dark) .flat-chart-overlay {
+  background: color-mix(in oklch, var(--color-card) 88%, transparent);
+  color: var(--color-muted-foreground);
 }
 
-.chart-skeleton__area {
-  fill: var(--color-muted);
-  opacity: 0.2;
-}
+/* Range Picker */
 
-.chart-skeleton__line-base {
-  fill: none;
-  stroke: var(--color-muted);
-  stroke-width: 3;
-  stroke-linecap: round;
-  opacity: 0.5;
-}
+/* Chart */
 
-.chart-skeleton__line-anim {
-  fill: none;
-  stroke: var(--color-primary);
-  stroke-width: 3;
-  stroke-linecap: round;
-  stroke-dasharray: 400 1500;
-  stroke-dashoffset: 1900;
-  animation: skel-line-flow 2.4s linear infinite;
-  opacity: 0.7;
-}
-
+/* Chart Skeleton */
 @keyframes skel-line-flow {
   0% {
     stroke-dashoffset: 1900;
@@ -792,49 +837,7 @@ onBeforeUnmount(() => {
   }
 }
 
-.chart-skeleton__xaxis {
-  display: flex;
-  justify-content: space-between;
-  padding-top: 4px;
-}
-
-.chart-skeleton__xlabel {
-  width: 40px;
-  height: 10px;
-  border-radius: 2px;
-}
-
 /* Dark mode adjustments (subtle) */
-:global(.dark) .flat-panel {
-  background: var(--color-card);
-  border-color: var(--color-border);
-}
-
-:global(.dark) .flat-card {
-  background: color-mix(in srgb, var(--color-muted) 30%, transparent);
-}
-
-:global(.dark) .flat-card.is-active {
-  background-color: var(--color-accent);
-}
-
-:global(.dark) .flat-card__label {
-  color: var(--color-muted-foreground);
-}
-
-:global(.dark) .flat-range-picker {
-  background: var(--color-muted);
-}
-
-:global(.dark) .flat-range-btn.is-active {
-  background: var(--color-border);
-  color: var(--color-foreground);
-}
-
-:global(.dark) .flat-chart-overlay {
-  background: color-mix(in oklch, var(--color-card) 88%, transparent);
-  color: var(--color-muted-foreground);
-}
 
 /* Responsive constraints */
 @media (width <= 1024px) {

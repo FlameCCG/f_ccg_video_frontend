@@ -115,7 +115,7 @@ onBeforeUnmount(() => {
   </div>
 </template>
 
-<style scoped>
+<style scoped lang="scss">
 .tag-input-container {
   display: flex;
   align-items: center;
@@ -127,11 +127,11 @@ onBeforeUnmount(() => {
   background: oklch(var(--background));
   cursor: text;
   transition: border-color 0.2s;
-}
 
-.tag-input-container:focus-within {
-  border-color: oklch(var(--ring));
-  box-shadow: 0 0 0 2px oklch(var(--ring) / 0.18);
+  &:focus-within {
+    border-color: oklch(var(--ring));
+    box-shadow: 0 0 0 2px oklch(var(--ring) / 0.18);
+  }
 }
 
 .tag-input-inner {
@@ -175,10 +175,10 @@ onBeforeUnmount(() => {
   opacity: 0.6;
   cursor: pointer;
   transition: opacity 0.15s;
-}
 
-.tag-remove:hover {
-  opacity: 1;
+  &:hover {
+    opacity: 1;
+  }
 }
 
 .tag-input-field {
@@ -190,15 +190,15 @@ onBeforeUnmount(() => {
   font-size: 14px;
   color: oklch(var(--foreground));
   padding: 2px 0;
-}
 
-.tag-input-field::placeholder {
-  color: oklch(var(--muted-foreground));
-}
+  &::placeholder {
+    color: oklch(var(--muted-foreground));
+  }
 
-.tag-input-field:disabled {
-  cursor: not-allowed;
-  opacity: 0.5;
+  &:disabled {
+    cursor: not-allowed;
+    opacity: 0.5;
+  }
 }
 
 .tag-count {
@@ -209,7 +209,7 @@ onBeforeUnmount(() => {
 }
 </style>
 
-<style>
+<style lang="scss">
 /* Global styles for teleported tooltip */
 .tag-error-tooltip {
   display: flex;
@@ -270,7 +270,6 @@ onBeforeUnmount(() => {
   background: oklch(22% 0.012 250deg);
 }
 
-/* Transition */
 .tag-error-enter-active,
 .tag-error-leave-active {
   transition:
@@ -283,4 +282,6 @@ onBeforeUnmount(() => {
   opacity: 0;
   transform: translateY(6px);
 }
+
+/* Transition */
 </style>

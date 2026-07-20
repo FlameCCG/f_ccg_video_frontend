@@ -1290,25 +1290,34 @@ watch(activeRecordTab, (tab) => {
   </div>
 </template>
 
-<style scoped>
+<style scoped lang="scss">
 .center-page {
   background-color: var(--color-background);
   min-height: calc(100vh - 56px);
   padding-bottom: 50px;
 }
 
-/* Widescreen Banner Container (Height 106px - exactly Bilibili size) */
 .bili-banner {
   position: relative;
   height: 106px;
   background-color: #00aeec;
   overflow: hidden;
-}
 
-.bili-banner-sky {
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
+  &-sky {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+  }
+
+  &-content {
+    position: relative;
+    max-width: 980px;
+    height: 100%;
+    margin: 0 auto;
+    padding: 0 20px;
+    display: flex;
+    align-items: center;
+  }
 }
 
 .cloud-svg {
@@ -1317,16 +1326,16 @@ watch(activeRecordTab, (tab) => {
   left: 0;
   width: 100%;
   fill: #ffffff;
-}
 
-.cloud-svg-back {
-  height: 60px;
-  opacity: 0.22;
-}
+  &-back {
+    height: 60px;
+    opacity: 0.22;
+  }
 
-.cloud-svg-front {
-  height: 40px;
-  opacity: 0.45;
+  &-front {
+    height: 40px;
+    opacity: 0.45;
+  }
 }
 
 .mascot-svg {
@@ -1336,20 +1345,10 @@ watch(activeRecordTab, (tab) => {
   width: 80px;
   height: 80px;
   opacity: 0.8;
-}
 
-.mascot-svg circle {
-  fill: #ffffff;
-}
-
-.bili-banner-content {
-  position: relative;
-  max-width: 980px;
-  height: 100%;
-  margin: 0 auto;
-  padding: 0 20px;
-  display: flex;
-  align-items: center;
+  circle {
+    fill: #ffffff;
+  }
 }
 
 .bili-logo {
@@ -1358,7 +1357,6 @@ watch(activeRecordTab, (tab) => {
   opacity: 0.95;
 }
 
-/* Layout width: 980px */
 .center-body {
   width: 980px;
   margin: 10px auto 0;
@@ -1367,7 +1365,6 @@ watch(activeRecordTab, (tab) => {
   align-items: flex-start;
 }
 
-/* Left Sidebar Menu (width: 150px) */
 .center-side {
   width: 150px;
   background-color: var(--color-card);
@@ -1406,23 +1403,22 @@ watch(activeRecordTab, (tab) => {
   transition:
     background-color 0.15s,
     color 0.15s;
+
+  &:hover {
+    background-color: var(--color-secondary);
+  }
+
+  &.active {
+    background-color: var(--color-primary);
+    color: var(--color-primary-foreground);
+    font-weight: 600;
+
+    svg {
+      color: var(--color-primary-foreground);
+    }
+  }
 }
 
-.side-item:hover {
-  background-color: var(--color-secondary);
-}
-
-.side-item.active {
-  background-color: var(--color-primary);
-  color: var(--color-primary-foreground);
-  font-weight: 600;
-}
-
-.side-item.active svg {
-  color: var(--color-primary-foreground);
-}
-
-/* Right Content Main Box (width: 820px) */
 .center-main {
   width: 820px;
   background-color: var(--color-card);
@@ -1447,27 +1443,10 @@ watch(activeRecordTab, (tab) => {
   animation: spin 0.8s linear infinite;
 }
 
-@keyframes spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
-
 .sec-anim {
   animation: fade-in 0.15s ease-out;
 }
 
-@keyframes fade-in {
-  from {
-    opacity: 0;
-  }
-
-  to {
-    opacity: 1;
-  }
-}
-
-/* Overview Card Style */
 .bili-overview-card {
   display: flex;
   align-items: center;
@@ -1477,39 +1456,39 @@ watch(activeRecordTab, (tab) => {
   margin-bottom: 25px;
 }
 
-.ov-avatar-wrap {
-  position: relative;
-  flex-shrink: 0;
-  width: 64px;
-  height: 64px;
-  border-radius: 50%;
-  overflow: hidden;
-  border: 1px solid var(--color-border);
-}
-
 .ov-avatar {
   width: 100%;
   height: 100%;
-}
 
-.ov-avatar-mask {
-  position: absolute;
-  inset: 0;
-  border-radius: 50%;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  background: rgb(0, 0, 0, 0.5);
-  color: #ffffff;
-  font-size: 9px;
-  cursor: pointer;
-  opacity: 0;
-  transition: opacity 0.15s;
-}
+  &-wrap {
+    position: relative;
+    flex-shrink: 0;
+    width: 64px;
+    height: 64px;
+    border-radius: 50%;
+    overflow: hidden;
+    border: 1px solid var(--color-border);
+  }
 
-.ov-avatar-mask:hover {
-  opacity: 1;
+  &-mask {
+    position: absolute;
+    inset: 0;
+    border-radius: 50%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    background: rgb(0, 0, 0, 0.5);
+    color: #ffffff;
+    font-size: 9px;
+    cursor: pointer;
+    opacity: 0;
+    transition: opacity 0.15s;
+
+    &:hover {
+      opacity: 1;
+    }
+  }
 }
 
 .ov-info {
@@ -1521,20 +1500,20 @@ watch(activeRecordTab, (tab) => {
   display: flex;
   align-items: center;
   gap: 10px;
-}
 
-.ov-name-row .username {
-  font-size: 16px;
-  font-weight: 700;
-  color: var(--color-foreground);
-}
+  .username {
+    font-size: 16px;
+    font-weight: 700;
+    color: var(--color-foreground);
+  }
 
-.ov-name-row .member-tag {
-  border: 1px solid var(--color-border);
-  border-radius: 4px;
-  padding: 1px 6px;
-  font-size: 10px;
-  color: var(--color-muted-foreground);
+  .member-tag {
+    border: 1px solid var(--color-border);
+    border-radius: 4px;
+    padding: 1px 6px;
+    font-size: 10px;
+    color: var(--color-muted-foreground);
+  }
 }
 
 .ov-level-row {
@@ -1609,15 +1588,14 @@ watch(activeRecordTab, (tab) => {
     border-color 0.15s,
     color 0.15s,
     background-color 0.15s;
+
+  &:hover {
+    border-color: var(--color-primary);
+    color: var(--color-primary);
+    background-color: var(--color-secondary);
+  }
 }
 
-.ov-btn:hover {
-  border-color: var(--color-primary);
-  color: var(--color-primary);
-  background-color: var(--color-secondary);
-}
-
-/* Flat Form Style */
 .bili-form-section {
   padding-top: 10px;
 }
@@ -1642,45 +1620,25 @@ watch(activeRecordTab, (tab) => {
   display: flex;
   margin-bottom: 20px;
   align-items: flex-start;
-}
 
-.form-group-vertical {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  margin-bottom: 16px;
-  width: 100%;
-}
+  &-vertical {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin-bottom: 16px;
+    width: 100%;
 
-.form-group-vertical .form-label {
-  width: auto;
-  padding-top: 0;
-  margin-bottom: 0;
-}
+    .form-label {
+      width: auto;
+      padding-top: 0;
+      margin-bottom: 0;
+    }
 
-.form-group-vertical .form-input {
-  width: 100%;
-  max-width: 100%;
-}
-
-.form-input-icon-wrapper {
-  position: relative;
-  display: flex;
-  align-items: center;
-  width: 100%;
-}
-
-.form-input-icon-wrapper .form-input {
-  width: 100%;
-  max-width: 100%;
-}
-
-.form-input-icon-wrapper.has-left-icon .form-input {
-  padding-left: 36px;
-}
-
-.form-input-icon-wrapper.has-right-icon .form-input {
-  padding-right: 36px;
+    .form-input {
+      width: 100%;
+      max-width: 100%;
+    }
+  }
 }
 
 .form-label {
@@ -1704,11 +1662,31 @@ watch(activeRecordTab, (tab) => {
   transition:
     border-color 0.15s,
     box-shadow 0.15s;
-}
 
-.form-input:focus {
-  border-color: var(--color-primary);
-  box-shadow: 0 0 4px var(--color-ring);
+  &-icon-wrapper {
+    position: relative;
+    display: flex;
+    align-items: center;
+    width: 100%;
+
+    .form-input {
+      width: 100%;
+      max-width: 100%;
+    }
+
+    &.has-left-icon .form-input {
+      padding-left: 36px;
+    }
+
+    &.has-right-icon .form-input {
+      padding-right: 36px;
+    }
+  }
+
+  &:focus {
+    border-color: var(--color-primary);
+    box-shadow: 0 0 4px var(--color-ring);
+  }
 }
 
 .form-textarea {
@@ -1733,6 +1711,18 @@ watch(activeRecordTab, (tab) => {
 
 .gender-radio-input {
   display: none;
+
+  &:checked + .gender-radio-custom {
+    border-color: var(--color-primary);
+
+    &::after {
+      content: '';
+      position: absolute;
+      inset: 3px;
+      border-radius: 50%;
+      background-color: var(--color-primary);
+    }
+  }
 }
 
 .gender-radio-custom {
@@ -1742,18 +1732,6 @@ watch(activeRecordTab, (tab) => {
   border: 1px solid var(--color-border);
   position: relative;
   transition: border-color 0.15s;
-}
-
-.gender-radio-input:checked + .gender-radio-custom {
-  border-color: var(--color-primary);
-}
-
-.gender-radio-input:checked + .gender-radio-custom::after {
-  content: '';
-  position: absolute;
-  inset: 3px;
-  border-radius: 50%;
-  background-color: var(--color-primary);
 }
 
 .bili-btn-primary {
@@ -1769,15 +1747,15 @@ watch(activeRecordTab, (tab) => {
   cursor: pointer;
   border: none;
   transition: background-color 0.15s;
-}
 
-.bili-btn-primary:hover:not(:disabled) {
-  background-color: color-mix(in oklch, var(--color-primary) 85%, white 15%);
-}
+  &:hover:not(:disabled) {
+    background-color: color-mix(in oklch, var(--color-primary) 85%, white 15%);
+  }
 
-.bili-btn-primary:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
+  &:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
 }
 
 .bili-btn-danger {
@@ -1793,18 +1771,17 @@ watch(activeRecordTab, (tab) => {
   cursor: pointer;
   border: none;
   transition: opacity 0.15s;
+
+  &:hover:not(:disabled) {
+    opacity: 0.95;
+  }
+
+  &:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
 }
 
-.bili-btn-danger:hover:not(:disabled) {
-  opacity: 0.95;
-}
-
-.bili-btn-danger:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-/* Personalized tag board flat */
 .bili-tags-board {
   display: flex;
   flex-wrap: wrap;
@@ -1836,10 +1813,10 @@ watch(activeRecordTab, (tab) => {
   padding: 0;
   line-height: 1;
   font-size: 12px;
-}
 
-.tag-remove-btn:hover {
-  color: var(--color-foreground);
+  &:hover {
+    color: var(--color-foreground);
+  }
 }
 
 .tag-input-row {
@@ -1858,10 +1835,10 @@ watch(activeRecordTab, (tab) => {
   outline: none;
   height: 30px;
   width: 120px;
-}
 
-.tag-input-field:focus {
-  border-color: var(--color-primary);
+  &:focus {
+    border-color: var(--color-primary);
+  }
 }
 
 .tag-clear-btn {
@@ -1884,14 +1861,13 @@ watch(activeRecordTab, (tab) => {
   cursor: pointer;
   height: 30px;
   font-weight: 600;
+
+  &:hover {
+    background-color: color-mix(in oklch, var(--color-primary) 85%, white 15%);
+    border-color: color-mix(in oklch, var(--color-primary) 85%, white 15%);
+  }
 }
 
-.tag-add-btn:hover {
-  background-color: color-mix(in oklch, var(--color-primary) 85%, white 15%);
-  border-color: color-mix(in oklch, var(--color-primary) 85%, white 15%);
-}
-
-/* Records List design flat */
 .bili-records-tabs {
   display: flex;
   gap: 5px;
@@ -1913,25 +1889,25 @@ watch(activeRecordTab, (tab) => {
   cursor: pointer;
   position: relative;
   transition: color 0.15s;
-}
 
-.records-tab-btn:hover {
-  color: var(--color-primary);
-}
+  &:hover {
+    color: var(--color-primary);
+  }
 
-.records-tab-btn.active {
-  color: var(--color-primary);
-  font-weight: 600;
-}
+  &.active {
+    color: var(--color-primary);
+    font-weight: 600;
 
-.records-tab-btn.active::after {
-  content: '';
-  position: absolute;
-  bottom: -1px;
-  left: 0;
-  right: 0;
-  height: 2px;
-  background-color: var(--color-primary);
+    &::after {
+      content: '';
+      position: absolute;
+      bottom: -1px;
+      left: 0;
+      right: 0;
+      height: 2px;
+      background-color: var(--color-primary);
+    }
+  }
 }
 
 .records-container-box {
@@ -1961,10 +1937,10 @@ watch(activeRecordTab, (tab) => {
   align-items: center;
   padding: 16px 20px;
   border-bottom: 1px solid var(--color-border);
-}
 
-.record-row-item:last-child {
-  border-bottom: none;
+  &:last-child {
+    border-bottom: none;
+  }
 }
 
 .record-row-left {
@@ -2044,14 +2020,14 @@ watch(activeRecordTab, (tab) => {
   font-size: 12px;
   font-weight: 700;
   font-family: monospace;
-}
 
-.delta-badge.is-positive {
-  color: #4caf50;
-}
+  &.is-positive {
+    color: #4caf50;
+  }
 
-.delta-badge.is-negative {
-  color: var(--color-destructive);
+  &.is-negative {
+    color: var(--color-destructive);
+  }
 }
 
 .records-pager-footer {
@@ -2087,19 +2063,18 @@ watch(activeRecordTab, (tab) => {
   transition:
     border-color 0.15s,
     color 0.15s;
+
+  &:hover:not(:disabled) {
+    border-color: var(--color-primary);
+    color: var(--color-primary);
+  }
+
+  &:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+  }
 }
 
-.bili-pager-btn:hover:not(:disabled) {
-  border-color: var(--color-primary);
-  color: var(--color-primary);
-}
-
-.bili-pager-btn:disabled {
-  opacity: 0.45;
-  cursor: not-allowed;
-}
-
-/* Privacy Settings grid flat */
 .section-sub-desc {
   font-size: 12px;
   color: var(--color-muted-foreground);
@@ -2124,10 +2099,10 @@ watch(activeRecordTab, (tab) => {
   background-color: var(--color-card);
   cursor: pointer;
   transition: border-color 0.15s;
-}
 
-.privacy-card-label:hover {
-  border-color: var(--color-primary);
+  &:hover {
+    border-color: var(--color-primary);
+  }
 }
 
 .privacy-card-left {
@@ -2147,7 +2122,6 @@ watch(activeRecordTab, (tab) => {
   color: var(--color-muted-foreground);
 }
 
-/* Bilibili flat Switch track style */
 .bili-switch-track {
   position: relative;
   width: 38px;
@@ -2157,10 +2131,14 @@ watch(activeRecordTab, (tab) => {
   cursor: pointer;
   transition: background-color 0.2s;
   flex-shrink: 0;
-}
 
-.bili-switch-track.is-active {
-  background-color: var(--color-primary);
+  &.is-active {
+    background-color: var(--color-primary);
+
+    .bili-switch-thumb {
+      transform: translateX(18px);
+    }
+  }
 }
 
 .bili-switch-thumb {
@@ -2174,11 +2152,6 @@ watch(activeRecordTab, (tab) => {
   transition: transform 0.2s;
 }
 
-.bili-switch-track.is-active .bili-switch-thumb {
-  transform: translateX(18px);
-}
-
-/* Security Table list */
 .bili-security-table {
   border: 1px solid var(--color-border);
   border-radius: 4px;
@@ -2191,10 +2164,10 @@ watch(activeRecordTab, (tab) => {
   padding: 16px 20px;
   border-bottom: 1px solid var(--color-border);
   font-size: 12px;
-}
 
-.sec-row-item:last-child {
-  border-bottom: none;
+  &:last-child {
+    border-bottom: none;
+  }
 }
 
 .sec-label-col {
@@ -2224,16 +2197,16 @@ watch(activeRecordTab, (tab) => {
   transition:
     border-color 0.15s,
     background-color 0.15s;
-}
 
-.bili-btn-code:hover:not(:disabled) {
-  border-color: var(--color-primary);
-  color: var(--color-primary);
-}
+  &:hover:not(:disabled) {
+    border-color: var(--color-primary);
+    color: var(--color-primary);
+  }
 
-.bili-btn-code:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
+  &:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
 }
 
 .sr-only {
@@ -2247,6 +2220,43 @@ watch(activeRecordTab, (tab) => {
   white-space: nowrap;
   border-width: 0;
 }
+
+/* Widescreen Banner Container (Height 106px - exactly Bilibili size) */
+
+/* Layout width: 980px */
+
+/* Left Sidebar Menu (width: 150px) */
+
+/* Right Content Main Box (width: 820px) */
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
+/* Overview Card Style */
+
+/* Flat Form Style */
+
+/* Personalized tag board flat */
+
+/* Records List design flat */
+
+/* Privacy Settings grid flat */
+
+/* Bilibili flat Switch track style */
+
+/* Security Table list */
 
 /* Responsive side elements styling */
 @media (width <= 900px) {
@@ -2268,12 +2278,12 @@ watch(activeRecordTab, (tab) => {
     grid-template-columns: 1fr 1fr;
   }
 
-  .reward-card:nth-child(even) {
-    border-right: none;
-  }
-
   .reward-card {
     border-bottom: 1px solid var(--color-border);
+
+    &:nth-child(even) {
+      border-right: none;
+    }
   }
 
   .reward-card:nth-child(3),

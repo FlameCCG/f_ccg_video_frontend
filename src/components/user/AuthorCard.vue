@@ -132,25 +132,25 @@ watch(() => props.author.id, fetchRelation)
   </div>
 </template>
 
-<style scoped>
+<style scoped lang="scss">
 .author-card {
   box-shadow: 0 2px 8px oklch(0% 0 0deg / 0.04);
   border: 1px solid oklch(var(--border) / 0.4);
   transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
-}
 
-.author-card:hover {
-  box-shadow: 0 8px 24px oklch(0% 0 0deg / 0.08);
-  border-color: oklch(var(--border) / 0.8);
-  transform: translateY(-2px);
+  &:hover {
+    box-shadow: 0 8px 24px oklch(0% 0 0deg / 0.08);
+    border-color: oklch(var(--border) / 0.8);
+    transform: translateY(-2px);
+  }
 }
 
 :global(.dark) .author-card {
   box-shadow: 0 2px 8px oklch(0% 0 0deg / 0.25);
-}
 
-:global(.dark) .author-card:hover {
-  box-shadow: 0 8px 24px oklch(0% 0 0deg / 0.45);
+  &:hover {
+    box-shadow: 0 8px 24px oklch(0% 0 0deg / 0.45);
+  }
 }
 
 .avatar-wrapper::before {
@@ -186,49 +186,49 @@ watch(() => props.author.id, fetchRelation)
   color: oklch(var(--primary-foreground));
   box-shadow: 0 4px 12px oklch(var(--primary) / 0.3);
   letter-spacing: 0.02em;
-}
 
-.follow-btn:hover:not(:disabled) {
-  background-color: oklch(var(--primary) / 0.9);
-  transform: translateY(-2px);
-  box-shadow: 0 6px 16px oklch(var(--primary) / 0.4);
-}
+  &:hover:not(:disabled) {
+    background-color: oklch(var(--primary) / 0.9);
+    transform: translateY(-2px);
+    box-shadow: 0 6px 16px oklch(var(--primary) / 0.4);
+  }
 
-.follow-btn:active:not(:disabled) {
-  transform: translateY(0) scale(0.96);
-  box-shadow: 0 2px 8px oklch(var(--primary) / 0.3);
-  transition-duration: 0.1s;
-}
+  &:active:not(:disabled) {
+    transform: translateY(0) scale(0.96);
+    box-shadow: 0 2px 8px oklch(var(--primary) / 0.3);
+    transition-duration: 0.1s;
+  }
 
-.follow-btn:disabled {
-  opacity: 0.7;
-  cursor: not-allowed;
-  transform: none;
-}
+  &:disabled {
+    opacity: 0.7;
+    cursor: not-allowed;
+    transform: none;
+  }
 
-.follow-btn.is-followed {
-  background: oklch(var(--muted));
-  color: oklch(var(--muted-foreground));
-  border: 1px solid oklch(var(--border));
-  box-shadow: none;
-}
+  &.is-followed {
+    background: oklch(var(--muted));
+    color: oklch(var(--muted-foreground));
+    border: 1px solid oklch(var(--border));
+    box-shadow: none;
 
-.follow-btn.is-followed:hover:not(:disabled) {
-  background: oklch(var(--destructive) / 0.1);
-  color: oklch(var(--destructive));
-  border-color: oklch(var(--destructive) / 0.3);
-}
+    &:hover:not(:disabled) {
+      background: oklch(var(--destructive) / 0.1);
+      color: oklch(var(--destructive));
+      border-color: oklch(var(--destructive) / 0.3);
+    }
+  }
 
-.follow-btn.is-mutual {
-  background: oklch(var(--primary) / 0.1);
-  color: oklch(var(--primary));
-  border: 1px solid oklch(var(--primary) / 0.3);
-  box-shadow: none;
-}
+  &.is-mutual {
+    background: oklch(var(--primary) / 0.1);
+    color: oklch(var(--primary));
+    border: 1px solid oklch(var(--primary) / 0.3);
+    box-shadow: none;
 
-.follow-btn.is-mutual:hover:not(:disabled) {
-  background: oklch(var(--primary) / 0.15);
-  border-color: oklch(var(--primary) / 0.4);
-  box-shadow: 0 4px 12px oklch(var(--primary) / 0.2);
+    &:hover:not(:disabled) {
+      background: oklch(var(--primary) / 0.15);
+      border-color: oklch(var(--primary) / 0.4);
+      box-shadow: 0 4px 12px oklch(var(--primary) / 0.2);
+    }
+  }
 }
 </style>

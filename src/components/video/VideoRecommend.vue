@@ -105,7 +105,7 @@ watch(() => props.videoId, fetchRecommend)
   </div>
 </template>
 
-<style scoped>
+<style scoped lang="scss">
 .recommend-container {
   padding-bottom: 12px;
 }
@@ -124,16 +124,6 @@ watch(() => props.videoId, fetchRecommend)
   animation: shimmer-card 1.8s cubic-bezier(0.37, 0, 0.63, 1) infinite;
 }
 
-@keyframes shimmer-card {
-  0% {
-    background-position: 250% 0;
-  }
-
-  100% {
-    background-position: -250% 0;
-  }
-}
-
 .video-card {
   background: transparent;
   border: 1px solid transparent;
@@ -141,29 +131,38 @@ watch(() => props.videoId, fetchRecommend)
   animation-delay: calc(var(--i, 0) * 40ms);
   opacity: 0;
   transform: translateY(8px);
-}
 
-@keyframes stagger-in {
-  to {
-    opacity: 1;
-    transform: translateY(0);
+  &:hover {
+    background: oklch(var(--muted) / 0.4);
+    border-color: oklch(var(--border) / 0.5);
+    transform: translateX(4px);
+    box-shadow: -4px 4px 12px rgb(0 0 0 / 0.02);
+
+    .cover-img {
+      transform: scale(1.08);
+    }
+
+    .vignette {
+      opacity: 1;
+    }
+
+    .duration-badge {
+      transform: translateY(-2px);
+    }
+
+    .watch-progress {
+      transform: scaleX(1);
+    }
   }
-}
 
-.video-card:hover {
-  background: oklch(var(--muted) / 0.4);
-  border-color: oklch(var(--border) / 0.5);
-  transform: translateX(4px);
-  box-shadow: -4px 4px 12px rgb(0 0 0 / 0.02);
+  &:active {
+    transform: translateX(2px) scale(0.99);
+    transition-duration: 0.1s;
+  }
 }
 
 :global(.dark) .video-card:hover {
   box-shadow: -4px 4px 12px rgb(0 0 0 / 0.1);
-}
-
-.video-card:active {
-  transform: translateX(2px) scale(0.99);
-  transition-duration: 0.1s;
 }
 
 .cover-wrapper {
@@ -181,10 +180,6 @@ watch(() => props.videoId, fetchRecommend)
   will-change: transform;
 }
 
-.video-card:hover .cover-img {
-  transform: scale(1.08);
-}
-
 .vignette {
   position: absolute;
   inset: 0;
@@ -192,10 +187,6 @@ watch(() => props.videoId, fetchRecommend)
   pointer-events: none;
   opacity: 0;
   transition: opacity 0.3s ease;
-}
-
-.video-card:hover .vignette {
-  opacity: 1;
 }
 
 .duration-badge {
@@ -215,10 +206,6 @@ watch(() => props.videoId, fetchRecommend)
   transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
-.video-card:hover .duration-badge {
-  transform: translateY(-2px);
-}
-
 .watch-progress {
   position: absolute;
   bottom: 0;
@@ -232,7 +219,20 @@ watch(() => props.videoId, fetchRecommend)
   border-radius: 0 2px 0 0;
 }
 
-.video-card:hover .watch-progress {
-  transform: scaleX(1);
+@keyframes shimmer-card {
+  0% {
+    background-position: 250% 0;
+  }
+
+  100% {
+    background-position: -250% 0;
+  }
+}
+
+@keyframes stagger-in {
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 </style>

@@ -16,14 +16,8 @@ const themeStore = useThemeStore()
   <DropdownMenu>
     <DropdownMenuTrigger as-child>
       <Button variant="ghost" size="icon" class="h-9 w-9">
-        <Sun
-          class="h-5 w-5 rotate-0 scale-100 transition-all dark:-rotate-90 dark:scale-0"
-          aria-hidden="true"
-        />
-        <Moon
-          class="absolute h-5 w-5 rotate-90 scale-0 transition-all dark:rotate-0 dark:scale-100"
-          aria-hidden="true"
-        />
+        <Sun class="theme-toggle-sun h-5 w-5 transition-all" aria-hidden="true" />
+        <Moon class="theme-toggle-moon absolute h-5 w-5 transition-all" aria-hidden="true" />
         <span class="sr-only">切换主题</span>
       </Button>
     </DropdownMenuTrigger>
@@ -34,3 +28,22 @@ const themeStore = useThemeStore()
     </DropdownMenuContent>
   </DropdownMenu>
 </template>
+
+<style scoped lang="scss">
+/* 依赖 html.dark 换图标，不用 dark: 工具类 */
+.theme-toggle-sun {
+  transform: rotate(0) scale(1);
+}
+
+.theme-toggle-moon {
+  transform: rotate(90deg) scale(0);
+}
+
+:global(html.dark) .theme-toggle-sun {
+  transform: rotate(-90deg) scale(0);
+}
+
+:global(html.dark) .theme-toggle-moon {
+  transform: rotate(0) scale(1);
+}
+</style>

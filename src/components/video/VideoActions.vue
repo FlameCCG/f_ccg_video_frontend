@@ -627,7 +627,7 @@ onUnmounted(() => {
   </Dialog>
 </template>
 
-<style scoped>
+<style scoped lang="scss">
 .action-btn {
   display: flex;
   align-items: center;
@@ -648,57 +648,65 @@ onUnmounted(() => {
   position: relative;
   overflow: visible;
   user-select: none;
-}
 
-.action-btn::after {
-  content: '';
-  position: absolute;
-  inset: 0;
-  background: currentcolor;
-  opacity: 0;
-  transition: opacity 0.25s ease;
-  pointer-events: none;
-  z-index: 0;
-  border-radius: inherit;
-}
+  &::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: currentcolor;
+    opacity: 0;
+    transition: opacity 0.25s ease;
+    pointer-events: none;
+    z-index: 0;
+    border-radius: inherit;
+  }
 
-.action-btn > * {
-  position: relative;
-  z-index: 1;
-}
+  > * {
+    position: relative;
+    z-index: 1;
+  }
 
-.action-btn:hover {
-  color: oklch(var(--foreground));
-  transform: translateY(-3px) scale(1.02);
-  box-shadow: 0 6px 20px rgb(0 0 0 / 0.06);
-  border-color: oklch(var(--border) / 0.6);
+  &:hover {
+    color: oklch(var(--foreground));
+    transform: translateY(-3px) scale(1.02);
+    box-shadow: 0 6px 20px rgb(0 0 0 / 0.06);
+    border-color: oklch(var(--border) / 0.6);
+
+    &::after {
+      opacity: 0.04;
+    }
+
+    .action-icon {
+      transform: scale(1.15) rotate(-4deg);
+    }
+  }
+
+  &:active {
+    transform: translateY(-1px) scale(0.97);
+    transition-duration: 0.08s;
+  }
+
+  &.is-active {
+    color: var(--color-primary);
+    background: oklch(var(--primary) / 0.08);
+    border-color: oklch(var(--primary) / 0.2);
+
+    &:hover {
+      color: var(--color-primary);
+      background: oklch(var(--primary) / 0.12);
+      border-color: oklch(var(--primary) / 0.35);
+      transform: translateY(-3px) scale(1.02);
+      box-shadow: 0 6px 20px oklch(var(--primary) / 0.18);
+    }
+  }
+
+  &.is-animating .action-icon {
+    animation: like-bounce 0.6s cubic-bezier(0.34, 1.56, 0.64, 1);
+  }
 }
 
 :global(.dark) .action-btn:hover {
   box-shadow: 0 6px 20px rgb(0 0 0 / 0.35);
-}
-
-.action-btn:hover::after {
-  opacity: 0.04;
-}
-
-.action-btn:active {
-  transform: translateY(-1px) scale(0.97);
-  transition-duration: 0.08s;
-}
-
-.action-btn.is-active {
-  color: var(--color-primary);
-  background: oklch(var(--primary) / 0.08);
-  border-color: oklch(var(--primary) / 0.2);
-}
-
-.action-btn.is-active:hover {
-  color: var(--color-primary);
-  background: oklch(var(--primary) / 0.12);
-  border-color: oklch(var(--primary) / 0.35);
-  transform: translateY(-3px) scale(1.02);
-  box-shadow: 0 6px 20px oklch(var(--primary) / 0.18);
 }
 
 .action-icon {
@@ -706,18 +714,276 @@ onUnmounted(() => {
   will-change: transform;
 }
 
-.action-btn:hover .action-icon {
-  transform: scale(1.15) rotate(-4deg);
-}
-
-.action-btn.is-animating .action-icon {
-  animation: like-bounce 0.6s cubic-bezier(0.34, 1.56, 0.64, 1);
-}
-
 .action-text {
   font-size: 13px;
   font-weight: 600;
   letter-spacing: 0.01em;
+}
+
+.charging-shake {
+  animation: charge-shake 0.1s infinite alternate;
+}
+
+.shockwave-glow {
+  position: absolute;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: radial-gradient(
+    circle,
+    oklch(var(--primary) / 0.35) 0%,
+    oklch(var(--primary) / 0.15) 50%,
+    transparent 75%
+  );
+  animation: glow-wave 0.5s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  pointer-events: none;
+  z-index: 38;
+}
+
+.shockwave-ring {
+  position: absolute;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  pointer-events: none;
+  z-index: 40;
+
+  &.ring-1 {
+    border: 1px solid oklch(var(--primary) / 0.7);
+    animation: sonic-wave-1 0.48s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  }
+
+  &.ring-2 {
+    border: 1px dashed oklch(var(--foreground) / 0.4);
+    animation: sonic-wave-2 0.52s cubic-bezier(0.16, 1, 0.3, 1) 0.05s forwards;
+  }
+
+  &.ring-3 {
+    border: 1.5px solid oklch(var(--primary) / 0.3);
+    animation: sonic-wave-3 0.56s cubic-bezier(0.16, 1, 0.3, 1) 0.1s forwards;
+  }
+}
+
+.shockwave-dust {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  pointer-events: none;
+  will-change: transform, opacity;
+  animation: dust-push 0.5s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.coin-dialog-content {
+  max-width: 400px !important;
+  padding: 0;
+  gap: 0;
+  overflow: hidden;
+  border-radius: 16px !important;
+  background-color: oklch(var(--card)) !important;
+  border: 1px solid oklch(var(--border)) !important;
+}
+
+.coin-dialog-header {
+  padding: 20px 24px 16px;
+  border-bottom: 1px solid oklch(var(--border) / 0.5);
+}
+
+.coin-dialog-title {
+  font-size: 16px;
+  font-weight: 600;
+  text-align: center;
+  color: oklch(var(--foreground));
+}
+
+.coin-count-highlight {
+  color: oklch(var(--foreground));
+  font-weight: 700;
+}
+
+.coin-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: space-between;
+  width: 140px;
+  height: 210px;
+  padding: 16px 12px 12px;
+  border-radius: 12px;
+  cursor: pointer;
+  position: relative;
+  background: oklch(var(--muted) / 0.15);
+  border: 2px dashed oklch(var(--border));
+  transition: all 0.3s cubic-bezier(0.25, 1, 0.5, 1);
+  user-select: none;
+
+  &-container {
+    display: flex;
+    justify-content: center;
+    gap: 20px;
+    padding: 28px 24px;
+  }
+
+  &:hover {
+    border-color: oklch(var(--foreground) / 0.4);
+    background: oklch(var(--muted) / 0.3);
+    transform: translateY(-4px);
+    box-shadow: 0 8px 24px oklch(0% 0 0deg / 0.04);
+  }
+
+  &.is-selected {
+    border-style: solid;
+    border-color: oklch(var(--foreground));
+    background: oklch(var(--foreground) / 0.03);
+    transform: translateY(-4px);
+    box-shadow: 0 10px 28px oklch(0% 0 0deg / 0.06);
+  }
+
+  &-label {
+    font-size: 13px;
+    font-weight: 600;
+    color: oklch(var(--muted-foreground));
+    transition: color 0.2s ease;
+    margin-bottom: 4px;
+  }
+}
+
+:global(.dark) .coin-card:hover {
+  box-shadow: 0 8px 24px oklch(0% 0 0deg / 0.25);
+}
+
+:global(.dark) .coin-card.is-selected {
+  background: oklch(var(--foreground) / 0.06);
+  box-shadow: 0 10px 28px oklch(0% 0 0deg / 0.35);
+}
+
+.coin-card:hover .coin-card-label,
+.coin-card.is-selected .coin-card-label {
+  color: oklch(var(--foreground));
+}
+
+.sprite-container {
+  position: relative;
+  width: 93.5px;
+  height: 150px;
+  overflow: hidden;
+}
+
+.coin-sprite {
+  width: 93.5px;
+  height: 150px;
+
+  /* 24 frames × 100% = 2400% background size width */
+  background-size: 2400% 100%;
+  background-repeat: no-repeat;
+  background-position: 0% 0%;
+  contain: paint;
+  transition: none !important;
+
+  &.ani-1 {
+    background-image: url('/1-coin-ani.png');
+  }
+
+  &.ani-2 {
+    background-image: url('/2-coin-ani.png');
+  }
+
+  &.is-playing {
+    animation: play-coin-sprite 1.2s steps(24) infinite;
+  }
+}
+
+.coin-checkbox-row {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 4px 0 12px;
+}
+
+.custom-checkbox {
+  appearance: none;
+  width: 16px;
+  height: 16px;
+  border: 2px solid oklch(var(--border));
+  border-radius: 4px;
+  outline: none;
+  cursor: pointer;
+  position: relative;
+  transition: all 0.2s ease;
+  background: transparent;
+
+  &-label {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    cursor: pointer;
+    user-select: none;
+    font-size: 13px;
+    font-weight: 500;
+    color: oklch(var(--muted-foreground));
+    transition: color 0.2s ease;
+
+    &:hover {
+      color: oklch(var(--foreground));
+    }
+  }
+
+  &:checked {
+    background-color: oklch(var(--foreground));
+    border-color: oklch(var(--foreground));
+
+    &::after {
+      content: '';
+      position: absolute;
+      left: 4px;
+      top: 1px;
+      width: 4px;
+      height: 8px;
+      border: solid oklch(var(--background));
+      border-width: 0 2px 2px 0;
+      transform: rotate(45deg);
+    }
+  }
+}
+
+.coin-dialog-footer {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 16px 24px 28px;
+}
+
+.coin-submit-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 200px;
+  height: 40px;
+  border-radius: 8px;
+  background-color: oklch(var(--foreground));
+  color: oklch(var(--background));
+  font-weight: 600;
+  font-size: 14px;
+  border: none;
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+
+  &:hover {
+    opacity: 0.9;
+    transform: translateY(-2px);
+    box-shadow: 0 6px 20px oklch(0% 0 0deg / 0.12);
+  }
+
+  &:active {
+    transform: translateY(0);
+  }
+}
+
+:global(.dark) .coin-submit-btn:hover {
+  box-shadow: 0 6px 20px oklch(0% 0 0deg / 0.4);
 }
 
 @keyframes like-bounce {
@@ -742,10 +1008,6 @@ onUnmounted(() => {
   }
 }
 
-.charging-shake {
-  animation: charge-shake 0.1s infinite alternate;
-}
-
 @keyframes charge-shake {
   0% {
     transform: scale(1.1) translate(0.5px, 0.5px) rotate(0.5deg);
@@ -757,22 +1019,6 @@ onUnmounted(() => {
 }
 
 /* Volumetric Radial Glow Wave */
-.shockwave-glow {
-  position: absolute;
-  width: 12px;
-  height: 12px;
-  border-radius: 50%;
-  background: radial-gradient(
-    circle,
-    oklch(var(--primary) / 0.35) 0%,
-    oklch(var(--primary) / 0.15) 50%,
-    transparent 75%
-  );
-  animation: glow-wave 0.5s cubic-bezier(0.16, 1, 0.3, 1) forwards;
-  pointer-events: none;
-  z-index: 38;
-}
-
 @keyframes glow-wave {
   0% {
     transform: scale(0.6);
@@ -786,30 +1032,6 @@ onUnmounted(() => {
 }
 
 /* Concentric Sonic Rings */
-.shockwave-ring {
-  position: absolute;
-  width: 20px;
-  height: 20px;
-  border-radius: 50%;
-  pointer-events: none;
-  z-index: 40;
-}
-
-.shockwave-ring.ring-1 {
-  border: 1px solid oklch(var(--primary) / 0.7);
-  animation: sonic-wave-1 0.48s cubic-bezier(0.16, 1, 0.3, 1) forwards;
-}
-
-.shockwave-ring.ring-2 {
-  border: 1px dashed oklch(var(--foreground) / 0.4);
-  animation: sonic-wave-2 0.52s cubic-bezier(0.16, 1, 0.3, 1) 0.05s forwards;
-}
-
-.shockwave-ring.ring-3 {
-  border: 1.5px solid oklch(var(--primary) / 0.3);
-  animation: sonic-wave-3 0.56s cubic-bezier(0.16, 1, 0.3, 1) 0.1s forwards;
-}
-
 @keyframes sonic-wave-1 {
   0% {
     transform: scale(0.6);
@@ -847,18 +1069,6 @@ onUnmounted(() => {
 }
 
 /* Wave Dust Particles pushed along the crest */
-.shockwave-dust {
-  position: absolute;
-  left: 50%;
-  top: 50%;
-  width: 3px;
-  height: 3px;
-  border-radius: 50%;
-  pointer-events: none;
-  will-change: transform, opacity;
-  animation: dust-push 0.5s cubic-bezier(0.16, 1, 0.3, 1) forwards;
-}
-
 @keyframes dust-push {
   0% {
     transform: translate(-50%, -50%) rotate(var(--rot)) translateY(-6px) scale(0.2);
@@ -875,132 +1085,15 @@ onUnmounted(() => {
   }
 }
 
-.coin-dialog-content {
-  max-width: 400px !important;
-  padding: 0;
-  gap: 0;
-  overflow: hidden;
-  border-radius: 16px !important;
-  background-color: oklch(var(--card)) !important;
-  border: 1px solid oklch(var(--border)) !important;
-}
-
-.coin-dialog-header {
-  padding: 20px 24px 16px;
-  border-bottom: 1px solid oklch(var(--border) / 0.5);
-}
-
-.coin-dialog-title {
-  font-size: 16px;
-  font-weight: 600;
-  text-align: center;
-  color: oklch(var(--foreground));
-}
-
-.coin-count-highlight {
-  color: oklch(var(--foreground));
-  font-weight: 700;
-}
-
-.coin-card-container {
-  display: flex;
-  justify-content: center;
-  gap: 20px;
-  padding: 28px 24px;
-}
-
-.coin-card {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: space-between;
-  width: 140px;
-  height: 210px;
-  padding: 16px 12px 12px;
-  border-radius: 12px;
-  cursor: pointer;
-  position: relative;
-  background: oklch(var(--muted) / 0.15);
-  border: 2px dashed oklch(var(--border));
-  transition: all 0.3s cubic-bezier(0.25, 1, 0.5, 1);
-  user-select: none;
-}
-
-.coin-card:hover {
-  border-color: oklch(var(--foreground) / 0.4);
-  background: oklch(var(--muted) / 0.3);
-  transform: translateY(-4px);
-  box-shadow: 0 8px 24px oklch(0% 0 0deg / 0.04);
-}
-
-:global(.dark) .coin-card:hover {
-  box-shadow: 0 8px 24px oklch(0% 0 0deg / 0.25);
-}
-
-.coin-card.is-selected {
-  border-style: solid;
-  border-color: oklch(var(--foreground));
-  background: oklch(var(--foreground) / 0.03);
-  transform: translateY(-4px);
-  box-shadow: 0 10px 28px oklch(0% 0 0deg / 0.06);
-}
-
-:global(.dark) .coin-card.is-selected {
-  background: oklch(var(--foreground) / 0.06);
-  box-shadow: 0 10px 28px oklch(0% 0 0deg / 0.35);
-}
-
-.coin-card-label {
-  font-size: 13px;
-  font-weight: 600;
-  color: oklch(var(--muted-foreground));
-  transition: color 0.2s ease;
-  margin-bottom: 4px;
-}
-
-.coin-card:hover .coin-card-label,
-.coin-card.is-selected .coin-card-label {
-  color: oklch(var(--foreground));
-}
-
-.sprite-container {
-  position: relative;
-  width: 93.5px;
-  height: 150px;
-  overflow: hidden;
-}
-
-.coin-sprite {
-  width: 93.5px;
-  height: 150px;
-
-  /* 24 frames × 100% = 2400% background size width */
-  background-size: 2400% 100%;
-  background-repeat: no-repeat;
-  background-position: 0% 0%;
-  contain: paint;
-  transition: none !important;
-}
-
-.coin-sprite.ani-1 {
-  background-image: url('/1-coin-ani.png');
-}
-
-.coin-sprite.ani-2 {
-  background-image: url('/2-coin-ani.png');
-}
-
-.coin-sprite.is-playing {
-  animation: play-coin-sprite 1.2s steps(24) infinite;
-}
-
 @keyframes play-coin-sprite {
   from {
     background-position: 0 0;
   }
 
   to {
-    background-position: -2244px 0; /* Exact 24 frames * 93.5px = 2244px */
+    background-position: -2244px 0;
+
+    /* Exact 24 frames * 93.5px = 2244px */
   }
 }
 
@@ -1009,96 +1102,5 @@ onUnmounted(() => {
     animation: none;
     background-position: 0 0;
   }
-}
-
-.coin-checkbox-row {
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  padding: 4px 0 12px;
-}
-
-.custom-checkbox-label {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  cursor: pointer;
-  user-select: none;
-  font-size: 13px;
-  font-weight: 500;
-  color: oklch(var(--muted-foreground));
-  transition: color 0.2s ease;
-}
-
-.custom-checkbox-label:hover {
-  color: oklch(var(--foreground));
-}
-
-.custom-checkbox {
-  appearance: none;
-  width: 16px;
-  height: 16px;
-  border: 2px solid oklch(var(--border));
-  border-radius: 4px;
-  outline: none;
-  cursor: pointer;
-  position: relative;
-  transition: all 0.2s ease;
-  background: transparent;
-}
-
-.custom-checkbox:checked {
-  background-color: oklch(var(--foreground));
-  border-color: oklch(var(--foreground));
-}
-
-.custom-checkbox:checked::after {
-  content: '';
-  position: absolute;
-  left: 4px;
-  top: 1px;
-  width: 4px;
-  height: 8px;
-  border: solid oklch(var(--background));
-  border-width: 0 2px 2px 0;
-  transform: rotate(45deg);
-}
-
-.coin-dialog-footer {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 10px;
-  padding: 16px 24px 28px;
-}
-
-.coin-submit-btn {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 200px;
-  height: 40px;
-  border-radius: 8px;
-  background-color: oklch(var(--foreground));
-  color: oklch(var(--background));
-  font-weight: 600;
-  font-size: 14px;
-  border: none;
-  cursor: pointer;
-  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
-}
-
-.coin-submit-btn:hover {
-  opacity: 0.9;
-  transform: translateY(-2px);
-  box-shadow: 0 6px 20px oklch(0% 0 0deg / 0.12);
-}
-
-:global(.dark) .coin-submit-btn:hover {
-  box-shadow: 0 6px 20px oklch(0% 0 0deg / 0.4);
-}
-
-.coin-submit-btn:active {
-  transform: translateY(0);
 }
 </style>

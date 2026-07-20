@@ -69,13 +69,13 @@ const hasParts = computed(() => props.parts.length > 1)
   </div>
 </template>
 
-<style scoped>
+<style scoped lang="scss">
 .part-list-container {
   transition: box-shadow 0.3s ease;
-}
 
-.part-list-container:hover {
-  box-shadow: 0 8px 24px rgb(0 0 0 / 0.04);
+  &:hover {
+    box-shadow: 0 8px 24px rgb(0 0 0 / 0.04);
+  }
 }
 
 :global(.dark) .part-list-container:hover {
@@ -85,23 +85,23 @@ const hasParts = computed(() => props.parts.length > 1)
 .part-scroll-area {
   scrollbar-width: thin;
   scrollbar-color: oklch(var(--muted-foreground) / 0.3) transparent;
-}
 
-.part-scroll-area::-webkit-scrollbar {
-  width: 4px;
-}
+  &::-webkit-scrollbar {
+    width: 4px;
 
-.part-scroll-area::-webkit-scrollbar-track {
-  background: transparent;
-}
+    &-track {
+      background: transparent;
+    }
 
-.part-scroll-area::-webkit-scrollbar-thumb {
-  background: oklch(var(--muted-foreground) / 0.3);
-  border-radius: 4px;
-}
+    &-thumb {
+      background: oklch(var(--muted-foreground) / 0.3);
+      border-radius: 4px;
 
-.part-scroll-area::-webkit-scrollbar-thumb:hover {
-  background: oklch(var(--muted-foreground) / 0.5);
+      &:hover {
+        background: oklch(var(--muted-foreground) / 0.5);
+      }
+    }
+  }
 }
 
 .part-item {
@@ -115,27 +115,27 @@ const hasParts = computed(() => props.parts.length > 1)
   color: oklch(var(--foreground));
   transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
   text-align: left;
-}
 
-.part-item:hover {
-  transform: translateX(2px);
-  border-color: oklch(var(--border) / 0.5);
-}
+  &:hover {
+    transform: translateX(2px);
+    border-color: oklch(var(--border) / 0.5);
+  }
 
-.part-item:active {
-  transform: translateX(0) scale(0.99);
-  transition-duration: 0.1s;
-}
+  &:active {
+    transform: translateX(0) scale(0.99);
+    transition-duration: 0.1s;
+  }
 
-.part-item.is-active {
-  background: oklch(var(--primary) / 0.08);
-  border-color: oklch(var(--primary) / 0.2);
-  color: var(--color-primary);
-  box-shadow: 0 2px 8px oklch(var(--primary) / 0.1);
-}
+  &.is-active {
+    background: oklch(var(--primary) / 0.08);
+    border-color: oklch(var(--primary) / 0.2);
+    color: var(--color-primary);
+    box-shadow: 0 2px 8px oklch(var(--primary) / 0.1);
 
-.part-item.is-active span {
-  color: var(--color-primary) !important;
+    span {
+      color: var(--color-primary) !important;
+    }
+  }
 }
 
 .playing-icon {

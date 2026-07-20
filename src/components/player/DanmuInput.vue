@@ -242,15 +242,10 @@ onBeforeUnmount(() => {
   </div>
 </template>
 
-<style scoped>
+<style scoped lang="scss">
 /* ============================================
    DanmuInput — Refined Bilibili-grade Popover
    ============================================ */
-
-.danmu-input-shell {
-  position: relative;
-}
-
 .danmu-control-bar {
   background: var(--surface-1, oklch(96.5% 0.008 240deg));
   border-top: 1px solid oklch(0% 0 0deg / 0.04);
@@ -262,7 +257,6 @@ onBeforeUnmount(() => {
   border-top-color: oklch(100% 0 0deg / 0.06);
 }
 
-/* --- Input Field --- */
 .danmu-input {
   height: 34px;
   border-radius: 17px;
@@ -273,48 +267,51 @@ onBeforeUnmount(() => {
   color: var(--color-foreground);
   transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
   outline: none;
-}
 
-.danmu-input::placeholder {
-  color: var(--color-muted-foreground);
-  font-size: 13px;
-}
+  &-shell {
+    position: relative;
+  }
 
-.danmu-input:hover:not(:disabled) {
-  background-color: oklch(94% 0.006 240deg);
-}
+  &::placeholder {
+    color: var(--color-muted-foreground);
+    font-size: 13px;
+  }
 
-.danmu-input:focus {
-  background-color: var(--color-card);
-  border-color: var(--color-primary);
-  box-shadow: 0 0 0 2.5px oklch(var(--primary) / 0.15);
-}
+  &:hover:not(:disabled) {
+    background-color: oklch(94% 0.006 240deg);
+  }
 
-.danmu-input:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
+  &:focus {
+    background-color: var(--color-card);
+    border-color: var(--color-primary);
+    box-shadow: 0 0 0 2.5px oklch(var(--primary) / 0.15);
+  }
+
+  &:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
 }
 
 .dark .danmu-input {
   background: oklch(24% 0.01 250deg);
   color: oklch(92% 0.01 250deg);
+
+  &::placeholder {
+    color: oklch(55% 0.015 250deg);
+  }
+
+  &:hover:not(:disabled) {
+    background: oklch(28% 0.012 250deg);
+  }
+
+  &:focus {
+    background: oklch(18% 0.01 250deg);
+    border-color: var(--color-primary);
+    box-shadow: 0 0 0 2.5px oklch(var(--primary) / 0.25);
+  }
 }
 
-.dark .danmu-input::placeholder {
-  color: oklch(55% 0.015 250deg);
-}
-
-.dark .danmu-input:hover:not(:disabled) {
-  background: oklch(28% 0.012 250deg);
-}
-
-.dark .danmu-input:focus {
-  background: oklch(18% 0.01 250deg);
-  border-color: var(--color-primary);
-  box-shadow: 0 0 0 2.5px oklch(var(--primary) / 0.25);
-}
-
-/* --- Icon Button --- */
 .icon-btn {
   display: inline-flex;
   align-items: center;
@@ -327,37 +324,36 @@ onBeforeUnmount(() => {
   transition: all 0.18s cubic-bezier(0.16, 1, 0.3, 1);
   cursor: pointer;
   border: none;
-}
 
-.icon-btn:hover {
-  color: var(--color-foreground);
-  background: oklch(0% 0 0deg / 0.06);
-}
+  &:hover {
+    color: var(--color-foreground);
+    background: oklch(0% 0 0deg / 0.06);
+  }
 
-.icon-btn:active {
-  transform: scale(0.92);
-}
+  &:active {
+    transform: scale(0.92);
+  }
 
-.icon-btn.is-active {
-  color: var(--color-primary);
-  background: oklch(var(--primary) / 0.1);
+  &.is-active {
+    color: var(--color-primary);
+    background: oklch(var(--primary) / 0.1);
+  }
 }
 
 .dark .icon-btn {
   color: oklch(60% 0.015 250deg);
+
+  &:hover {
+    color: oklch(90% 0.01 250deg);
+    background: oklch(100% 0 0deg / 0.08);
+  }
+
+  &.is-active {
+    color: var(--color-primary);
+    background: oklch(var(--primary) / 0.15);
+  }
 }
 
-.dark .icon-btn:hover {
-  color: oklch(90% 0.01 250deg);
-  background: oklch(100% 0 0deg / 0.08);
-}
-
-.dark .icon-btn.is-active {
-  color: var(--color-primary);
-  background: oklch(var(--primary) / 0.15);
-}
-
-/* --- Send Button --- */
 .send-btn {
   display: inline-flex;
   align-items: center;
@@ -374,28 +370,32 @@ onBeforeUnmount(() => {
   cursor: pointer;
   transition: all 0.18s cubic-bezier(0.16, 1, 0.3, 1);
   box-shadow: 0 1px 4px oklch(var(--primary) / 0.25);
-}
 
-.send-btn:hover:not(:disabled) {
-  transform: translateY(-1px);
-  box-shadow: 0 3px 10px oklch(var(--primary) / 0.35);
-}
+  &:hover:not(:disabled) {
+    transform: translateY(-1px);
+    box-shadow: 0 3px 10px oklch(var(--primary) / 0.35);
 
-.send-btn:active:not(:disabled) {
-  transform: translateY(0) scale(0.97);
-}
+    .send-icon {
+      transform: translateX(1px) translateY(-1px);
+    }
+  }
 
-.send-btn:disabled {
-  background-color: oklch(92% 0.005 240deg);
-  color: oklch(60% 0.02 240deg);
-  box-shadow: none;
-  cursor: not-allowed;
-}
+  &:active:not(:disabled) {
+    transform: translateY(0) scale(0.97);
+  }
 
-.send-btn.is-success {
-  background: oklch(60% 0.16 155deg);
-  box-shadow: 0 1px 4px oklch(60% 0.16 155deg / 0.3);
-  cursor: default;
+  &:disabled {
+    background-color: oklch(92% 0.005 240deg);
+    color: oklch(60% 0.02 240deg);
+    box-shadow: none;
+    cursor: not-allowed;
+  }
+
+  &.is-success {
+    background: oklch(60% 0.16 155deg);
+    box-shadow: 0 1px 4px oklch(60% 0.16 155deg / 0.3);
+    cursor: default;
+  }
 }
 
 .dark .send-btn:disabled {
@@ -405,10 +405,6 @@ onBeforeUnmount(() => {
 
 .send-icon {
   transition: transform 0.18s ease;
-}
-
-.send-btn:hover:not(:disabled) .send-icon {
-  transform: translateX(1px) translateY(-1px);
 }
 
 .settings-panel {
@@ -440,12 +436,12 @@ onBeforeUnmount(() => {
   padding-bottom: 12px;
   margin-bottom: 12px;
   border-bottom: 1px solid oklch(0% 0 0deg / 0.05);
-}
 
-.settings-section:last-child {
-  padding-bottom: 0;
-  margin-bottom: 0;
-  border-bottom: none;
+  &:last-child {
+    padding-bottom: 0;
+    margin-bottom: 0;
+    border-bottom: none;
+  }
 }
 
 .dark .settings-section {
@@ -464,7 +460,6 @@ onBeforeUnmount(() => {
   color: oklch(70% 0.015 250deg);
 }
 
-/* --- Color Picker (compact dots) --- */
 .color-grid {
   display: flex;
   flex-wrap: wrap;
@@ -484,93 +479,90 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: center;
   justify-content: center;
-}
 
-.color-dot-inner {
-  width: 18px;
-  height: 18px;
-  border-radius: 50%;
-  box-shadow: inset 0 0 0 1px oklch(0% 0 0deg / 0.1);
-  transition: transform 0.15s ease;
-}
+  &-inner {
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    box-shadow: inset 0 0 0 1px oklch(0% 0 0deg / 0.1);
+    transition: transform 0.15s ease;
+  }
 
-.color-dot:hover .color-dot-inner {
-  transform: scale(1.1);
-}
+  &:hover .color-dot-inner {
+    transform: scale(1.1);
+  }
 
-.color-dot.is-active {
-  border-color: var(--dot-color);
-  box-shadow: 0 0 0 1px oklch(0% 0 0deg / 0.06);
-}
+  &.is-active {
+    border-color: var(--dot-color);
+    box-shadow: 0 0 0 1px oklch(0% 0 0deg / 0.06);
 
-.color-dot.is-active .color-dot-inner {
-  transform: scale(0.85);
-}
+    .color-dot-inner {
+      transform: scale(0.85);
+    }
+  }
 
-/* White color dot needs visible border */
-.color-dot:first-child .color-dot-inner {
-  box-shadow: inset 0 0 0 1px oklch(0% 0 0deg / 0.15);
+  &:first-child .color-dot-inner {
+    box-shadow: inset 0 0 0 1px oklch(0% 0 0deg / 0.15);
+  }
 }
 
 .dark .color-dot:first-child .color-dot-inner {
   box-shadow: inset 0 0 0 1px oklch(100% 0 0deg / 0.2);
 }
 
-/* --- Position Segmented Control --- */
 .position-seg {
   display: flex;
   gap: 1px;
   background: oklch(0% 0 0deg / 0.06);
   border-radius: 8px;
   padding: 2px;
+
+  &-item {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    padding: 6px 0;
+    border-radius: 6px;
+    font-size: 12px;
+    font-weight: 500;
+    color: oklch(50% 0.02 240deg);
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    transition: all 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+
+    &:hover {
+      color: var(--color-foreground);
+    }
+
+    &.is-active {
+      color: var(--color-primary);
+      background: var(--color-card);
+      box-shadow: 0 1px 3px oklch(0% 0 0deg / 0.06);
+    }
+  }
 }
 
 .dark .position-seg {
   background: oklch(0% 0 0deg / 0.2);
+
+  &-item {
+    color: oklch(60% 0.015 250deg);
+
+    &:hover {
+      color: oklch(85% 0.01 250deg);
+    }
+
+    &.is-active {
+      color: var(--color-primary);
+      background: oklch(28% 0.015 250deg);
+      box-shadow: 0 1px 3px oklch(0% 0 0deg / 0.2);
+    }
+  }
 }
 
-.position-seg-item {
-  flex: 1;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 4px;
-  padding: 6px 0;
-  border-radius: 6px;
-  font-size: 12px;
-  font-weight: 500;
-  color: oklch(50% 0.02 240deg);
-  background: transparent;
-  border: none;
-  cursor: pointer;
-  transition: all 0.18s cubic-bezier(0.16, 1, 0.3, 1);
-}
-
-.position-seg-item:hover {
-  color: var(--color-foreground);
-}
-
-.position-seg-item.is-active {
-  color: var(--color-primary);
-  background: var(--color-card);
-  box-shadow: 0 1px 3px oklch(0% 0 0deg / 0.06);
-}
-
-.dark .position-seg-item {
-  color: oklch(60% 0.015 250deg);
-}
-
-.dark .position-seg-item:hover {
-  color: oklch(85% 0.01 250deg);
-}
-
-.dark .position-seg-item.is-active {
-  color: var(--color-primary);
-  background: oklch(28% 0.015 250deg);
-  box-shadow: 0 1px 3px oklch(0% 0 0deg / 0.2);
-}
-
-/* --- Panel Animation --- */
 .panel-pop-enter-active,
 .panel-pop-leave-active {
   transition:
@@ -583,4 +575,18 @@ onBeforeUnmount(() => {
   opacity: 0;
   transform: translateY(-6px) scale(0.97);
 }
+
+/* --- Input Field --- */
+
+/* --- Icon Button --- */
+
+/* --- Send Button --- */
+
+/* --- Color Picker (compact dots) --- */
+
+/* White color dot needs visible border */
+
+/* --- Position Segmented Control --- */
+
+/* --- Panel Animation --- */
 </style>

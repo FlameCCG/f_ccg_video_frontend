@@ -1417,7 +1417,7 @@ onBeforeUnmount(() => {
   </div>
 </template>
 
-<style scoped>
+<style scoped lang="scss">
 .video-player-container {
   --art-theme: #00a1d6;
 }
@@ -1431,7 +1431,6 @@ onBeforeUnmount(() => {
   filter: none !important;
 }
 
-/* Progress bar styling to match Bilibili */
 :deep(.art-control-progress) {
   height: 14px !important;
   bottom: 0 !important;
@@ -1478,7 +1477,6 @@ onBeforeUnmount(() => {
   border-radius: 8px !important;
 }
 
-/* Enable pointer events on danmu items for hover interaction */
 :deep(.art-danmuku) {
   pointer-events: none !important;
 }
@@ -1488,7 +1486,6 @@ onBeforeUnmount(() => {
   cursor: pointer;
 }
 
-/* Quality switch overlay */
 .quality-switch-overlay {
   position: absolute;
   inset: 0;
@@ -1517,12 +1514,6 @@ onBeforeUnmount(() => {
   animation: quality-spin 0.8s cubic-bezier(0.37, 0, 0.63, 1) infinite;
 }
 
-@keyframes quality-spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
-
 .quality-switch-text {
   color: rgb(255 255 255 / 0.9);
   font-size: 14px;
@@ -1531,7 +1522,6 @@ onBeforeUnmount(() => {
   text-shadow: 0 1px 4px rgb(0 0 0 / 0.5);
 }
 
-/* Overlay transition */
 .quality-overlay-enter-active {
   transition: opacity 0.25s ease;
 }
@@ -1544,4 +1534,17 @@ onBeforeUnmount(() => {
 .quality-overlay-leave-to {
   opacity: 0;
 }
+
+/* Progress bar styling to match Bilibili */
+
+/* Enable pointer events on danmu items for hover interaction */
+
+/* Quality switch overlay */
+@keyframes quality-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Overlay transition */
 </style>

@@ -462,7 +462,7 @@ const sanitizeHighlight = (html: string) => {
   </div>
 </template>
 
-<style scoped>
+<style scoped lang="scss">
 /* Search suggestion highlight */
 .search-suggestion-item :deep(em) {
   color: oklch(var(--primary));

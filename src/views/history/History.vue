@@ -369,29 +369,28 @@ watch(searchKeyword, (val) => {
   </div>
 </template>
 
-<style scoped>
+<style scoped lang="scss">
 .hist-page {
   max-width: 1100px;
   margin: 0 auto;
   padding: 24px 16px 60px;
 }
 
-/* ===================== Header ===================== */
 .hist-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
   margin-bottom: 20px;
-}
 
-.hist-header-left {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
+  &-left {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
 
-.hist-header-icon {
-  color: var(--color-primary);
+  &-icon {
+    color: var(--color-primary);
+  }
 }
 
 .hist-title {
@@ -400,7 +399,6 @@ watch(searchKeyword, (val) => {
   color: var(--color-foreground);
 }
 
-/* ===================== Toolbar ===================== */
 .hist-toolbar {
   display: flex;
   align-items: center;
@@ -412,55 +410,55 @@ watch(searchKeyword, (val) => {
   position: relative;
   display: flex;
   align-items: center;
-}
 
-.hist-search-icon {
-  position: absolute;
-  left: 10px;
-  color: var(--color-muted-foreground);
-  pointer-events: none;
-}
+  &-icon {
+    position: absolute;
+    left: 10px;
+    color: var(--color-muted-foreground);
+    pointer-events: none;
+  }
 
-.hist-search-input {
-  width: 220px;
-  height: 34px;
-  padding: 0 32px;
-  border: 1px solid var(--color-border);
-  border-radius: 8px;
-  font-size: 13px;
-  color: var(--color-foreground);
-  outline: none;
-  transition: border-color 0.2s;
-  background-color: var(--color-secondary);
-}
+  &-input {
+    width: 220px;
+    height: 34px;
+    padding: 0 32px;
+    border: 1px solid var(--color-border);
+    border-radius: 8px;
+    font-size: 13px;
+    color: var(--color-foreground);
+    outline: none;
+    transition: border-color 0.2s;
+    background-color: var(--color-secondary);
 
-.hist-search-input:focus {
-  border-color: var(--color-primary);
-  background-color: var(--color-card);
-}
+    &:focus {
+      border-color: var(--color-primary);
+      background-color: var(--color-card);
+    }
 
-.hist-search-input::placeholder {
-  color: var(--color-muted-foreground);
-}
+    &::placeholder {
+      color: var(--color-muted-foreground);
+    }
+  }
 
-.hist-search-clear {
-  position: absolute;
-  right: 8px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 20px;
-  height: 20px;
-  border-radius: 50%;
-  background-color: var(--color-secondary);
-  border: none;
-  cursor: pointer;
-  color: var(--color-muted-foreground);
-  transition: background 0.12s;
-}
+  &-clear {
+    position: absolute;
+    right: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    background-color: var(--color-secondary);
+    border: none;
+    cursor: pointer;
+    color: var(--color-muted-foreground);
+    transition: background 0.12s;
 
-.hist-search-clear:hover {
-  background-color: var(--color-muted);
+    &:hover {
+      background-color: var(--color-muted);
+    }
+  }
 }
 
 .hist-batch-btn {
@@ -474,14 +472,13 @@ watch(searchKeyword, (val) => {
   transition:
     color 0.12s,
     border-color 0.12s;
+
+  &:hover {
+    color: var(--color-primary);
+    border-color: var(--color-primary);
+  }
 }
 
-.hist-batch-btn:hover {
-  color: var(--color-primary);
-  border-color: var(--color-primary);
-}
-
-/* ===================== Batch Bar ===================== */
 .hist-batch-bar {
   display: flex;
   align-items: center;
@@ -530,29 +527,29 @@ html.dark .hist-batch-bar {
   color: var(--color-foreground);
   background-color: transparent;
   border: 1px solid var(--color-border);
-}
 
-.hist-batch-select-all:hover:not(:disabled) {
-  background-color: var(--color-secondary);
-  border-color: var(--color-foreground);
-}
+  &:hover:not(:disabled) {
+    background-color: var(--color-secondary);
+    border-color: var(--color-foreground);
+  }
 
-.hist-batch-select-all:active:not(:disabled) {
-  transform: scale(0.97);
+  &:active:not(:disabled) {
+    transform: scale(0.97);
+  }
 }
 
 .hist-batch-delete {
   color: var(--color-background);
   background-color: var(--color-foreground);
   border: 1px solid var(--color-foreground);
-}
 
-.hist-batch-delete:hover:not(:disabled) {
-  opacity: 0.85;
-}
+  &:hover:not(:disabled) {
+    opacity: 0.85;
+  }
 
-.hist-batch-delete:active:not(:disabled) {
-  transform: scale(0.97);
+  &:active:not(:disabled) {
+    transform: scale(0.97);
+  }
 }
 
 .hist-batch-select-all:disabled,
@@ -561,7 +558,6 @@ html.dark .hist-batch-bar {
   cursor: not-allowed;
 }
 
-/* ===================== Timeline ===================== */
 .hist-content {
   position: relative;
 }
@@ -603,7 +599,6 @@ html.dark .hist-batch-bar {
   border-left: 2px solid var(--color-border);
 }
 
-/* ===================== History Items ===================== */
 .hist-items {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
@@ -622,20 +617,177 @@ html.dark .hist-batch-bar {
     box-shadow 0.18s,
     transform 0.18s;
   box-shadow: var(--shadow-surface);
-}
 
-.hist-item:hover {
-  box-shadow: var(--shadow-raised);
-  transform: translateY(-2px);
-}
+  &:hover {
+    box-shadow: var(--shadow-raised);
+    transform: translateY(-2px);
 
-.hist-item-selected {
-  outline: 2px solid var(--color-primary);
-  outline-offset: -2px;
-}
+    .hist-item-cover img {
+      transform: scale(1.05);
+    }
 
-.hist-item-batch {
-  cursor: pointer;
+    .hist-item-play-overlay {
+      opacity: 1;
+    }
+
+    .hist-item-title {
+      color: var(--color-primary);
+    }
+
+    .hist-item-delete {
+      opacity: 1;
+    }
+  }
+
+  &-selected {
+    outline: 2px solid var(--color-primary);
+    outline-offset: -2px;
+  }
+
+  &-batch {
+    cursor: pointer;
+
+    .hist-item-play-overlay {
+      display: none;
+    }
+
+    &:hover .hist-item-title {
+      color: var(--color-foreground);
+    }
+
+    .hist-item-author:hover {
+      color: var(--color-muted-foreground);
+    }
+  }
+
+  &-cover {
+    position: relative;
+    aspect-ratio: 16 / 10;
+    overflow: hidden;
+    cursor: pointer;
+    background-color: var(--color-secondary);
+
+    img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      transition: transform 0.3s;
+    }
+  }
+
+  &-dur {
+    position: absolute;
+    bottom: 14px;
+    right: 6px;
+    background: rgb(0 0 0 / 0.7);
+    color: var(--color-primary-foreground);
+    font-size: 11px;
+    padding: 1px 5px;
+    border-radius: 3px;
+    line-height: 1.6;
+    z-index: 1;
+  }
+
+  &-progress-bar {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    height: 4px;
+    background: rgb(128, 128, 128, 0.4);
+    z-index: 2;
+    backdrop-filter: blur(2px);
+  }
+
+  &-progress-fill {
+    height: 100%;
+    background: rgb(220, 40, 70);
+    border-radius: 0 2px 2px 0;
+    transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    box-shadow: 0 0 4px rgb(220, 40, 70, 0.4);
+  }
+
+  &-play-overlay {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgb(0 0 0 / 0.25);
+    opacity: 0;
+    transition: opacity 0.2s;
+    z-index: 1;
+  }
+
+  &-info {
+    padding: 8px 10px 10px;
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  &-title {
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--color-foreground);
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    line-height: 1.4;
+    cursor: pointer;
+    transition: color 0.12s;
+  }
+
+  &-meta {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  &-author {
+    font-size: 12px;
+    color: var(--color-muted-foreground);
+    cursor: pointer;
+    transition: color 0.12s;
+
+    &:hover {
+      color: var(--color-primary);
+    }
+  }
+
+  &-progress-text {
+    font-size: 11px;
+    color: var(--color-muted-foreground);
+    margin-top: auto;
+  }
+
+  &-delete {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    z-index: 3;
+    width: 26px;
+    height: 26px;
+    border-radius: 50%;
+    background: rgb(0 0 0 / 0.5);
+    color: var(--color-primary-foreground);
+    border: none;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 0;
+    transition:
+      opacity 0.15s,
+      background 0.15s;
+
+    &:hover {
+      background-color: var(--color-accent);
+    }
+  }
 }
 
 .hist-checkbox {
@@ -654,23 +806,23 @@ html.dark .hist-batch-bar {
   display: flex;
   align-items: center;
   justify-content: center;
-}
 
-.hist-checkbox-checked {
-  background-color: var(--color-foreground);
-  color: var(--color-background);
-  border-color: var(--color-foreground);
-}
+  &-checked {
+    background-color: var(--color-foreground);
+    color: var(--color-background);
+    border-color: var(--color-foreground);
 
-.hist-checkbox:hover {
-  background-color: rgb(0, 0, 0, 0.8);
-  color: white;
-}
+    &:hover {
+      background-color: var(--color-foreground);
+      color: var(--color-background);
+      opacity: 0.9;
+    }
+  }
 
-.hist-checkbox-checked:hover {
-  background-color: var(--color-foreground);
-  color: var(--color-background);
-  opacity: 0.9;
+  &:hover {
+    background-color: rgb(0, 0, 0, 0.8);
+    color: white;
+  }
 }
 
 .hist-item-batch .hist-item-cover,
@@ -680,164 +832,6 @@ html.dark .hist-batch-bar {
   cursor: pointer;
 }
 
-.hist-item-cover {
-  position: relative;
-  aspect-ratio: 16 / 10;
-  overflow: hidden;
-  cursor: pointer;
-  background-color: var(--color-secondary);
-}
-
-.hist-item-cover img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  transition: transform 0.3s;
-}
-
-.hist-item:hover .hist-item-cover img {
-  transform: scale(1.05);
-}
-
-.hist-item-dur {
-  position: absolute;
-  bottom: 14px;
-  right: 6px;
-  background: rgb(0 0 0 / 0.7);
-  color: var(--color-primary-foreground);
-  font-size: 11px;
-  padding: 1px 5px;
-  border-radius: 3px;
-  line-height: 1.6;
-  z-index: 1;
-}
-
-.hist-item-progress-bar {
-  position: absolute;
-  bottom: 0;
-  left: 0;
-  right: 0;
-  height: 4px;
-  background: rgb(128, 128, 128, 0.4);
-  z-index: 2;
-  backdrop-filter: blur(2px);
-}
-
-.hist-item-progress-fill {
-  height: 100%;
-  background: rgb(220, 40, 70);
-  border-radius: 0 2px 2px 0;
-  transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-  box-shadow: 0 0 4px rgb(220, 40, 70, 0.4);
-}
-
-.hist-item-play-overlay {
-  position: absolute;
-  inset: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: rgb(0 0 0 / 0.25);
-  opacity: 0;
-  transition: opacity 0.2s;
-  z-index: 1;
-}
-
-.hist-item:hover .hist-item-play-overlay {
-  opacity: 1;
-}
-
-.hist-item-batch .hist-item-play-overlay {
-  display: none;
-}
-
-.hist-item-info {
-  padding: 8px 10px 10px;
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.hist-item-title {
-  font-size: 13px;
-  font-weight: 500;
-  color: var(--color-foreground);
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-  line-height: 1.4;
-  cursor: pointer;
-  transition: color 0.12s;
-}
-
-.hist-item:hover .hist-item-title {
-  color: var(--color-primary);
-}
-
-.hist-item-batch:hover .hist-item-title {
-  color: var(--color-foreground);
-}
-
-.hist-item-meta {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.hist-item-author {
-  font-size: 12px;
-  color: var(--color-muted-foreground);
-  cursor: pointer;
-  transition: color 0.12s;
-}
-
-.hist-item-author:hover {
-  color: var(--color-primary);
-}
-
-.hist-item-batch .hist-item-author:hover {
-  color: var(--color-muted-foreground);
-}
-
-.hist-item-progress-text {
-  font-size: 11px;
-  color: var(--color-muted-foreground);
-  margin-top: auto;
-}
-
-.hist-item-delete {
-  position: absolute;
-  top: 8px;
-  right: 8px;
-  z-index: 3;
-  width: 26px;
-  height: 26px;
-  border-radius: 50%;
-  background: rgb(0 0 0 / 0.5);
-  color: var(--color-primary-foreground);
-  border: none;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  opacity: 0;
-  transition:
-    opacity 0.15s,
-    background 0.15s;
-}
-
-.hist-item:hover .hist-item-delete {
-  opacity: 1;
-}
-
-.hist-item-delete:hover {
-  background-color: var(--color-accent);
-}
-
-/* ===================== States ===================== */
 .hist-empty {
   padding: 80px 0;
   text-align: center;
@@ -845,11 +839,11 @@ html.dark .hist-batch-bar {
   flex-direction: column;
   align-items: center;
   gap: 12px;
-}
 
-.hist-empty p {
-  font-size: 14px;
-  color: var(--color-muted-foreground);
+  p {
+    font-size: 14px;
+    color: var(--color-muted-foreground);
+  }
 }
 
 .hist-loading {
@@ -866,30 +860,42 @@ html.dark .hist-batch-bar {
 .hist-loadmore {
   text-align: center;
   padding: 16px 0;
+
+  &-btn {
+    padding: 8px 32px;
+    border-radius: 20px;
+    border: 1px solid var(--color-border);
+    background-color: var(--color-card);
+    color: var(--color-muted-foreground);
+    font-size: 13px;
+    cursor: pointer;
+    transition:
+      color 0.12s,
+      border-color 0.12s;
+
+    &:hover:not(:disabled) {
+      color: var(--color-primary);
+      border-color: var(--color-primary);
+    }
+
+    &:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+    }
+  }
 }
 
-.hist-loadmore-btn {
-  padding: 8px 32px;
-  border-radius: 20px;
-  border: 1px solid var(--color-border);
-  background-color: var(--color-card);
-  color: var(--color-muted-foreground);
-  font-size: 13px;
-  cursor: pointer;
-  transition:
-    color 0.12s,
-    border-color 0.12s;
-}
+/* ===================== Header ===================== */
 
-.hist-loadmore-btn:hover:not(:disabled) {
-  color: var(--color-primary);
-  border-color: var(--color-primary);
-}
+/* ===================== Toolbar ===================== */
 
-.hist-loadmore-btn:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-}
+/* ===================== Batch Bar ===================== */
+
+/* ===================== Timeline ===================== */
+
+/* ===================== History Items ===================== */
+
+/* ===================== States ===================== */
 
 /* ===================== Responsive ===================== */
 @media (width <= 768px) {
@@ -902,11 +908,11 @@ html.dark .hist-batch-bar {
     flex-direction: column;
     align-items: flex-start;
     gap: 10px;
-  }
 
-  .hist-toolbar-right {
-    width: 100%;
-    justify-content: space-between;
+    &-right {
+      width: 100%;
+      justify-content: space-between;
+    }
   }
 
   .hist-search-input {

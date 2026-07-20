@@ -30,17 +30,17 @@ onMounted(() => {
   </div>
 </template>
 
-<style scoped>
+<style scoped lang="scss">
 .fav-redirect {
   min-height: 40vh;
   display: flex;
   align-items: center;
   justify-content: center;
   background: var(--color-card);
-}
 
-.fav-redirect-text {
-  font-size: 14px;
-  color: var(--color-muted-foreground);
+  &-text {
+    font-size: 14px;
+    color: var(--color-muted-foreground);
+  }
 }
 </style>

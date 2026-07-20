@@ -164,22 +164,22 @@ const currentStatusMeta = computed(() => {
     case 1:
       return {
         label: '已发布',
-        className: 'border-emerald-500/20 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400',
+        className: 'status-surface-success border',
       }
     case 2:
       return {
         label: '私密',
-        className: 'border-amber-500/20 bg-amber-500/10 text-amber-600 dark:text-amber-400',
+        className: 'status-surface-warning border',
       }
     case 4:
       return {
         label: '审核中',
-        className: 'border-blue-500/20 bg-blue-500/10 text-blue-600 dark:text-blue-400',
+        className: 'status-surface-info border',
       }
     case 3:
       return {
         label: '已删除',
-        className: 'border-red-500/20 bg-red-500/10 text-red-600 dark:text-red-400',
+        className: 'status-surface-danger border',
       }
     default:
       return {
@@ -502,7 +502,7 @@ onBeforeUnmount(() => {
         <div class="space-y-8">
           <div
             v-if="partialLoadWarning"
-            class="rounded-xl border border-amber-500/20 bg-amber-500/10 px-4 py-3 text-sm text-amber-600 dark:text-amber-400"
+            class="status-surface-warning rounded-xl border px-4 py-3 text-sm"
           >
             {{ partialLoadWarning }}
           </div>

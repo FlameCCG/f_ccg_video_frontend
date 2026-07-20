@@ -98,7 +98,7 @@ defineExpose({
   </div>
 </template>
 
-<style scoped>
+<style scoped lang="scss">
 .form-captcha-input {
   height: 40px;
   flex: 1;
@@ -113,11 +113,11 @@ defineExpose({
   transition:
     border-color 0.15s,
     box-shadow 0.15s;
-}
 
-.form-captcha-input:focus {
-  border-color: var(--color-primary);
-  box-shadow: 0 0 4px var(--color-ring);
-  outline: none;
+  &:focus {
+    border-color: var(--color-primary);
+    box-shadow: 0 0 4px var(--color-ring);
+    outline: none;
+  }
 }
 </style>

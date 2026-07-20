@@ -529,35 +529,34 @@ watch(
   </div>
 </template>
 
-<style scoped>
+<style scoped lang="scss">
 .danmu-panel {
   height: 420px;
   background-color: var(--color-card);
-}
 
-.danmu-panel.is-collapsed {
-  height: auto;
+  &.is-collapsed {
+    height: auto;
+  }
 }
 
 .danmu-scroll {
   scrollbar-width: thin;
   scrollbar-color: var(--color-border) transparent;
+
+  &::-webkit-scrollbar {
+    width: 4px;
+
+    &-thumb {
+      background-color: var(--color-secondary);
+      border-radius: 2px;
+
+      &:hover {
+        background: var(--color-muted-foreground);
+      }
+    }
+  }
 }
 
-.danmu-scroll::-webkit-scrollbar {
-  width: 4px;
-}
-
-.danmu-scroll::-webkit-scrollbar-thumb {
-  background-color: var(--color-secondary);
-  border-radius: 2px;
-}
-
-.danmu-scroll::-webkit-scrollbar-thumb:hover {
-  background: var(--color-muted-foreground);
-}
-
-/* Calendar day cells */
 .calendar-day {
   display: flex;
   align-items: center;
@@ -570,41 +569,43 @@ watch(
   background: transparent;
   cursor: pointer;
   transition: all 0.12s ease;
+
+  &:hover:not(:disabled) {
+    background-color: var(--color-secondary);
+  }
+
+  &.is-other {
+    color: var(--color-border);
+    pointer-events: none;
+  }
+
+  &.is-disabled {
+    color: var(--color-muted-foreground);
+    cursor: default;
+  }
+
+  &.is-active {
+    color: var(--color-foreground);
+    font-weight: 500;
+  }
+
+  &.is-today {
+    color: var(--color-primary);
+    font-weight: 600;
+    outline: 1px solid var(--color-primary);
+    outline-offset: -1px;
+  }
+
+  &.is-selected {
+    color: var(--color-primary-foreground);
+    background-color: var(--color-primary);
+    font-weight: 500;
+
+    &:hover {
+      background: oklch(from var(--color-primary) calc(l - 0.05) c h);
+    }
+  }
 }
 
-.calendar-day:hover:not(:disabled) {
-  background-color: var(--color-secondary);
-}
-
-.calendar-day.is-other {
-  color: var(--color-border);
-  pointer-events: none;
-}
-
-.calendar-day.is-disabled {
-  color: var(--color-muted-foreground);
-  cursor: default;
-}
-
-.calendar-day.is-active {
-  color: var(--color-foreground);
-  font-weight: 500;
-}
-
-.calendar-day.is-today {
-  color: var(--color-primary);
-  font-weight: 600;
-  outline: 1px solid var(--color-primary);
-  outline-offset: -1px;
-}
-
-.calendar-day.is-selected {
-  color: var(--color-primary-foreground);
-  background-color: var(--color-primary);
-  font-weight: 500;
-}
-
-.calendar-day.is-selected:hover {
-  background: oklch(from var(--color-primary) calc(l - 0.05) c h);
-}
+/* Calendar day cells */
 </style>

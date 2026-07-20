@@ -580,7 +580,7 @@ onBeforeUnmount(() => {
 
       <div
         v-if="isPreviewMode"
-        class="mb-4 flex items-start gap-3 rounded-2xl border border-amber-500/20 bg-amber-500/8 px-4 py-3 text-sm text-amber-700 dark:text-amber-200"
+        class="status-surface-warning mb-4 flex items-start gap-3 rounded-2xl border px-4 py-3 text-sm"
       >
         <TriangleAlert :size="18" class="mt-0.5 shrink-0" />
         <p class="leading-6">
@@ -797,40 +797,42 @@ onBeforeUnmount(() => {
   </div>
 </template>
 
-<style scoped>
+<style scoped lang="scss">
 /* Danmu hover card */
 .danmu-hover-card {
   position: fixed;
   z-index: 9999;
   padding: 4px 6px;
-  border-radius: 999px; /* Pill shape */
-  background: rgb(40 40 40 / 75%); /* transparent like Image 2 */
+  border-radius: 999px;
+
+  /* Pill shape */
+  background: rgb(40 40 40 / 75%);
+
+  /* transparent like Image 2 */
   backdrop-filter: blur(12px);
   border: 1px solid rgb(255 255 255 / 10%);
   transform: translateX(-50%);
   pointer-events: auto;
   box-shadow: 0 4px 12px rgb(0 0 0 / 20%);
-}
 
-/* Small triangle arrow pointing up */
-.danmu-hover-card::before {
-  content: '';
-  position: absolute;
-  top: -6px;
-  left: 50%;
-  transform: translateX(-50%);
-  border-left: 6px solid transparent;
-  border-right: 6px solid transparent;
-  border-bottom: 6px solid rgb(40 40 40 / 75%);
-}
+  &::before {
+    content: '';
+    position: absolute;
+    top: -6px;
+    left: 50%;
+    transform: translateX(-50%);
+    border-left: 6px solid transparent;
+    border-right: 6px solid transparent;
+    border-bottom: 6px solid rgb(40 40 40 / 75%);
+  }
 
-/* Massive invisible bridge/padding around the entire card to completely eliminate twitching */
-.danmu-hover-card::after {
-  content: '';
-  position: absolute;
-  inset: -30px -40px 0;
-  background: transparent;
-  z-index: -1;
+  &::after {
+    content: '';
+    position: absolute;
+    inset: -30px -40px 0;
+    background: transparent;
+    z-index: -1;
+  }
 }
 
 .danmu-hover-actions {
@@ -862,31 +864,32 @@ onBeforeUnmount(() => {
   transition: all 0.2s ease;
   font-size: 14px;
   font-weight: 500;
+
+  &:hover {
+    color: var(--color-primary-foreground);
+    background: rgb(255 255 255 / 15%);
+  }
+
+  &.is-active {
+    color: var(--color-primary);
+
+    /* Active color */
+  }
+
+  &.is-danger {
+    color: rgb(255 255 255 / 80%);
+
+    &:hover {
+      color: var(--color-accent);
+      background: rgb(251 114 153 / 15%);
+    }
+  }
+
+  &:active {
+    transform: translateY(1px);
+  }
 }
 
-.danmu-hover-btn:hover {
-  color: var(--color-primary-foreground);
-  background: rgb(255 255 255 / 15%);
-}
-
-.danmu-hover-btn.is-active {
-  color: var(--color-primary); /* Active color */
-}
-
-.danmu-hover-btn.is-danger {
-  color: rgb(255 255 255 / 80%);
-}
-
-.danmu-hover-btn.is-danger:hover {
-  color: var(--color-accent);
-  background: rgb(251 114 153 / 15%);
-}
-
-.danmu-hover-btn:active {
-  transform: translateY(1px);
-}
-
-/* Tooltip animation */
 .danmu-tooltip-enter-active,
 .danmu-tooltip-leave-active {
   transition: opacity 0.15s ease;
@@ -896,4 +899,10 @@ onBeforeUnmount(() => {
 .danmu-tooltip-leave-to {
   opacity: 0;
 }
+
+/* Small triangle arrow pointing up */
+
+/* Massive invisible bridge/padding around the entire card to completely eliminate twitching */
+
+/* Tooltip animation */
 </style>

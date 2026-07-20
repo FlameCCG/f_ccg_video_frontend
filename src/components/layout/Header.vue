@@ -2,8 +2,14 @@
 import { ref, onMounted } from 'vue'
 import Navbar from '@/components/layout/Navbar.vue'
 import { getTopBanners, type BannerItem } from '@/api/banner'
+import { BannerDisplay } from '@/constants/banner'
 
 const banner = ref<BannerItem | null>(null)
+
+/** 定高全宽：高度来自 BannerDisplay，比例不锁死，由视口宽推导 */
+const topBannerStyle = {
+  height: `${BannerDisplay.topHeight}px`,
+}
 
 onMounted(async () => {
   try {
@@ -20,7 +26,7 @@ onMounted(async () => {
 <template>
   <header class="relative w-full">
     <!-- Banner Background - extends behind channel nav -->
-    <div class="absolute inset-0 z-0 h-[200px] w-full overflow-hidden">
+    <div class="absolute inset-0 z-0 w-full overflow-hidden" :style="topBannerStyle">
       <img
         v-if="banner"
         :src="banner.cover"

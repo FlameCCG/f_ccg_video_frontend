@@ -3,6 +3,7 @@ import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 import { RouterView, useRoute } from 'vue-router'
 import Navbar from '@/components/layout/Navbar.vue'
 import ChannelNav from '@/components/layout/ChannelNav.vue'
+import { BannerDisplay } from '@/constants/banner'
 
 const route = useRoute()
 const hideChannelNav = computed(() => route.path === '/dynamic' || route.path === '/history')
@@ -10,6 +11,8 @@ const isTrendingPage = computed(() => ['/hot', '/rank'].includes(route.path))
 
 const bannerRef = ref<HTMLDivElement | null>(null)
 const videoRef = ref<HTMLVideoElement | null>(null)
+/** 与 Header / BannerDisplay.topHeight 同源，避免顶栏高度漂移 */
+const topBannerStyle = { height: `${BannerDisplay.topHeight}px` }
 let mouseEnterX = 0
 
 const onBannerMouseEnter = (e: MouseEvent) => {
@@ -62,7 +65,7 @@ onBeforeUnmount(() => {
 
     <!-- Full header with Video Banner for other pages -->
     <template v-else>
-      <div ref="bannerRef" class="banner-shell relative h-[200px] cursor-pointer">
+      <div ref="bannerRef" class="banner-shell relative cursor-pointer" :style="topBannerStyle">
         <div class="absolute inset-0 z-0 flex items-center justify-center overflow-hidden">
           <video
             ref="videoRef"
@@ -71,7 +74,7 @@ onBeforeUnmount(() => {
             muted
             playsinline
             src="/banner-video.mp4"
-            class="banner-video pointer-events-none h-full min-w-full object-cover"
+            class="banner-video pointer-events-none h-full min-w-full object-cover object-center"
           />
           <div
             class="absolute inset-0 bg-gradient-to-b from-black/40 via-black/10 to-black/30"
@@ -93,7 +96,7 @@ onBeforeUnmount(() => {
   </div>
 </template>
 
-<style scoped>
+<style scoped lang="scss">
 .banner-video {
   transform: translateX(0) translateY(-4px) scale(1.15);
   will-change: transform;

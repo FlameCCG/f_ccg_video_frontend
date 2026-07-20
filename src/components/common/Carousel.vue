@@ -2,6 +2,7 @@
 import { ref, onMounted, onUnmounted, computed, watch } from 'vue'
 import { ChevronLeft, ChevronRight, Tv } from 'lucide-vue-next'
 import type { BannerItem } from '@/api/banner'
+import { BannerDisplay } from '@/constants/banner'
 
 interface Props {
   items: BannerItem[]
@@ -15,6 +16,12 @@ const props = withDefaults(defineProps<Props>(), {
   interval: 5000,
   loading: false,
 })
+
+/**
+ * 移动端固定 4:3（与 BannerArtSpec.homeCarousel 一致）；
+ * 桌面在 scoped CSS 中用媒体查询取消固定比例并对齐父级高度。
+ */
+const homeCarouselMobileAspect = BannerDisplay.homeCarouselMobileAspect
 
 const currentIndex = ref(0)
 let timer: ReturnType<typeof setInterval> | null = null
@@ -88,7 +95,7 @@ onUnmounted(() => {
   >
     <div
       v-if="loading"
-      class="carousel-skeleton skeleton-shimmer relative aspect-[4/3] w-full overflow-hidden lg:aspect-auto lg:h-full"
+      class="carousel-frame carousel-skeleton skeleton-shimmer relative"
       aria-busy="true"
       aria-label="轮播图加载中"
     >
@@ -104,7 +111,7 @@ onUnmounted(() => {
 
     <template v-else-if="items.length > 0">
       <!-- Slides -->
-      <div class="relative aspect-[4/3] w-full overflow-hidden lg:aspect-auto lg:h-full">
+      <div class="carousel-frame relative">
         <TransitionGroup name="carousel">
           <a
             v-for="(item, index) in items"
@@ -117,7 +124,7 @@ onUnmounted(() => {
             <img
               :src="item.cover"
               :alt="`Banner ${index + 1}`"
-              class="h-full w-full object-cover"
+              class="h-full w-full object-cover object-center"
             />
           </a>
         </TransitionGroup>
@@ -157,7 +164,7 @@ onUnmounted(() => {
 
     <div
       v-else
-      class="banner-fallback relative aspect-[4/3] w-full overflow-hidden lg:aspect-auto lg:h-full flex flex-col items-center justify-center border border-border/30 rounded-lg"
+      class="carousel-frame banner-fallback relative flex flex-col items-center justify-center rounded-lg border border-border/30"
       aria-hidden="true"
     >
       <Tv class="h-10 w-10 mb-2 opacity-30 text-muted-foreground" />
@@ -168,15 +175,28 @@ onUnmounted(() => {
   </div>
 </template>
 
-<style scoped>
+<style scoped lang="scss">
+/* 比例来自 BannerDisplay.homeCarouselMobileAspect；桌面交给父级高度 */
+.carousel-frame {
+  width: 100%;
+  overflow: hidden;
+  aspect-ratio: v-bind(homeCarouselMobileAspect);
+
+  @media (width >= 1024px) {
+    aspect-ratio: auto;
+    height: 100%;
+    min-height: 0;
+  }
+}
+
 .carousel-skeleton__dot {
   border-radius: 9999px;
   background: color-mix(in oklch, var(--color-foreground) 10%, var(--color-muted));
   box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--color-border) 20%, transparent);
-}
 
-.carousel-skeleton__dot--active {
-  background: color-mix(in oklch, var(--color-foreground) 25%, var(--color-muted));
+  &--active {
+    background: color-mix(in oklch, var(--color-foreground) 25%, var(--color-muted));
+  }
 }
 
 .banner-fallback {

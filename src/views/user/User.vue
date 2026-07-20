@@ -46,6 +46,7 @@ import Navbar from '@/components/layout/Navbar.vue'
 import AppAvatar from '@/components/common/AppAvatar.vue'
 import CommentSection from '@/components/comment/CommentSection.vue'
 import UserBannerPicker from '@/components/user/UserBannerPicker.vue'
+import { BannerDisplay } from '@/constants/banner'
 import {
   Home,
   Zap,
@@ -88,6 +89,8 @@ const followLoading = ref(false)
 const chatOpening = ref(false)
 const bannerPreviewUrl = ref('')
 const bannerPickerOpen = ref(false)
+/** 与 BannerDisplay.profileHeight 同源，骨架屏同步该高度 */
+const profileBannerHeight = BannerDisplay.profileHeight
 
 type TabKey = 'home' | 'dynamic' | 'videos' | 'favorites' | 'following' | 'fans' | 'settings'
 const activeTab = ref<TabKey>('home')
@@ -974,9 +977,17 @@ const privacySettings = [
 
     <template v-else-if="user">
       <!-- Header & Banner -->
-      <div class="h-header relative h-[220px]">
+      <div
+        class="h-header relative"
+        :style="{ height: `${profileBannerHeight}px` }"
+      >
         <div class="absolute inset-0 z-0 overflow-hidden">
-          <img v-if="displayBannerUrl" :src="displayBannerUrl" class="h-full w-full object-cover" />
+          <img
+            v-if="displayBannerUrl"
+            :src="displayBannerUrl"
+            class="h-full w-full object-cover object-center"
+            alt=""
+          />
           <div v-else class="w-full h-full bg-gradient-to-r from-primary to-accent"></div>
         </div>
         <div
@@ -1890,7 +1901,7 @@ const privacySettings = [
                     :class="
                       (userConf as Record<string, unknown>)[s.key]
                         ? 'bg-primary'
-                        : 'bg-black/10 dark:bg-white/15'
+                        : 'surface-tint-strong'
                     "
                     :disabled="confSaving"
                     @click="toggleConf(s.key)"
@@ -2192,15 +2203,22 @@ const privacySettings = [
   </div>
 </template>
 
-<style scoped>
+<style scoped lang="scss">
 .uspace {
   min-height: 100vh;
   background: var(--color-background);
 }
 
-/* Video Card */
 .u-video-card {
   cursor: pointer;
+
+  &:hover .uvc-cover img {
+    transform: scale(1.05);
+  }
+
+  &:hover .uvc-title {
+    color: var(--color-primary);
+  }
 }
 
 .uvc-cover {
@@ -2209,17 +2227,13 @@ const privacySettings = [
   border-radius: 6px;
   overflow: hidden;
   background-color: var(--color-secondary);
-}
 
-.uvc-cover img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  transition: transform 0.3s;
-}
-
-.u-video-card:hover .uvc-cover img {
-  transform: scale(1.05);
+  img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    transition: transform 0.3s;
+  }
 }
 
 .uvc-stats {
@@ -2231,12 +2245,12 @@ const privacySettings = [
   color: #fff;
   font-size: 11px;
   text-shadow: 0 1px 2px rgb(0 0 0 / 0.5);
-}
 
-.uvc-stats span {
-  display: flex;
-  align-items: center;
-  gap: 2px;
+  span {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+  }
 }
 
 .uvc-dur {
@@ -2263,19 +2277,22 @@ const privacySettings = [
   transition: color 0.2s;
 }
 
-.u-video-card:hover .uvc-title {
-  color: var(--color-primary);
-}
-
 .uvc-time {
   margin-top: 3px;
   font-size: 11px;
   color: var(--color-muted-foreground);
 }
 
-/* Folder Card */
 .u-folder-card {
   cursor: pointer;
+
+  &:hover .ufc-cover-img {
+    transform: scale(1.05);
+  }
+
+  &:hover .ufc-title {
+    color: var(--color-primary);
+  }
 }
 
 .ufc-cover {
@@ -2284,23 +2301,19 @@ const privacySettings = [
   border-radius: 6px;
   overflow: hidden;
   background: var(--color-secondary);
-}
 
-.ufc-cover-img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  transition: transform 0.3s;
-}
+  &-img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    transition: transform 0.3s;
+  }
 
-.u-folder-card:hover .ufc-cover-img {
-  transform: scale(1.05);
-}
-
-.ufc-cover-placeholder {
-  width: 100%;
-  height: 100%;
-  background: linear-gradient(135deg, var(--color-secondary), var(--color-card));
+  &-placeholder {
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(135deg, var(--color-secondary), var(--color-card));
+  }
 }
 
 .ufc-overlay {
@@ -2329,24 +2342,20 @@ const privacySettings = [
   transition: color 0.2s;
 }
 
-.u-folder-card:hover .ufc-title {
-  color: var(--color-primary);
-}
-
 .ufc-meta {
   margin-top: 2px;
   font-size: 11px;
   color: var(--color-muted-foreground);
 }
 
-/* Skeleton */
 .sk-wrap {
   background: var(--color-background);
   min-height: 100vh;
 }
 
 .sk-banner {
-  height: 220px;
+  /* 与 BannerDisplay.profileHeight 保持一致（常量默认 220） */
+  height: v-bind('profileBannerHeight + "px"');
   background: var(--color-secondary);
 }
 
@@ -2370,23 +2379,22 @@ const privacySettings = [
   flex-direction: column;
   gap: 8px;
   padding-top: 4px;
+
+  div:first-child {
+    width: 140px;
+    height: 20px;
+    border-radius: 4px;
+    background: var(--color-muted);
+  }
+
+  div:last-child {
+    width: 240px;
+    height: 14px;
+    border-radius: 4px;
+    background: var(--color-secondary);
+  }
 }
 
-.sk-lines div:first-child {
-  width: 140px;
-  height: 20px;
-  border-radius: 4px;
-  background: var(--color-muted);
-}
-
-.sk-lines div:last-child {
-  width: 240px;
-  height: 14px;
-  border-radius: 4px;
-  background: var(--color-secondary);
-}
-
-/* Social Cards */
 .sc-card {
   display: flex;
   align-items: center;
@@ -2394,10 +2402,10 @@ const privacySettings = [
   padding: 14px 12px;
   border-radius: 8px;
   transition: background-color 0.2s;
-}
 
-.sc-card:hover {
-  background: var(--color-secondary);
+  &:hover {
+    background: var(--color-secondary);
+  }
 }
 
 .sc-avatar {
@@ -2408,10 +2416,10 @@ const privacySettings = [
   flex-shrink: 0;
   cursor: pointer;
   transition: opacity 0.2s;
-}
 
-.sc-avatar:hover {
-  opacity: 0.85;
+  &:hover {
+    opacity: 0.85;
+  }
 }
 
 .sc-info {
@@ -2428,10 +2436,10 @@ const privacySettings = [
   text-overflow: ellipsis;
   white-space: nowrap;
   transition: opacity 0.2s;
-}
 
-.sc-name:hover {
-  opacity: 0.8;
+  &:hover {
+    opacity: 0.8;
+  }
 }
 
 .sc-desc {
@@ -2453,28 +2461,28 @@ const privacySettings = [
   transition: all 0.2s;
   flex-shrink: 0;
   cursor: pointer;
-}
 
-.sc-btn-followed {
-  background: var(--color-secondary);
-  color: var(--color-muted-foreground);
-  border: 1px solid var(--color-border);
-}
+  &-followed {
+    background: var(--color-secondary);
+    color: var(--color-muted-foreground);
+    border: 1px solid var(--color-border);
 
-.sc-btn-followed:hover {
-  color: var(--color-accent);
-  border-color: var(--color-accent);
-  background: color-mix(in oklch, var(--color-accent) 10%, transparent);
-}
+    &:hover {
+      color: var(--color-accent);
+      border-color: var(--color-accent);
+      background: color-mix(in oklch, var(--color-accent) 10%, transparent);
+    }
+  }
 
-.sc-btn-follow {
-  background: var(--color-primary);
-  color: var(--color-primary-foreground);
-  border: 1px solid transparent;
-}
+  &-follow {
+    background: var(--color-primary);
+    color: var(--color-primary-foreground);
+    border: 1px solid transparent;
 
-.sc-btn-follow:hover {
-  opacity: 0.9;
+    &:hover {
+      opacity: 0.9;
+    }
+  }
 }
 
 .banner-sheet-enter-active,
@@ -2498,4 +2506,12 @@ const privacySettings = [
 .banner-sheet-leave-to .banner-sheet-panel {
   transform: translateY(100%);
 }
+
+/* Video Card */
+
+/* Folder Card */
+
+/* Skeleton */
+
+/* Social Cards */
 </style>

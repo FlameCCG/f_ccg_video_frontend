@@ -119,6 +119,10 @@ export const useAuthStore = defineStore(
      */
     const logout = () => {
       clearAuth()
+      // 延迟 import 避免与 notification → auth 的循环依赖在模块初始化时炸
+      void import('@/stores/notification').then(({ useNotificationStore }) => {
+        useNotificationStore().clearAllCounts()
+      })
       toast.success('已退出登录')
     }
 
@@ -155,6 +159,10 @@ export const useAuthStore = defineStore(
         user.value = userInfo
         return true
       } catch {
+        // 拦截器在 refresh 失败时会 clearTokens；此处同步清 Pinia，避免头像残留
+        if (!getAccessToken()) {
+          clearAuth()
+        }
         return false
       }
     }
@@ -164,7 +172,11 @@ export const useAuthStore = defineStore(
      */
     const initAuth = async () => {
       if (accessToken.value) {
-        await fetchUserInfo()
+        const ok = await fetchUserInfo()
+        // 启动时 token 已失效且未能恢复：确保 UI 为未登录
+        if (!ok && !getAccessToken()) {
+          clearAuth()
+        }
       }
     }
 

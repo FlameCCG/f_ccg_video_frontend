@@ -49,6 +49,8 @@ const request: AxiosInstance = axios.create({
 // Flag to prevent multiple refresh token requests
 let isRefreshing = false
 let refreshSubscribers: Array<(token: string | null) => void> = []
+/** 防止并发请求同时触发多次「会话失效」清理与弹窗 */
+let isHandlingSessionExpired = false
 
 const subscribeTokenRefresh = (callback: (token: string | null) => void): void => {
   refreshSubscribers.push(callback)
@@ -57,6 +59,31 @@ const subscribeTokenRefresh = (callback: (token: string | null) => void): void =
 const onTokenRefreshed = (token: string | null): void => {
   refreshSubscribers.forEach((callback) => callback(token))
   refreshSubscribers = []
+}
+
+/**
+ * 会话彻底失效（refresh 失败或无 refresh token）：
+ * 清 localStorage token，并通知 UI 同步清 Pinia 登录态（头像等）。
+ * 注意：此处不能直接 import auth store，避免与 request 循环依赖。
+ */
+const handleSessionExpired = (message?: string): void => {
+  clearTokens()
+
+  if (isHandlingSessionExpired) {
+    return
+  }
+  isHandlingSessionExpired = true
+
+  // 单一事件：UI 负责 clearAuth + 提示 + 打开登录框（勿再派 login-required，避免双 toast）
+  window.dispatchEvent(
+    new CustomEvent('auth:session-expired', {
+      detail: { message: message || '登录已过期，请重新登录' },
+    })
+  )
+
+  window.setTimeout(() => {
+    isHandlingSessionExpired = false
+  }, 1500)
 }
 
 const normalizeApiMessage = (msg: unknown): string => {
@@ -279,12 +306,12 @@ request.interceptors.response.use(
           originalRequest.headers.Authorization = `Bearer ${newToken}`
           return request(originalRequest)
         } else {
-          // Refresh failed - clear tokens and redirect to login
+          // Refresh 失败：清 token + 通知 UI 掉登录态（头像等）
           isRefreshing = false
           onTokenRefreshed(null) // Reject pending requests
-          clearTokens()
-          window.dispatchEvent(new CustomEvent('auth:login-required'))
-          return Promise.reject(new Error(normalizedMsg || '登录已过期，请重新登录'))
+          const expiredMsg = normalizedMsg || '登录已过期，请重新登录'
+          handleSessionExpired(expiredMsg)
+          return Promise.reject(new Error(expiredMsg))
         }
       } else {
         // Wait for token refresh
@@ -320,6 +347,40 @@ request.interceptors.response.use(
   },
   async (error: AxiosError) => {
     const config = error.config
+
+    // HTTP 401：按会话失效处理（部分网关/中间层可能直接回 401）
+    if (error.response?.status === 401) {
+      const expiredMsg = '登录已过期，请重新登录'
+      if (!isRefreshing) {
+        isRefreshing = true
+        const newToken = await refreshAccessToken()
+        if (newToken && config) {
+          isRefreshing = false
+          onTokenRefreshed(newToken)
+          config.headers = config.headers ?? {}
+          config.headers.Authorization = `Bearer ${newToken}`
+          return request(config)
+        }
+        isRefreshing = false
+        onTokenRefreshed(null)
+        handleSessionExpired(expiredMsg)
+      } else if (config) {
+        return new Promise((resolve, reject) => {
+          subscribeTokenRefresh((token: string | null) => {
+            if (token) {
+              config.headers = config.headers ?? {}
+              config.headers.Authorization = `Bearer ${token}`
+              resolve(request(config))
+            } else {
+              reject(new Error(expiredMsg))
+            }
+          })
+        })
+      } else {
+        handleSessionExpired(expiredMsg)
+      }
+      return Promise.reject(new Error(expiredMsg))
+    }
 
     // 幂等请求：瞬时代理/连通故障自动重试 1 次
     if (

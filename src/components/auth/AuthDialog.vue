@@ -1036,7 +1036,7 @@ onUnmounted(() => {
   />
 </template>
 
-<style scoped>
+<style scoped lang="scss">
 /* ── Shell: 克制表面 + 有限 blur，Lain 为视觉锚点 ── */
 :deep(.auth-dialog-content) {
   border-radius: 22px;
@@ -1074,15 +1074,15 @@ onUnmounted(() => {
     color var(--duration-fast) linear,
     background-color var(--duration-fast) linear,
     transform var(--duration-fast) var(--ease-out-expo);
-}
 
-.auth-back-btn:hover {
-  background: color-mix(in oklch, var(--bg-surface-2) 80%, transparent);
-  color: var(--text-1);
-}
+  &:hover {
+    background: color-mix(in oklch, var(--bg-surface-2) 80%, transparent);
+    color: var(--text-1);
+  }
 
-.auth-back-btn:active {
-  transform: scale(0.96);
+  &:active {
+    transform: scale(0.96);
+  }
 }
 
 .auth-dialog-brand {
@@ -1092,7 +1092,6 @@ onUnmounted(() => {
   text-align: center;
 }
 
-/* Lain 自带 mb-4，标题区不再额外顶距，对齐历史间距 */
 .auth-dialog-copy {
   margin-top: 0;
 }
@@ -1122,31 +1121,36 @@ onUnmounted(() => {
   gap: 0.875rem;
 }
 
-.auth-field-block {
-  display: flex;
-  flex-direction: column;
-  gap: 0.375rem;
-}
-
 .auth-field {
   position: relative;
-}
 
-.auth-field-icon {
-  position: absolute;
-  left: 0.95rem;
-  top: 50%;
-  z-index: 1;
-  height: 1.05rem;
-  width: 1.05rem;
-  transform: translateY(-50%);
-  color: color-mix(in oklch, var(--text-2) 72%, transparent);
-  transition: color var(--duration-fast) linear;
-  pointer-events: none;
-}
+  &-block {
+    display: flex;
+    flex-direction: column;
+    gap: 0.375rem;
+  }
 
-.auth-field:focus-within .auth-field-icon {
-  color: var(--brand-blue);
+  &-icon {
+    position: absolute;
+    left: 0.95rem;
+    top: 50%;
+    z-index: 1;
+    height: 1.05rem;
+    width: 1.05rem;
+    transform: translateY(-50%);
+    color: color-mix(in oklch, var(--text-2) 72%, transparent);
+    transition: color var(--duration-fast) linear;
+    pointer-events: none;
+  }
+
+  &:focus-within .auth-field-icon {
+    color: var(--brand-blue);
+  }
+
+  &-meta {
+    display: flex;
+    justify-content: flex-end;
+  }
 }
 
 :deep(.auth-input) {
@@ -1207,16 +1211,11 @@ onUnmounted(() => {
   transition:
     color var(--duration-fast) linear,
     background-color var(--duration-fast) linear;
-}
 
-.auth-eye-btn:hover {
-  background: color-mix(in oklch, var(--bg-surface-2) 70%, transparent);
-  color: var(--text-1);
-}
-
-.auth-field-meta {
-  display: flex;
-  justify-content: flex-end;
+  &:hover {
+    background: color-mix(in oklch, var(--bg-surface-2) 70%, transparent);
+    color: var(--text-1);
+  }
 }
 
 .auth-text-link {
@@ -1224,10 +1223,10 @@ onUnmounted(() => {
   font-weight: 500;
   color: var(--text-2);
   transition: color var(--duration-fast) linear;
-}
 
-.auth-text-link:hover {
-  color: var(--brand-blue);
+  &:hover {
+    color: var(--brand-blue);
+  }
 }
 
 .auth-primary-btn {
@@ -1242,14 +1241,14 @@ onUnmounted(() => {
     transform var(--duration-fast) var(--ease-out-expo),
     box-shadow var(--duration-normal) var(--ease-out-quart),
     background-color var(--duration-fast) linear;
-}
 
-.auth-primary-btn:hover:not(:disabled) {
-  box-shadow: 0 10px 24px -12px color-mix(in oklch, var(--brand-blue) 62%, transparent);
-}
+  &:hover:not(:disabled) {
+    box-shadow: 0 10px 24px -12px color-mix(in oklch, var(--brand-blue) 62%, transparent);
+  }
 
-.auth-primary-btn:active:not(:disabled) {
-  transform: scale(0.985);
+  &:active:not(:disabled) {
+    transform: scale(0.985);
+  }
 }
 
 .auth-secondary-btn {
@@ -1259,10 +1258,10 @@ onUnmounted(() => {
   transition:
     transform var(--duration-fast) var(--ease-out-expo),
     background-color var(--duration-fast) linear;
-}
 
-.auth-secondary-btn:active:not(:disabled) {
-  transform: scale(0.98);
+  &:active:not(:disabled) {
+    transform: scale(0.98);
+  }
 }
 
 .auth-ghost-btn {
@@ -1289,25 +1288,25 @@ onUnmounted(() => {
   align-items: center;
   justify-content: center;
   padding: 0.35rem 0 0.15rem;
-}
 
-.auth-oauth-divider::before {
-  content: '';
-  position: absolute;
-  inset-inline: 0;
-  top: 50%;
-  border-top: 1px solid color-mix(in oklch, var(--border-color) 55%, transparent);
-}
+  &::before {
+    content: '';
+    position: absolute;
+    inset-inline: 0;
+    top: 50%;
+    border-top: 1px solid color-mix(in oklch, var(--border-color) 55%, transparent);
+  }
 
-.auth-oauth-divider span {
-  position: relative;
-  background: color-mix(in oklch, var(--bg-surface-0) 94%, transparent);
-  padding-inline: 0.75rem;
-  font-size: 0.6875rem;
-  font-weight: 500;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: color-mix(in oklch, var(--text-2) 80%, transparent);
+  span {
+    position: relative;
+    background: color-mix(in oklch, var(--bg-surface-0) 94%, transparent);
+    padding-inline: 0.75rem;
+    font-size: 0.6875rem;
+    font-weight: 500;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: color-mix(in oklch, var(--text-2) 80%, transparent);
+  }
 }
 
 .dark .auth-oauth-divider span {
@@ -1335,23 +1334,34 @@ onUnmounted(() => {
     border-color var(--duration-fast) linear,
     background-color var(--duration-fast) linear,
     color var(--duration-fast) linear;
-}
 
-.auth-oauth-btn:hover {
-  border-color: color-mix(in oklch, var(--border-color) 90%, transparent);
-  background: color-mix(in oklch, var(--bg-surface-2) 55%, transparent);
-  color: var(--text-1);
-  transform: translateY(-1px);
-}
+  &:hover {
+    border-color: color-mix(in oklch, var(--border-color) 90%, transparent);
+    background: color-mix(in oklch, var(--bg-surface-2) 55%, transparent);
+    color: var(--text-1);
+    transform: translateY(-1px);
 
-.auth-oauth-btn:active:not(:disabled) {
-  transform: scale(0.97);
-}
+    .auth-oauth-google {
+      opacity: 1;
+      filter: grayscale(0);
+    }
 
-.auth-oauth-btn:disabled {
-  cursor: wait;
-  opacity: 0.55;
-  pointer-events: none;
+    .auth-oauth-img {
+      opacity: 1;
+      filter: grayscale(0);
+      transform: scale(1.04);
+    }
+  }
+
+  &:active:not(:disabled) {
+    transform: scale(0.97);
+  }
+
+  &:disabled {
+    cursor: wait;
+    opacity: 0.55;
+    pointer-events: none;
+  }
 }
 
 .auth-oauth-google {
@@ -1360,11 +1370,6 @@ onUnmounted(() => {
   transition:
     opacity var(--duration-fast) linear,
     filter var(--duration-fast) linear;
-}
-
-.auth-oauth-btn:hover .auth-oauth-google {
-  opacity: 1;
-  filter: grayscale(0);
 }
 
 .auth-oauth-img {
@@ -1378,30 +1383,23 @@ onUnmounted(() => {
     transform var(--duration-fast) var(--ease-out-expo);
 }
 
-.auth-oauth-btn:hover .auth-oauth-img {
-  opacity: 1;
-  filter: grayscale(0);
-  transform: scale(1.04);
-}
-
 .auth-switch {
   padding-top: 0.35rem;
   text-align: center;
   font-size: 0.8125rem;
   color: var(--text-2);
+
+  &-action {
+    font-weight: 600;
+    color: var(--text-1);
+    transition: color var(--duration-fast) linear;
+
+    &:hover {
+      color: var(--brand-blue);
+    }
+  }
 }
 
-.auth-switch-action {
-  font-weight: 600;
-  color: var(--text-1);
-  transition: color var(--duration-fast) linear;
-}
-
-.auth-switch-action:hover {
-  color: var(--brand-blue);
-}
-
-/* 模式切换：只动画 opacity + transform */
 .auth-mode-copy-enter-active,
 .auth-mode-copy-leave-active,
 .auth-mode-panel-enter-active,
@@ -1423,6 +1421,9 @@ onUnmounted(() => {
   transform: translateY(-4px);
 }
 
+/* Lain 自带 mb-4，标题区不再额外顶距，对齐历史间距 */
+
+/* 模式切换：只动画 opacity + transform */
 @media (prefers-reduced-motion: reduce) {
   .auth-mode-copy-enter-active,
   .auth-mode-copy-leave-active,

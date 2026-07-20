@@ -262,7 +262,7 @@ onMounted(() => {
                     <img
                       :src="captchaData.thumbImage"
                       alt="提示"
-                      class="h-8 w-auto min-w-0 shrink-0 object-contain object-left rounded-[4px] shadow-sm mix-blend-multiply dark:mix-blend-screen"
+                      class="captcha-blend-img h-8 w-auto min-w-0 shrink-0 object-contain object-left rounded-[4px] shadow-sm"
                       draggable="false"
                     />
                   </div>
@@ -307,7 +307,7 @@ onMounted(() => {
   </Dialog>
 </template>
 
-<style scoped>
+<style scoped lang="scss">
 .fade-enter-active,
 .fade-leave-active {
   transition: opacity 0.3s ease;
@@ -316,5 +316,14 @@ onMounted(() => {
 .fade-enter-from,
 .fade-leave-to {
   opacity: 0;
+}
+
+/* 亮色 multiply / 暗色 screen，随 html.dark，不用 dark: 工具类 */
+.captcha-blend-img {
+  mix-blend-mode: multiply;
+}
+
+:global(html.dark) .captcha-blend-img {
+  mix-blend-mode: screen;
 }
 </style>

@@ -940,15 +940,15 @@ onMounted(() => {
   </div>
 </template>
 
-<style scoped>
+<style scoped lang="scss">
 .chat-message-row {
   display: flex;
   align-items: flex-end;
   gap: 0.75rem;
-}
 
-.chat-message-row-self {
-  flex-direction: row-reverse;
+  &-self {
+    flex-direction: row-reverse;
+  }
 }
 
 .chat-bubble {
@@ -958,20 +958,20 @@ onMounted(() => {
   border: 1px solid transparent;
   box-shadow: 0 18px 40px -32px rgb(15, 15, 15, 0.4);
   backdrop-filter: blur(12px);
-}
 
-.chat-bubble-self {
-  background: var(--color-foreground);
-  color: var(--color-background);
-  border-color: color-mix(in oklab, var(--color-foreground) 88%, transparent);
-  border-bottom-right-radius: 8px;
-}
+  &-self {
+    background: var(--color-foreground);
+    color: var(--color-background);
+    border-color: color-mix(in oklab, var(--color-foreground) 88%, transparent);
+    border-bottom-right-radius: 8px;
+  }
 
-.chat-bubble-peer {
-  background: color-mix(in oklab, var(--color-card) 90%, var(--color-background));
-  color: var(--color-foreground);
-  border-color: color-mix(in oklab, var(--color-border) 88%, transparent);
-  border-bottom-left-radius: 8px;
+  &-peer {
+    background: color-mix(in oklab, var(--color-card) 90%, var(--color-background));
+    color: var(--color-foreground);
+    border-color: color-mix(in oklab, var(--color-border) 88%, transparent);
+    border-bottom-left-radius: 8px;
+  }
 }
 
 .chat-media-bubble,

@@ -1,4 +1,4 @@
-﻿<script setup lang="ts">
+<script setup lang="ts">
 import { ref, reactive, nextTick, watch, onBeforeUnmount, computed, shallowRef } from 'vue'
 import { useRouter } from 'vue-router'
 import { X, Download, Loader2, Bot, UploadCloud } from 'lucide-vue-next'
@@ -1316,11 +1316,11 @@ const handleComposerSend = (payload: AiComposerSendPayload) => {
                     class="absolute inset-0 isolate overflow-hidden rounded-[1.5rem] border border-[var(--border-color)] bg-[var(--bg-surface-1)] shadow-surface"
                   >
                     <div
-                      class="absolute inset-0 bg-gradient-to-r from-transparent via-black/10 to-transparent dark:via-white/10 animate-shimmer"
+                      class="absolute inset-0 bg-gradient-to-r from-transparent via-foreground/10 to-transparent animate-shimmer"
                       style="background-size: 200% 100%"
                     ></div>
                     <div
-                      class="absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(255,255,255,0.12),transparent_52%)] dark:bg-[radial-gradient(circle_at_top,rgba(255,255,255,0.08),transparent_48%)]"
+                      class="absolute inset-0 bg-[radial-gradient(circle_at_top,color-mix(in_oklch,var(--color-foreground)_10%,transparent),transparent_52%)]"
                     ></div>
 
                     <div class="relative z-10 flex h-full flex-col justify-between p-5">
@@ -1331,9 +1331,7 @@ const handleComposerSend = (payload: AiComposerSendPayload) => {
                           >
                             IMAGE
                           </div>
-                          <div
-                            class="mt-2 h-2 w-20 rounded-full bg-black/10 dark:bg-white/10"
-                          ></div>
+                          <div class="mt-2 h-2 w-20 rounded-full surface-tint-strong"></div>
                         </div>
                         <div
                           class="rounded-full border border-[var(--border-color)] bg-[var(--bg-surface-1)] px-3 py-1 text-[10px] font-mono font-bold tracking-[0.2em] text-[var(--text-2)]"
@@ -1347,17 +1345,15 @@ const handleComposerSend = (payload: AiComposerSendPayload) => {
                           class="relative flex aspect-square items-center justify-center overflow-hidden rounded-[1.1rem] border border-[var(--border-color)] bg-[var(--bg-surface-0)]/80"
                         >
                           <div
-                            class="absolute inset-0 bg-gradient-to-br from-black/[0.04] via-transparent to-black/[0.08] dark:from-white/[0.04] dark:to-white/[0.02]"
+                            class="absolute inset-0 bg-gradient-to-br from-foreground/[0.04] via-transparent to-foreground/[0.08]"
                           ></div>
                           <div
-                            class="relative z-10 h-24 w-24 rounded-full border border-black/10 bg-black/[0.04] dark:border-white/10 dark:bg-white/[0.04]"
+                            class="relative z-10 h-24 w-24 rounded-full border border-tint surface-tint"
                           ></div>
                         </div>
                         <div class="space-y-2">
-                          <div class="h-2.5 rounded-full bg-black/10 dark:bg-white/10"></div>
-                          <div
-                            class="h-2.5 w-[72%] rounded-full bg-black/[0.08] dark:bg-white/[0.08]"
-                          ></div>
+                          <div class="h-2.5 rounded-full surface-tint-strong"></div>
+                          <div class="h-2.5 w-[72%] rounded-full surface-tint"></div>
                         </div>
                         <div
                           class="flex items-center justify-between text-[10px] font-mono font-bold tracking-[0.22em] text-[var(--text-2)]"
@@ -1552,7 +1548,7 @@ const handleComposerSend = (payload: AiComposerSendPayload) => {
   <ImageViewer v-model="showPreviewImage" :src="previewImageUrl" />
 </template>
 
-<style scoped>
+<style scoped lang="scss">
 /* 布局隔离：消息行与滚动区变更不牵连整层 dialog 重算 */
 .ai-dialog-shell {
   contain: layout style;
@@ -1563,10 +1559,10 @@ const handleComposerSend = (payload: AiComposerSendPayload) => {
   /* 不用 size/strict containment，避免 flex-1 滚动高度被算成 0 */
   contain: layout style;
   overscroll-behavior: contain;
-}
 
-.ai-chat-scroll--streaming {
-  scroll-behavior: auto;
+  &--streaming {
+    scroll-behavior: auto;
+  }
 }
 
 .ai-msg-row {
@@ -1579,7 +1575,6 @@ const handleComposerSend = (payload: AiComposerSendPayload) => {
   contain: content;
 }
 
-/* Ultra Premium Typography Reset adapted for theme variables */
 :deep(.markdown-body) {
   font-family: inherit;
   color: inherit;
@@ -1719,10 +1714,6 @@ const handleComposerSend = (payload: AiComposerSendPayload) => {
   background: transparent;
 }
 
-/*
- * 语法高亮色板：必须有足够对比度，之前几乎全是 text-1/text-2 灰阶，
- * 看起来像“完全没有高亮”。
- */
 :deep(.markdown-body .hljs) {
   color: var(--text-1);
   background: transparent;
@@ -1909,31 +1900,28 @@ const handleComposerSend = (payload: AiComposerSendPayload) => {
   margin-bottom: 0.5em;
 }
 
-/* Scrollbar Minimalist */
 .custom-scrollbar::-webkit-scrollbar {
   width: 4px;
   height: 4px;
-}
 
-.custom-scrollbar::-webkit-scrollbar-track {
-  background: transparent;
-}
+  &-track {
+    background: transparent;
+  }
 
-.custom-scrollbar::-webkit-scrollbar-thumb {
-  background: var(--border-color);
-  border-radius: 4px;
+  &-thumb {
+    background: var(--border-color);
+    border-radius: 4px;
+  }
 }
 
 .custom-scrollbar:hover::-webkit-scrollbar-thumb {
   background: var(--text-2);
 }
 
-/* Animations — 仅 transform/opacity，时长缩短以降低打开卡顿 */
 .ease-out-expo {
   transition-timing-function: cubic-bezier(0.16, 1, 0.3, 1);
 }
 
-/* 打开动画只做 opacity，避免 scale 触发大面积图层重绘 */
 .zen-modal-enter-active,
 .zen-modal-leave-active {
   transition: opacity 0.16s linear;
@@ -1942,25 +1930,6 @@ const handleComposerSend = (payload: AiComposerSendPayload) => {
 .zen-modal-enter-from,
 .zen-modal-leave-to {
   opacity: 0;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .zen-modal-enter-active,
-  .zen-modal-leave-active,
-  .animate-shimmer {
-    animation: none !important;
-    transition: none !important;
-  }
-}
-
-@keyframes shimmer {
-  0% {
-    background-position: -200% 0;
-  }
-
-  100% {
-    background-position: 200% 0;
-  }
 }
 
 .animate-shimmer {
@@ -2021,15 +1990,15 @@ const handleComposerSend = (payload: AiComposerSendPayload) => {
     color-mix(in oklab, var(--bg-surface-2) 84%, transparent)
   );
   overflow: hidden;
-}
 
-.image-skeleton-frame__inner {
-  width: 44%;
-  height: 44%;
-  border-radius: 999px;
-  border: 1px solid color-mix(in oklab, var(--text-2) 35%, transparent);
-  background: color-mix(in oklab, var(--bg-surface-0) 88%, transparent);
-  box-shadow: inset 0 0 0 10px color-mix(in oklab, var(--bg-surface-1) 90%, transparent);
+  &__inner {
+    width: 44%;
+    height: 44%;
+    border-radius: 999px;
+    border: 1px solid color-mix(in oklab, var(--text-2) 35%, transparent);
+    background: color-mix(in oklab, var(--bg-surface-0) 88%, transparent);
+    box-shadow: inset 0 0 0 10px color-mix(in oklab, var(--bg-surface-1) 90%, transparent);
+  }
 }
 
 .image-skeleton-line {
@@ -2044,13 +2013,44 @@ const handleComposerSend = (payload: AiComposerSendPayload) => {
   );
   background-size: 200% 100%;
   animation: shimmer 2.4s infinite linear;
+
+  &--short {
+    width: 5rem;
+  }
+
+  &--medium {
+    width: 72%;
+  }
 }
 
-.image-skeleton-line--short {
-  width: 5rem;
+/* Ultra Premium Typography Reset adapted for theme variables */
+
+/*
+ * 语法高亮色板：必须有足够对比度，之前几乎全是 text-1/text-2 灰阶，
+ * 看起来像“完全没有高亮”。
+ */
+
+/* Scrollbar Minimalist */
+
+/* Animations — 仅 transform/opacity，时长缩短以降低打开卡顿 */
+
+/* 打开动画只做 opacity，避免 scale 触发大面积图层重绘 */
+@media (prefers-reduced-motion: reduce) {
+  .zen-modal-enter-active,
+  .zen-modal-leave-active,
+  .animate-shimmer {
+    animation: none !important;
+    transition: none !important;
+  }
 }
 
-.image-skeleton-line--medium {
-  width: 72%;
+@keyframes shimmer {
+  0% {
+    background-position: -200% 0;
+  }
+
+  100% {
+    background-position: 200% 0;
+  }
 }
 </style>

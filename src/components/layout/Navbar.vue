@@ -528,7 +528,7 @@ const navActions = [
   />
 </template>
 
-<style scoped>
+<style scoped lang="scss">
 /* Search suggestion highlight */
 .search-suggestion-item :deep(em) {
   color: oklch(var(--primary));
@@ -574,67 +574,71 @@ const navActions = [
     opacity 0.2s ease;
 }
 
-/* Bulletproof CSS for search bar to evade Tailwind JIT cache bugs */
 .search-input-base {
   border: 1px solid transparent;
   transition: all 0.3s ease;
   backdrop-filter: blur(8px);
+
+  &:focus-visible {
+    background-color: var(--color-background);
+    color: var(--color-foreground);
+    border-color: color-mix(in oklch, var(--color-primary) 40%, transparent);
+    box-shadow: 0 0 0 3px color-mix(in oklch, var(--color-primary) 20%, transparent);
+
+    &::placeholder {
+      color: color-mix(in oklch, var(--color-muted-foreground) 70%, transparent);
+    }
+  }
 }
 
-.search-input-base:focus-visible {
-  background-color: var(--color-background);
-  color: var(--color-foreground);
-  border-color: color-mix(in oklch, var(--color-primary) 40%, transparent);
-  box-shadow: 0 0 0 3px color-mix(in oklch, var(--color-primary) 20%, transparent);
-}
-
-.search-input-base:focus-visible::placeholder {
-  color: color-mix(in oklch, var(--color-muted-foreground) 70%, transparent);
-}
-
-/* 1. Solid variant (for video detail page / solid headers) */
 .search-bar-solid {
   background-color: color-mix(in oklch, var(--color-secondary) 60%, transparent);
   color: var(--color-foreground);
   box-shadow: inset 0 1px 2px rgb(0, 0, 0, 0.05);
+
+  &:hover:not(:focus-visible) {
+    background-color: color-mix(in oklch, var(--color-secondary) 90%, transparent);
+  }
+
+  &::placeholder {
+    color: color-mix(in oklch, var(--color-muted-foreground) 70%, transparent);
+  }
 }
 
 :global(.dark) .search-bar-solid {
   box-shadow: none;
 }
 
-.search-bar-solid:hover:not(:focus-visible) {
-  background-color: color-mix(in oklch, var(--color-secondary) 90%, transparent);
-}
-
-.search-bar-solid::placeholder {
-  color: color-mix(in oklch, var(--color-muted-foreground) 70%, transparent);
-}
-
-/* 2. Glass variant (for homepage / banner overlay headers) */
 .search-bar-glass {
   background-color: rgb(255, 255, 255, 0.2);
   border-color: rgb(255, 255, 255, 0.2);
   color: #ffffff;
   box-shadow: 0 1px 2px rgb(0, 0, 0, 0.05);
   backdrop-filter: blur(12px);
+
+  &:hover:not(:focus-visible) {
+    background-color: rgb(255, 255, 255, 0.3);
+  }
+
+  &::placeholder {
+    color: rgb(255, 255, 255, 0.7);
+  }
 }
 
-.search-bar-glass:hover:not(:focus-visible) {
-  background-color: rgb(255, 255, 255, 0.3);
-}
-
-.search-bar-glass::placeholder {
-  color: rgb(255, 255, 255, 0.7);
-}
-
-/* Dark mode overrides for glass variant */
 :global(.dark) .search-bar-glass {
   background-color: rgb(0, 0, 0, 0.4);
   border-color: rgb(255, 255, 255, 0.1);
+
+  &:hover:not(:focus-visible) {
+    background-color: rgb(0, 0, 0, 0.6);
+  }
 }
 
-:global(.dark) .search-bar-glass:hover:not(:focus-visible) {
-  background-color: rgb(0, 0, 0, 0.6);
-}
+/* Bulletproof CSS for search bar to evade Tailwind JIT cache bugs */
+
+/* 1. Solid variant (for video detail page / solid headers) */
+
+/* 2. Glass variant (for homepage / banner overlay headers) */
+
+/* Dark mode overrides for glass variant */
 </style>

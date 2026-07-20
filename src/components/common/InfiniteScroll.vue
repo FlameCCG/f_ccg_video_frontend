@@ -66,7 +66,7 @@ onUnmounted(() => {
   </div>
 </template>
 
-<style scoped>
+<style scoped lang="scss">
 .sentinel {
   height: 1px;
   width: 100%;

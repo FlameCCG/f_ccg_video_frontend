@@ -193,12 +193,29 @@ API 判定规则必须遵守：
 
 ### 5. 视觉注入
 
-样式以 Tailwind CSS v4 + CSS Variables 为主：
+样式以 **主题 token（CSS Variables + `@theme`）+ Tailwind 布局 utility + 组件 SCSS** 为主：
 
-- 设计 token 放到 CSS 变量与 `@theme`
-- 语义类放到 `@layer components`
-- 视觉逻辑写在 CSS，不通过增加无意义嵌套修补样式
-- 无充分理由不要写硬编码颜色
+- 全局样式双入口（顺序固定，见 `main.ts`）：
+  1. `src/assets/styles/tailwind.css`（**纯 CSS**）：`@import 'tailwindcss'` + `@theme` 语义 token 映射  
+  2. `src/assets/styles/main.scss`：`:root` / `.dark` 真值 + `@layer components`  
+- **禁止** 把 `@import 'tailwindcss'` 或 `@import url('tailwindcss')` 放进 `.scss`（Sass 预处理会导致 utility 不生成，布局整体塌陷）
+- 设计 token：真值在 `main.scss` 的 CSS 变量；Tailwind 类名映射在 `tailwind.css` 的 `@theme`
+- 组件复杂样式使用 `<style scoped lang="scss">`，允许嵌套；布局/间距可用 Tailwind utility
+- 语义表面类优先复用 `@layer components`（如 `status-surface-*`、`surface-tint`、`glass-panel`）
+- 视觉逻辑写在 CSS/SCSS，不通过无意义 DOM 嵌套修补样式
+
+#### 颜色与主题（强制）
+
+- **颜色必须使用项目主题 token**，禁止用 Tailwind 默认调色板当业务色：
+  - ✅ `bg-background` / `bg-card` / `bg-muted` / `bg-primary` / `bg-secondary` / `bg-destructive`
+  - ✅ `text-foreground` / `text-muted-foreground` / `text-primary` / `border-border`
+  - ✅ `var(--brand-blue)`、`var(--status-success-ink)`、`var(--color-*)` 等已有 token
+  - ✅ 状态：`status-surface-success|warning|info|danger` 或对应 CSS 变量
+  - ❌ `bg-white` / `bg-black` / `bg-zinc-*` / `bg-slate-*` / `text-emerald-*` / `text-amber-*` / `bg-red-500` 等调色板类（除非纯装饰且无主题语义，需说明理由）
+- **禁止使用 `dark:` / `light:` 工具类前缀**  
+  暗色仅通过 `html.dark` + `main.scss` 中 `.dark { --token }` 换变量完成；组件只写一套 token class。
+- **禁止** 为双主题写两套写死色（如 `bg-black/5 dark:bg-white/10`）；改用 `surface-tint` / `color-mix(..., var(--color-foreground), ...)` 等随变量自适应的写法。
+- 主题切换由 `src/stores/theme.ts` 对 `document.documentElement` 切换 `class="dark"`，样式层不得再引入 `@custom-variant dark`。
 
 ### 6. 代码质检
 
@@ -235,7 +252,8 @@ API 判定规则必须遵守：
 - Vue 3 + TypeScript + Vite
 - shadcn-vue / Reka 风格组件能力
 - ArtPlayer + `artplayer-plugin-danmuku`
-- Tailwind CSS v4 + CSS Variables
+- Tailwind CSS v4 + 项目主题 CSS Variables（`main.scss`）
+- 组件样式：`lang="scss"`（与 Tailwind utility 并存：布局用 Tailwind，颜色用 token）
 - Pinia + `pinia-plugin-persistedstate`
 - Lucide Icons
 
@@ -246,7 +264,9 @@ API 判定规则必须遵守：
 - Element Plus
 - 自己实现视频播放器内核
 - Vitest / Jest 作为默认测试主线
-- SASS / SCSS / Less
+- Tailwind `dark:` / `light:` 主题前缀与默认调色板业务色（见「颜色与主题」）
+- `@custom-variant dark` / `dark:` 主题前缀（暗色只走 `.dark` 变量）
+- 将 Tailwind 入口混入 `.scss`（必须保持 `tailwind.css` 纯 CSS）
 
 ---
 

@@ -1,14 +1,19 @@
 import type { UserHomeBannerDefaultsResult } from '@/api/user'
+import { BannerDisplay } from '@/constants/banner'
 
 export const normalizeBannerUrl = (value?: string | null) =>
   (value ?? '').trim().replace(/^https?:/, '')
 
+/**
+ * 预设横幅缩略图定位：默认居中（与页面 object-center 一致）；
+ * 个别素材可按索引微调，避免关键区域被裁切。
+ */
 export const getBannerPresetMediaStyle = (presetIndex?: number | null) => {
   if (presetIndex === 1) {
     return { objectPosition: '50% 12%' }
   }
 
-  return undefined
+  return { objectPosition: BannerDisplay.objectPosition }
 }
 
 export const resolveBannerPresetIndex = (

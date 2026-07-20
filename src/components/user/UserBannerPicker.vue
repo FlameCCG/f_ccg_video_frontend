@@ -9,7 +9,17 @@ import {
   type UserHomeBannerDefaultsResult,
 } from '@/api/user'
 import type { BannerItem } from '@/api/banner'
+import {
+  BannerArtSpec,
+  BannerDisplay,
+  formatProfileBannerUploadTip,
+} from '@/constants/banner'
 import { getBannerPresetMediaStyle, normalizeBannerUrl } from '@/utils/user-banner-preview'
+
+/** 预设缩略图 / 自定义预览：贴近真实头图裁切（制图 9.6:1 + 页面定高） */
+const profileArtAspect = BannerArtSpec.profileBanner.ratioCss
+const profileDisplayHeight = BannerDisplay.profileHeight
+const profileUploadTip = formatProfileBannerUploadTip()
 
 const props = defineProps<{
   open: boolean
@@ -253,7 +263,7 @@ const isPresetActive = (banner: BannerItem) => currentPresetBannerId.value === b
               <img
                 :src="banner.cover"
                 :alt="getPresetTitle(banner, index)"
-                class="aspect-[3.6/1] w-full object-cover"
+                class="banner-preset-thumb w-full object-cover object-center"
                 :style="getBannerPresetMediaStyle(index)"
               />
             </div>
@@ -305,14 +315,15 @@ const isPresetActive = (banner: BannerItem) => currentPresetBannerId.value === b
             @mouseleave="uploadHintHovered = false"
             @click="openFilePicker"
           >
+            <!-- 预览高度与页面头图一致，object-cover 模拟真实裁切 -->
             <div
-              class="flex h-[198px] items-center justify-center overflow-hidden rounded-[20px] border border-border/60 bg-background"
+              class="banner-custom-preview flex w-full items-center justify-center overflow-hidden rounded-[20px] border border-border/60 bg-background"
             >
               <img
                 v-if="customBannerPreview"
                 :src="customBannerPreview"
                 alt="自定义横幅预览"
-                class="h-full w-full object-cover"
+                class="h-full w-full object-cover object-center"
               />
               <div v-else class="flex flex-col items-center gap-3 text-muted-foreground">
                 <div class="rounded-full border border-border/70 bg-card p-4">
@@ -331,14 +342,14 @@ const isPresetActive = (banner: BannerItem) => currentPresetBannerId.value === b
                   {{ customBannerPreview ? '自定义横幅预览' : '上传自定义横幅' }}
                 </p>
                 <p
-                  class="mt-1 text-sm transition-opacity"
+                  class="mt-1 text-sm leading-relaxed transition-opacity"
                   :class="
                     uploadHintHovered
                       ? 'opacity-100 text-primary'
                       : 'opacity-70 text-muted-foreground'
                   "
                 >
-                  推荐尺寸为 3840x400，支持 jpg、png 格式图片
+                  {{ profileUploadTip }}
                 </p>
               </div>
 
@@ -394,3 +405,16 @@ const isPresetActive = (banner: BannerItem) => currentPresetBannerId.value === b
     </div>
   </div>
 </template>
+
+<style scoped lang="scss">
+/* 预设卡：使用制图比例 9.6:1，贴近真实 object-cover 裁切（不再用 3.6:1） */
+.banner-preset-thumb {
+  aspect-ratio: v-bind(profileArtAspect);
+}
+
+/* 自定义上传预览：高度与用户主页头图一致 */
+.banner-custom-preview {
+  height: v-bind('profileDisplayHeight + "px"');
+  max-height: 40vh;
+}
+</style>

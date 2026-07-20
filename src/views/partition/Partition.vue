@@ -9,6 +9,7 @@ import VideoCard from '@/components/video/VideoCard.vue'
 import VideoCardSkeleton from '@/components/common/VideoCardSkeleton.vue'
 import InfiniteScroll from '@/components/common/InfiniteScroll.vue'
 import Carousel from '@/components/common/Carousel.vue'
+import { BannerDisplay } from '@/constants/banner'
 
 const route = useRoute()
 
@@ -28,6 +29,7 @@ let heroResizeObserver: ResizeObserver | null = null
 
 // Featured videos count (shown next to carousel - 3 columns x 2 rows)
 const FEATURED_COUNT = 6
+const homeCarouselMinHeight = BannerDisplay.homeCarouselMinHeight
 
 const shouldShowHero = computed(
   () =>
@@ -218,8 +220,11 @@ onBeforeUnmount(() => {
     <!-- Hero Section: Carousel + Featured Videos -->
     <div v-if="shouldShowHero" class="mb-6 lg:flex lg:items-start lg:gap-4">
       <div
-        class="relative min-h-[220px] overflow-hidden rounded-[var(--radius-2xl)] border border-border/50 bg-card shadow-raised lg:min-w-0 lg:flex-[2]"
-        :style="heroBannerHeight ? { height: `${heroBannerHeight}px` } : undefined"
+        class="relative overflow-hidden rounded-[var(--radius-2xl)] border border-border/50 bg-card shadow-raised lg:min-w-0 lg:flex-[2]"
+        :style="{
+          minHeight: `${homeCarouselMinHeight}px`,
+          ...(heroBannerHeight ? { height: `${heroBannerHeight}px` } : {}),
+        }"
       >
         <div class="home-hero-carousel block h-full w-full lg:absolute lg:inset-0">
           <Carousel
@@ -263,7 +268,7 @@ onBeforeUnmount(() => {
   </div>
 </template>
 
-<style scoped>
+<style scoped lang="scss">
 @media (width >= 1024px) {
   .home-hero-carousel :deep(.group) {
     height: 100%;

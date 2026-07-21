@@ -84,20 +84,44 @@ const mapSearchVideoHit = (video: SearchVideoHit): FeedItem => ({
   highlight: video.highlight,
 })
 
-// Debounced suggestion fetch to avoid firing a request on every keystroke
+// 短防抖 + 序号丢弃过期响应，保证每字输入都能落到最新联想
+let suggestSeq = 0
 const fetchSuggestions = useDebounceFn(async (prefix: string) => {
+  const q = prefix.trim()
+  if (!q) {
+    searchSuggestions.value = []
+    return
+  }
+  const seq = ++suggestSeq
   try {
-    searchSuggestions.value = await getSearchSuggest({ prefix })
+    const list = await getSearchSuggest({ prefix: q })
+    if (seq !== suggestSeq) return
+    searchSuggestions.value = list.map((item) => ({
+      ...item,
+      highlight: ensureSuggestHighlight(item, q),
+    }))
   } catch (error) {
+    if (seq !== suggestSeq) return
     console.error('Failed to fetch suggestions:', error)
   }
-}, 300)
+}, 100)
+
+/** 后端未返回 <em> 时前端兜底高亮字面匹配段 */
+const ensureSuggestHighlight = (item: SearchSuggestItem, query: string) => {
+  if (item.highlight?.includes('<em>')) return item.highlight
+  const value = item.value || ''
+  if (!query || !value) return value
+  const idx = value.toLowerCase().indexOf(query.toLowerCase())
+  if (idx < 0) return value
+  return value.slice(0, idx) + '<em>' + value.slice(idx, idx + query.length) + '</em>' + value.slice(idx + query.length)
+}
 
 // Search input handler – fetch suggestions when typing
 const handleSearchInput = () => {
   showDropdown.value = true
-  // Gate: skip very short queries to cut noise, and clear stale suggestions
-  if (keyword.value.trim().length < 2) {
+  const q = keyword.value.trim()
+  // 单字也实时联想
+  if (!q) {
     searchSuggestions.value = []
     return
   }
@@ -465,8 +489,11 @@ const sanitizeHighlight = (html: string) => {
 <style scoped lang="scss">
 /* Search suggestion highlight */
 .search-suggestion-item :deep(em) {
-  color: oklch(var(--primary));
+  color: var(--brand-blue, oklch(var(--primary)));
   font-style: normal;
-  font-weight: 600;
+  font-weight: 700;
+  background: oklch(var(--primary) / 0.12);
+  border-radius: 2px;
+  padding: 0 1px;
 }
 </style>

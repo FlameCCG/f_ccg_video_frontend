@@ -103,7 +103,7 @@ export interface SearchVideoParams {
 export interface SearchSuggestItem {
   value: string
   highlight: string
-  docType: 'videos' | 'tags'
+  docType: 'videos' | 'users' | 'tags'
 }
 
 export interface SearchSuggestParams {

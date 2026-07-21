@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
+import { useRouter } from 'vue-router'
 import {
   getNotificationList,
   type NotificationItem,
@@ -7,8 +8,10 @@ import {
 } from '@/api/notification'
 import { useNotificationStore } from '@/stores/notification'
 import { formatDateTimeAgo } from '@/utils/time'
+import { navigateToNotificationTarget } from '@/utils/notification-target'
 import { Bell } from 'lucide-vue-next'
 
+const router = useRouter()
 const list = ref<NotificationItem[]>([])
 const loading = ref(true)
 const total = ref(0)
@@ -47,7 +50,10 @@ const fetchData = async () => {
 onMounted(() => {
   void fetchData()
 })
-const openLink = (url: string) => window.open(url, '_blank')
+
+const openLink = (item: NotificationItem) => {
+  void navigateToNotificationTarget(router, item)
+}
 </script>
 
 <template>
@@ -118,7 +124,7 @@ const openLink = (url: string) => window.open(url, '_blank')
             <div
               v-if="item.link"
               class="mb-2 text-sm text-primary underline cursor-pointer hover:text-primary/80"
-              @click="openLink(item.link)"
+              @click="openLink(item)"
             >
               查看详情
             </div>

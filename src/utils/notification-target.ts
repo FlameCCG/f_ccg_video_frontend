@@ -25,6 +25,25 @@ const getBaseOrigin = () => {
 
 const formatRelativeHref = (url: URL) => `${url.pathname}${url.search}${url.hash}`
 
+/**
+ * Normalize notification links so bare domains open externally.
+ * - `/video/1` stays app-internal
+ * - `https://example.com` stays absolute
+ * - `//example.com` becomes `http://example.com`
+ * - `chatgpt.com` becomes `http://chatgpt.com` (avoids `/message/chatgpt.com`)
+ * Default scheme is http for broader compatibility with mixed sites.
+ */
+export const normalizeNotificationHref = (href: string): string => {
+  const trimmed = href.trim()
+  if (!trimmed) return trimmed
+
+  if (ABSOLUTE_URL_RE.test(trimmed)) return trimmed
+  if (trimmed.startsWith('//')) return `http:${trimmed}`
+  if (trimmed.startsWith('/')) return trimmed
+
+  return `http://${trimmed}`
+}
+
 const isInternalHref = (href: string): boolean => {
   if (href.startsWith('/')) return true
   if (!ABSOLUTE_URL_RE.test(href) || typeof window === 'undefined') return false
@@ -72,7 +91,8 @@ export const resolveNotificationTarget = (
   const rawHref = source.link?.trim() || buildFallbackHref(source)
   if (!rawHref) return null
 
-  const hrefWithComment = appendCommentId(rawHref, getPositiveNumber(source.commentID))
+  const normalizedHref = normalizeNotificationHref(rawHref)
+  const hrefWithComment = appendCommentId(normalizedHref, getPositiveNumber(source.commentID))
 
   if (isInternalHref(hrefWithComment)) {
     try {

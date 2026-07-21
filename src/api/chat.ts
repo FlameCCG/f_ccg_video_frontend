@@ -126,7 +126,8 @@ export type ChatWSEvent =
  */
 export interface ConversationListParams {
   page?: number
-  pageSize?: number // 文档说明：不设最大值
+  /** 每页数量，默认 20，最大 50（超出由后端截断） */
+  pageSize?: number
 }
 
 /**

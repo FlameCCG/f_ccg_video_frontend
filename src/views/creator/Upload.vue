@@ -78,8 +78,27 @@ interface VideoPart {
   abortController?: AbortController
 }
 
+/** 与后端 video_resources / video_part_resources.source_file_name 列长一致 */
+const MAX_SOURCE_FILE_NAME_LENGTH = 255
+
 /** 从源文件名推导默认分P标题（去扩展名），不修改源文件名本身 */
 const getDefaultPartTitle = (fileName: string) => fileName.replace(/\.[^/.]+$/, '')
+
+const getSourceFileNameLength = (fileName: string) => Array.from(fileName.trim()).length
+
+const isSourceFileNameTooLong = (fileName: string) =>
+  getSourceFileNameLength(fileName) > MAX_SOURCE_FILE_NAME_LENGTH
+
+const formatSourceFileNameForDisplay = (fileName: string) => {
+  const chars = Array.from(fileName.trim())
+  if (chars.length <= 40) return fileName.trim()
+  return `${chars.slice(0, 16).join('')}...${chars.slice(-16).join('')}`
+}
+
+const getSourceFileNameTooLongMessage = (fileName: string) => {
+  const length = getSourceFileNameLength(fileName)
+  return `源文件名过长（最多 ${MAX_SOURCE_FILE_NAME_LENGTH} 个字符，当前 ${length} 个）：${formatSourceFileNameForDisplay(fileName)}。请缩短文件名后重新选择`
+}
 
 const createVideoPart = (
   file: File,
@@ -322,6 +341,9 @@ const getFileExtension = (fileName: string) => {
 }
 
 const getVideoFileRejectionReason = (file: File) => {
+  if (isSourceFileNameTooLong(file.name)) {
+    return getSourceFileNameTooLongMessage(file.name)
+  }
   if (file.type.startsWith('video/')) return ''
   const extension = getFileExtension(file.name)
   if (
@@ -989,6 +1011,18 @@ const handleFilesSelect = (files: FileList | File[]) => {
 
   const videoFiles = allFiles.filter(isLikelyVideoFile)
   if (videoFiles.length === 0) {
+    const longNameOnly = unsupportedFiles.filter((entry) => isSourceFileNameTooLong(entry.file.name))
+    const formatOnly = unsupportedFiles.filter((entry) => !isSourceFileNameTooLong(entry.file.name))
+    if (longNameOnly.length > 0 && formatOnly.length === 0) {
+      uploadFeedback.value = {
+        title: '源文件名过长，无法上传',
+        description:
+          longNameOnly.length === 1
+            ? getSourceFileNameTooLongMessage(longNameOnly[0]!.file.name)
+            : longNameOnly.map((entry) => getSourceFileNameTooLongMessage(entry.file.name)).join('；'),
+      }
+      return
+    }
     uploadFeedback.value = {
       title: '没有可上传的视频文件',
       description:
@@ -1020,12 +1054,26 @@ const handleFilesSelect = (files: FileList | File[]) => {
 
   const uploadIssues: string[] = []
   if (unsupportedFiles.length > 0) {
-    uploadIssues.push(
-      `格式不支持：${formatRejectedSummary(
-        unsupportedFiles.map((entry) => entry.file.name),
-        '部分文件'
-      )}`
-    )
+    const longNameFiles = unsupportedFiles.filter((entry) => isSourceFileNameTooLong(entry.file.name))
+    const formatFiles = unsupportedFiles.filter((entry) => !isSourceFileNameTooLong(entry.file.name))
+    if (longNameFiles.length > 0) {
+      uploadIssues.push(
+        longNameFiles.length === 1
+          ? getSourceFileNameTooLongMessage(longNameFiles[0]!.file.name)
+          : `源文件名过长（最多 ${MAX_SOURCE_FILE_NAME_LENGTH} 个字符）：${formatRejectedSummary(
+              longNameFiles.map((entry) => entry.file.name),
+              '部分文件'
+            )}。请缩短文件名后重新选择`
+      )
+    }
+    if (formatFiles.length > 0) {
+      uploadIssues.push(
+        `格式不支持：${formatRejectedSummary(
+          formatFiles.map((entry) => entry.file.name),
+          '部分文件'
+        )}`
+      )
+    }
   }
   if (ignoredByLimit.length > 0) {
     uploadIssues.push(
@@ -1282,9 +1330,18 @@ const onReplaceFileChange = (e: Event) => {
   const file = target.files[0]
   if (!file || !activeWork.value) return
 
+  if (isSourceFileNameTooLong(file.name)) {
+    toast({
+      title: '无法更换：源文件名过长',
+      description: getSourceFileNameTooLongMessage(file.name),
+      variant: 'destructive',
+    })
+    target.value = ''
+    return
+  }
   const reason = getVideoFileRejectionReason(file)
   if (reason) {
-    toast({ title: '无法更换', description: `${file.name} ${reason}`, variant: 'destructive' })
+    toast({ title: '无法更换', description: reason, variant: 'destructive' })
     target.value = ''
     return
   }
@@ -1393,6 +1450,16 @@ const handlePublish = async () => {
       activeWorkIndex.value = i
       return
     }
+    const longNamePart = work.parts.find((p) => isSourceFileNameTooLong(p.sourceFileName))
+    if (longNamePart) {
+      toast({
+        title: `${wLabel}源文件名过长`,
+        description: getSourceFileNameTooLongMessage(longNamePart.sourceFileName),
+        variant: 'destructive',
+      })
+      activeWorkIndex.value = i
+      return
+    }
   }
 
   try {
@@ -1445,7 +1512,11 @@ const handlePublish = async () => {
     void router.push('/creator/content')
   } catch (error) {
     console.error('Publish failed', error)
-    toast({ title: '发布失败', variant: 'destructive' })
+    // 业务错误文案（含源文件名过长）已由 request 拦截器 toast，避免再弹笼统的「发布失败」盖掉原因
+    const message = error instanceof Error ? error.message.trim() : ''
+    if (!message) {
+      toast({ title: '发布失败', description: '请稍后重试', variant: 'destructive' })
+    }
   } finally {
     isPublishing.value = false
   }

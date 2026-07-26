@@ -133,6 +133,36 @@ export const createMpdLoader = (options: MpdLoaderOptions = {}) => {
     cleanUrl.searchParams.delete('response-content-type')
 
     const dash = dashjs.MediaPlayer().create()
+    // 4K/顶档优先「稳缓冲」：避免过小缓冲 + 一切档就 flush 造成「播一会卡一下」。
+    // 局域网带宽通常够用，卡顿更常见于 ABR 抖动与软解尖峰。
+    try {
+      dash.updateSettings({
+        streaming: {
+          buffer: {
+            // 稳定缓冲目标（秒）：顶档与长视频再拉长，减少 underflow
+            stableBufferTime: 25,
+            bufferTimeAtTopQuality: 40,
+            bufferTimeAtTopQualityLongForm: 60,
+            longFormContentDurationThreshold: 300,
+            // 切档时不要立刻冲掉已有缓冲，降低「切换一顿」
+            fastSwitchEnabled: false,
+            flushBufferAtTrackSwitch: false,
+            bufferToKeep: 20,
+            bufferPruningInterval: 12,
+          },
+          abr: {
+            autoSwitchBitrate: { video: true },
+            // 不按播放器窗口像素强行限码率（超宽 4K 会被误判）
+            limitBitrateByPortal: false,
+            usePixelRatioInLimitBitrateByPortal: false,
+            // 略保守，减少刚够带宽时来回跳档
+            bandwidthSafetyFactor: 0.85,
+          },
+        },
+      })
+    } catch (error) {
+      console.warn('[dash] updateSettings failed', error)
+    }
     dash.initialize(video, cleanUrl.toString(), false)
 
     let started = false
@@ -510,19 +540,10 @@ export const setupDashQualityMenu = (
       dash.updateSettings({
         streaming: {
           abr: { autoSwitchBitrate: { video: true } },
-          buffer: { fastSwitchEnabled: true, flushBufferAtTrackSwitch: true },
+          // 切回自动时同样不 flush，避免「点一下自动就卡一下」
+          buffer: { fastSwitchEnabled: false, flushBufferAtTrackSwitch: false },
         },
       })
-
-      // 强制触发一次 seek 刷新缓存，使 ABR 立刻根据真实网速重新请求视频分片并评估清晰度
-      try {
-        const currentTime = art.currentTime
-        if (Number.isFinite(currentTime)) {
-          art.currentTime = currentTime
-        }
-      } catch (error) {
-        console.error('[dash] force seek on setAuto failed', error)
-      }
 
       startAutoEvaluationProbe(currentEvaluationToken)
 
@@ -558,7 +579,8 @@ export const setupDashQualityMenu = (
       dash.updateSettings({
         streaming: {
           abr: { autoSwitchBitrate: { video: false } },
-          buffer: { fastSwitchEnabled: true, flushBufferAtTrackSwitch: true },
+          // 手动锁档：不启用 fastSwitch flush，减少切 4K 时的卡顿尖峰
+          buffer: { fastSwitchEnabled: false, flushBufferAtTrackSwitch: false },
         },
       })
       // forceReplace=true 确保降档（高→低清晰度）时立即切走，而非仅设置上限等待 ABR 自然下探

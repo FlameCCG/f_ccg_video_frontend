@@ -328,10 +328,10 @@ const selectMinute = (minute: string) => {
 
 const scrollActiveTimeIntoView = () => {
   hourListRef.value
-    ?.querySelector<HTMLElement>('[aria-selected="true"]')
+    ?.querySelector<HTMLElement>('[aria-pressed="true"]')
     ?.scrollIntoView({ block: 'nearest' })
   minuteListRef.value
-    ?.querySelector<HTMLElement>('[aria-selected="true"]')
+    ?.querySelector<HTMLElement>('[aria-pressed="true"]')
     ?.scrollIntoView({ block: 'nearest' })
 }
 
@@ -361,7 +361,7 @@ const displayTimeStr = computed(() => {
     <DropdownMenuRoot :modal="false">
       <DropdownMenuTrigger as-child>
         <button
-          class="flex h-11 items-center justify-between gap-3 min-w-[200px] rounded-[14px] border border-border/70 bg-background/60 px-3.5 text-sm font-medium shadow-sm transition-colors hover:bg-accent/40 focus:outline-none focus:ring-2 focus:ring-ring focus:border-transparent data-[state=open]:border-primary/50 data-[state=open]:ring-2 data-[state=open]:ring-primary/20 disabled:cursor-not-allowed disabled:opacity-50"
+          class="t-tint flex h-11 min-w-[200px] items-center justify-between gap-3 rounded-xl border border-border bg-background px-3.5 text-sm font-medium shadow-surface hover:border-foreground/25 hover:bg-accent/40 data-[state=open]:border-primary disabled:cursor-not-allowed disabled:opacity-50"
           :disabled="disabled"
         >
           <div class="flex items-center gap-2 truncate text-foreground">
@@ -374,12 +374,12 @@ const displayTimeStr = computed(() => {
       <DropdownMenuPortal>
         <DropdownMenuContent
           align="start"
-          class="z-50 max-h-[300px] min-w-[240px] overflow-y-auto rounded-xl border border-border/60 bg-background/95 p-1.5 shadow-xl backdrop-blur-xl mac-scrollbar"
+          class="motion-pop mac-scrollbar z-50 max-h-[300px] min-w-[240px] overflow-y-auto rounded-xl border border-border bg-popover p-1.5 shadow-overlay backdrop-blur-glass"
         >
           <DropdownMenuItem
             v-for="tz in TIMEZONES"
             :key="tz.value"
-            class="flex cursor-pointer items-center rounded-md px-3 py-2 text-sm font-medium transition-colors hover:bg-muted/80 focus:bg-muted/80 focus:outline-none"
+            class="t-tint flex cursor-pointer items-center rounded-md px-3 py-2 text-sm font-medium hover:bg-muted/80 focus:bg-muted/80"
             :class="
               selectedTimezone === tz.value ? 'bg-primary/10 text-primary' : 'text-foreground/90'
             "
@@ -400,7 +400,7 @@ const displayTimeStr = computed(() => {
     <PopoverRoot v-model:open="datePanelOpen">
       <PopoverTrigger as-child>
         <button
-          class="flex h-11 items-center justify-between gap-3 min-w-[140px] rounded-[14px] border border-border/70 bg-background/60 px-3.5 text-sm font-medium shadow-sm transition-colors hover:bg-accent/40 focus:outline-none focus:ring-2 focus:ring-ring focus:border-transparent data-[state=open]:border-primary/50 data-[state=open]:ring-2 data-[state=open]:ring-primary/20 disabled:cursor-not-allowed disabled:opacity-50"
+          class="t-tint flex h-11 min-w-[140px] items-center justify-between gap-3 rounded-xl border border-border bg-background px-3.5 text-sm font-medium shadow-surface hover:border-foreground/25 hover:bg-accent/40 data-[state=open]:border-primary disabled:cursor-not-allowed disabled:opacity-50"
           :disabled="disabled"
         >
           <div class="flex items-center gap-2 text-foreground">
@@ -415,7 +415,7 @@ const displayTimeStr = computed(() => {
           align="start"
           side="bottom"
           :side-offset="8"
-          class="z-50 w-auto rounded-[20px] border border-border/70 bg-background/95 p-4 shadow-xl backdrop-blur-xl"
+          class="motion-pop z-50 w-auto rounded-2xl border border-border bg-popover p-4 shadow-overlay backdrop-blur-glass"
         >
           <div class="flex items-center justify-between">
             <Button
@@ -448,10 +448,10 @@ const displayTimeStr = computed(() => {
               v-for="cell in calendarCells"
               :key="cell.date.toISOString()"
               type="button"
-              class="flex h-8 w-8 mx-auto items-center justify-center rounded-lg text-sm transition-all focus:outline-none"
+              class="t-tint active-scale mx-auto flex h-8 w-8 items-center justify-center rounded-lg text-sm"
               :class="[
                 cell.selected
-                  ? 'bg-primary text-primary-foreground font-medium shadow-sm shadow-primary/30'
+                  ? 'bg-primary text-primary-foreground font-medium'
                   : cell.disabled
                     ? 'cursor-not-allowed text-muted-foreground/30 opacity-60'
                     : cell.inCurrentMonth
@@ -473,7 +473,7 @@ const displayTimeStr = computed(() => {
     <PopoverRoot v-model:open="timePanelOpen">
       <PopoverTrigger as-child>
         <button
-          class="flex h-11 items-center justify-between gap-3 min-w-[120px] rounded-[14px] border border-border/70 bg-background/60 px-3.5 text-sm font-medium shadow-sm transition-colors hover:bg-accent/40 focus:outline-none focus:ring-2 focus:ring-ring focus:border-transparent data-[state=open]:border-primary/50 data-[state=open]:ring-2 data-[state=open]:ring-primary/20 disabled:cursor-not-allowed disabled:opacity-50"
+          class="t-tint flex h-11 min-w-[120px] items-center justify-between gap-3 rounded-xl border border-border bg-background px-3.5 text-sm font-medium shadow-surface hover:border-foreground/25 hover:bg-accent/40 data-[state=open]:border-primary disabled:cursor-not-allowed disabled:opacity-50"
           :disabled="disabled || !props.modelValue"
         >
           <div class="flex items-center gap-2 text-foreground">
@@ -488,7 +488,7 @@ const displayTimeStr = computed(() => {
           align="start"
           side="bottom"
           :side-offset="8"
-          class="z-50 w-[240px] rounded-[20px] border border-border/70 bg-background/95 p-3 shadow-xl backdrop-blur-xl"
+          class="motion-pop z-50 w-[240px] rounded-2xl border border-border bg-popover p-3 shadow-overlay backdrop-blur-glass"
         >
           <div class="grid grid-cols-2 gap-3 h-[240px]">
             <div class="flex flex-col min-h-0 h-full">
@@ -503,15 +503,15 @@ const displayTimeStr = computed(() => {
                   v-for="option in hourOptions"
                   :key="option.value"
                   type="button"
-                  class="flex w-full items-center justify-center rounded-lg px-2 py-1.5 text-sm transition-all focus:outline-none"
+                  class="t-tint active-scale flex w-full items-center justify-center rounded-lg px-2 py-1.5 text-sm"
                   :class="
                     option.disabled
                       ? 'cursor-not-allowed text-muted-foreground/30 opacity-60'
                       : option.value === String(effectiveTzValue.getHours()).padStart(2, '0')
-                        ? 'bg-primary text-primary-foreground font-medium shadow-sm shadow-primary/20'
+                        ? 'bg-primary text-primary-foreground font-medium'
                         : 'text-foreground/90 hover:bg-muted/80 focus:bg-muted/80 hover:text-foreground'
                   "
-                  :aria-selected="
+                  :aria-pressed="
                     option.value === String(effectiveTzValue.getHours()).padStart(2, '0')
                       ? 'true'
                       : undefined
@@ -535,15 +535,15 @@ const displayTimeStr = computed(() => {
                   v-for="option in minuteOptions"
                   :key="option.value"
                   type="button"
-                  class="flex w-full items-center justify-center rounded-lg px-2 py-1.5 text-sm transition-all focus:outline-none"
+                  class="t-tint active-scale flex w-full items-center justify-center rounded-lg px-2 py-1.5 text-sm"
                   :class="
                     option.disabled
                       ? 'cursor-not-allowed text-muted-foreground/30 opacity-60'
                       : option.value === String(effectiveTzValue.getMinutes()).padStart(2, '0')
-                        ? 'bg-primary text-primary-foreground font-medium shadow-sm shadow-primary/20'
+                        ? 'bg-primary text-primary-foreground font-medium'
                         : 'text-foreground/90 hover:bg-muted/80 focus:bg-muted/80 hover:text-foreground'
                   "
-                  :aria-selected="
+                  :aria-pressed="
                     option.value === String(effectiveTzValue.getMinutes()).padStart(2, '0')
                       ? 'true'
                       : undefined
@@ -562,27 +562,29 @@ const displayTimeStr = computed(() => {
   </div>
 </template>
 
-<style lang="scss">
+<style scoped lang="scss">
+/* 只有本组件在用，收进 scoped；同时把 oklch(var(--foreground) / n) 这种
+   与 @theme 平行的第二套真值换成 color-mix，改主题时不会漂。 */
 .mac-scrollbar {
   scrollbar-width: thin;
-  scrollbar-color: oklch(var(--foreground) / 0.15) transparent;
+  scrollbar-color: color-mix(in oklch, var(--color-foreground) 15%, transparent) transparent;
 
   &::-webkit-scrollbar {
     width: 6px;
     height: 6px;
+  }
 
-    &-track {
-      background: transparent;
-    }
+  &::-webkit-scrollbar-track {
+    background: transparent;
+  }
 
-    &-thumb {
-      border-radius: 999px;
-      background: oklch(var(--foreground) / 0.15);
-      background-clip: padding-box;
+  &::-webkit-scrollbar-thumb {
+    border-radius: 999px;
+    background: color-mix(in oklch, var(--color-foreground) 15%, transparent);
+    background-clip: padding-box;
 
-      &:hover {
-        background: oklch(var(--foreground) / 0.25);
-      }
+    &:hover {
+      background: color-mix(in oklch, var(--color-foreground) 25%, transparent);
     }
   }
 }

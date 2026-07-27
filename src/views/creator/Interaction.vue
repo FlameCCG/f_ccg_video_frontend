@@ -12,7 +12,6 @@ import {
 } from '@/api/comment'
 import CommentInput from '@/components/comment/CommentInput.vue'
 import {
-  MessageSquare,
   ThumbsUp,
   Reply,
   Search,
@@ -25,6 +24,9 @@ import {
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import AppAvatar from '@/components/common/AppAvatar.vue'
+import AppImage from '@/components/common/AppImage.vue'
+import EmptyState from '@/components/common/EmptyState.vue'
+import SkeletonGroup from '@/components/common/SkeletonGroup.vue'
 import { toast } from 'vue-sonner'
 
 const router = useRouter()
@@ -69,6 +71,13 @@ watch([page, sortBy], () => {
 
 const handleSearch = () => {
   searchKeyword.value = keyword.value
+  page.value = 1
+  void fetchComments()
+}
+
+const clearSearch = () => {
+  keyword.value = ''
+  searchKeyword.value = ''
   page.value = 1
   void fetchComments()
 }
@@ -190,7 +199,7 @@ const handleMentionClick = (userId?: number) => {
           <Search class="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
           <Input
             :model-value="keyword"
-            placeholder="搜索评论内容"
+            placeholder="按评论内容或用户名搜索"
             class="pl-9 h-9 bg-muted/50 border-transparent focus-visible:bg-background"
             @update:model-value="(v) => (keyword = String(v))"
           />
@@ -202,7 +211,7 @@ const handleMentionClick = (userId?: number) => {
         <div class="text-muted-foreground">共 {{ total }} 条评论</div>
         <div class="flex items-center gap-4">
           <button
-            class="transition-colors"
+            class="t-tint"
             :class="
               sortBy === 0
                 ? 'text-primary font-medium'
@@ -213,7 +222,7 @@ const handleMentionClick = (userId?: number) => {
             最近发布
           </button>
           <button
-            class="transition-colors"
+            class="t-tint"
             :class="
               sortBy === 1
                 ? 'text-primary font-medium'
@@ -224,7 +233,7 @@ const handleMentionClick = (userId?: number) => {
             点赞最多
           </button>
           <button
-            class="transition-colors"
+            class="t-tint"
             :class="
               sortBy === 2
                 ? 'text-primary font-medium'
@@ -239,34 +248,47 @@ const handleMentionClick = (userId?: number) => {
 
       <!-- List -->
       <div class="p-0">
-        <div v-if="loading" class="p-6 space-y-8">
-          <div v-for="i in 3" :key="i" class="flex gap-4 animate-pulse">
-            <div class="w-10 h-10 bg-muted rounded-full shrink-0"></div>
-            <div class="flex-1 space-y-3 py-1">
-              <div class="h-4 bg-muted rounded w-1/4"></div>
-              <div class="h-4 bg-muted rounded w-3/4"></div>
-              <div class="h-4 bg-muted rounded w-1/2"></div>
+        <!-- 骨架形状对齐真实条目：头像 + 三行文本 + 右侧 16:9 目标内容 -->
+        <SkeletonGroup v-if="loading" :count="4" class="space-y-8 p-6">
+          <div class="ci-sk-row flex gap-4">
+            <div class="skeleton-shimmer h-10 w-10 shrink-0 rounded-full"></div>
+            <div class="min-w-0 flex-1 space-y-3 py-1">
+              <div class="ci-sk-a skeleton-shimmer h-4 w-1/4 rounded"></div>
+              <div class="ci-sk-b skeleton-shimmer h-4 w-3/4 rounded"></div>
+              <div class="ci-sk-c skeleton-shimmer h-3.5 w-1/2 rounded"></div>
             </div>
             <div class="w-32 shrink-0 space-y-2">
-              <div class="w-full aspect-video bg-muted rounded"></div>
-              <div class="h-3 bg-muted rounded w-full"></div>
+              <div class="ci-sk-d skeleton-shimmer aspect-video w-full rounded"></div>
+              <div class="ci-sk-e skeleton-shimmer h-3 w-full rounded"></div>
             </div>
           </div>
-        </div>
+        </SkeletonGroup>
 
-        <div
-          v-else-if="comments.length === 0"
-          class="py-20 text-center text-muted-foreground flex flex-col items-center"
+        <EmptyState
+          v-else-if="comments.length === 0 && searchKeyword"
+          size="lg"
+          icon="search"
+          announce
+          title=""
+          description="换个关键词，或者清空搜索看看全部评论"
         >
-          <MessageSquare class="h-12 w-12 mb-4 opacity-20" />
-          <p>没有找到相关评论</p>
-        </div>
+          <template #title>没有匹配「{{ searchKeyword.slice(0, 20) }}」的评论</template>
+          <Button variant="outline" size="sm" @click="clearSearch">清空搜索</Button>
+        </EmptyState>
+
+        <EmptyState
+          v-else-if="comments.length === 0"
+          size="lg"
+          icon="comment"
+          title="你的作品还没有收到评论"
+          description="观众的评论会汇总到这里，你可以直接回复或删除"
+        />
 
         <div v-else class="divide-y">
           <div
             v-for="comment in comments"
             :key="comment.id"
-            class="p-6 flex gap-4 group hover:bg-muted/30 transition-colors"
+            class="p-6 flex gap-4 group hover:bg-muted/30 t-tint"
           >
             <!-- Avatar -->
             <div class="shrink-0 cursor-pointer" @click="router.push(`/user/${comment.userId}`)">
@@ -284,7 +306,7 @@ const handleMentionClick = (userId?: number) => {
               <!-- Header -->
               <div class="flex items-center flex-wrap gap-x-2 gap-y-1 mb-2">
                 <span
-                  class="font-medium text-sm text-foreground/90 cursor-pointer hover:text-primary transition-colors"
+                  class="font-medium text-sm text-foreground/90 cursor-pointer hover:text-primary t-tint"
                   @click="router.push(`/user/${comment.userId}`)"
                 >
                   {{ comment.username }}
@@ -359,7 +381,7 @@ const handleMentionClick = (userId?: number) => {
                       {{ comment.replyTo?.username }}
                     </span>
                   </div>
-                  <p class="text-muted-foreground/60 italic">该评论不在当前页，请翻页查看</p>
+                  <p class="text-muted-foreground/60">该评论不在当前页，翻页后可以看到</p>
                 </template>
               </div>
 
@@ -384,13 +406,13 @@ const handleMentionClick = (userId?: number) => {
 
               <!-- Actions & Meta -->
               <div class="flex items-center gap-6 text-xs text-muted-foreground">
-                <span>{{ formatDate(comment.createdAt) }}</span>
+                <span class="tabular">{{ formatDate(comment.createdAt) }}</span>
                 <span v-if="comment.commenterAddr" class="text-muted-foreground/60">
-                  IP属地: {{ comment.commenterAddr }}
+                  IP 属地：{{ comment.commenterAddr }}
                 </span>
 
                 <button
-                  class="flex items-center gap-1.5 hover:text-primary transition-colors"
+                  class="flex items-center gap-1.5 hover:text-primary t-tint"
                   :class="{ 'text-primary': comment.isLiked }"
                   @click="handleLike(comment)"
                 >
@@ -402,7 +424,7 @@ const handleMentionClick = (userId?: number) => {
                 </button>
 
                 <button
-                  class="flex items-center gap-1.5 hover:text-primary transition-colors"
+                  class="flex items-center gap-1.5 hover:text-primary t-tint"
                   :class="{ 'text-primary': replyingTo === comment.id }"
                   @click="toggleReply(comment.id)"
                 >
@@ -411,7 +433,7 @@ const handleMentionClick = (userId?: number) => {
                 </button>
 
                 <button
-                  class="flex items-center gap-1.5 hover:text-destructive transition-colors ml-auto"
+                  class="flex items-center gap-1.5 hover:text-destructive t-tint ml-auto"
                   @click="handleDelete(comment)"
                 >
                   <Trash2 class="h-3.5 w-3.5" />
@@ -422,7 +444,7 @@ const handleMentionClick = (userId?: number) => {
               <!-- Reply Input -->
               <div v-if="replyingTo === comment.id" class="mt-3">
                 <CommentInput
-                  :placeholder="`回复 @${comment.username} :`"
+                  :placeholder="`回复 @${comment.username}：`"
                   auto-focus
                   @submit="(content, atUserIds) => handleReply(comment, content, atUserIds)"
                 />
@@ -434,18 +456,14 @@ const handleMentionClick = (userId?: number) => {
               class="w-32 shrink-0 cursor-pointer group/target flex flex-col gap-1.5"
               @click="goToTarget(comment)"
             >
-              <div class="w-full aspect-video bg-muted rounded overflow-hidden border relative">
-                <img
-                  v-if="comment.videoCover"
+              <div class="w-full overflow-hidden rounded border">
+                <AppImage
                   :src="comment.videoCover"
-                  class="w-full h-full object-cover group-hover/target:scale-105 transition-transform duration-300"
+                  :alt="comment.videoTitle || '目标内容封面'"
+                  aspect="16 / 9"
+                  :fallback-icon="FileText"
+                  img-class="ci-cover-img group-hover/target:scale-105"
                 />
-                <div
-                  v-else
-                  class="absolute inset-0 flex items-center justify-center text-muted-foreground"
-                >
-                  <FileText class="h-5 w-5 opacity-40" />
-                </div>
               </div>
               <div class="flex items-center gap-1">
                 <Play
@@ -457,7 +475,7 @@ const handleMentionClick = (userId?: number) => {
                   class="h-3 w-3 text-muted-foreground/50 shrink-0"
                 />
                 <div
-                  class="text-xs text-muted-foreground line-clamp-2 group-hover/target:text-primary transition-colors"
+                  class="text-xs text-muted-foreground line-clamp-2 group-hover/target:text-primary t-tint"
                   :title="comment.videoTitle"
                 >
                   {{ comment.videoTitle || (isDynamicComment(comment) ? '查看动态' : '查看详情') }}
@@ -493,3 +511,37 @@ const handleMentionClick = (userId?: number) => {
     </div>
   </div>
 </template>
+
+<style scoped lang="scss">
+/* 卡内二级错峰：--skeleton-phase 落在行容器上，子块基于它偏移
+   （同一元素既读又写 --skeleton-index 会构成 CSS 循环）。 */
+.ci-sk-row {
+  --skeleton-phase: var(--skeleton-index, 0);
+}
+
+.ci-sk-a {
+  --skeleton-index: calc(var(--skeleton-phase) + 0.25);
+}
+
+.ci-sk-b {
+  --skeleton-index: calc(var(--skeleton-phase) + 0.4);
+}
+
+.ci-sk-c {
+  --skeleton-index: calc(var(--skeleton-phase) + 0.55);
+}
+
+.ci-sk-d {
+  --skeleton-index: calc(var(--skeleton-phase) + 0.35);
+}
+
+.ci-sk-e {
+  --skeleton-index: calc(var(--skeleton-phase) + 0.5);
+}
+
+/* Tailwind v4 的 scale-* 是独立的 `scale` 属性；显式过渡它，否则 hover 缩放是瞬移。
+   选择器要穿透到 AppImage 内部的 <img>，所以用 :deep()。 */
+:deep(.ci-cover-img) {
+  transition: scale var(--duration-normal) var(--ease-out-expo);
+}
+</style>

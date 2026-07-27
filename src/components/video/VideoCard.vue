@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import { useRouter } from 'vue-router'
 import type { FeedItem } from '@/api/video'
 import { formatCount, formatDuration } from '@/utils/format'
 import DOMPurify from 'dompurify'
@@ -13,7 +12,6 @@ interface Props {
 const props = withDefaults(defineProps<Props>(), {
   variant: 'default',
 })
-const router = useRouter()
 
 const escapeHtml = (value: string) =>
   value
@@ -34,6 +32,21 @@ const sanitizedTitleHtml = computed(() => {
     ALLOWED_ATTR: [],
   })
 })
+
+/**
+ * 悬停提示用的纯文本标题。
+ *
+ * 卡片里的标题是 line-clamp-2 的，长标题被截成「…」之后就再也读不到全名了。
+ * 这里给 title 属性喂**没有 <em> 标记、也没有 HTML 实体**的原文：
+ * sanitizedTitleHtml 是给 v-html 用的，直接塞进 title 会露出 &amp; / <em> 这些标记。
+ */
+const plainTitle = computed(() => props.video.title.trim())
+
+/**
+ * 片源式标题常带超长无空格 token。仅对这类标题允许在任意字符处断行，
+ * 避免浏览器先把整个 token 推到下一行，导致第一行只剩很短的中文前缀。
+ */
+const hasLongUnbrokenToken = computed(() => /[a-z0-9._-]{24,}/i.test(plainTitle.value))
 
 // Format duration from seconds to mm:ss
 const formattedDuration = computed(() => formatDuration(props.video.duration))
@@ -60,42 +73,46 @@ const formattedTime = computed(() => {
   if (diffDays < 365) return `${Math.floor(diffDays / 30)}个月前`
   return `${Math.floor(diffDays / 365)}年前`
 })
-
-const handleClick = () => {
-  void router.push(`/video/${props.video.id}`)
-}
 </script>
 
 <template>
-  <div
-    class="hover-lift group cursor-pointer overflow-hidden rounded-[var(--radius-xl)] bg-card border border-border/50"
-    :class="[variant === 'compact' ? 'flex h-full flex-col' : '']"
-    @click="handleClick"
+  <!-- 真 <a href>：键盘可达、中键新标签、右键复制链接、爬虫可索引。
+       刻意不挂 overflow-hidden —— 焦点环会被裁掉；裁剪下移到封面容器。 -->
+  <router-link
+    :to="`/video/${video.id}`"
+    class="video-card group relative flex flex-col rounded-xl border border-border/50 bg-card"
+    :class="[variant === 'compact' ? 'h-full' : '']"
   >
     <!-- Cover Image Container -->
     <div
-      class="relative overflow-hidden"
+      class="video-card__cover relative overflow-hidden rounded-t-xl"
       :class="[variant === 'compact' ? 'aspect-[16/10] flex-1' : 'aspect-video']"
     >
       <img
         :src="video.cover"
         :alt="video.title"
-        class="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
+        class="video-card__img h-full w-full object-cover"
         loading="lazy"
+        decoding="async"
       />
+
+      <!-- 底部压暗：统计数字与时长胶囊在浅色封面上也要可读 -->
+      <div class="video-card__scrim pointer-events-none absolute inset-x-0 bottom-0 h-1/3"></div>
+
       <!-- Duration Badge -->
-      <div
-        class="absolute bottom-1 right-1 rounded bg-black/70 px-1 py-0.5 font-medium text-white"
-        :class="[variant === 'compact' ? 'text-[10px]' : 'text-xs']"
+      <span
+        class="media-chip tabular absolute bottom-1 right-1 rounded-sm px-1.5 py-0.5 font-medium"
+        :class="[variant === 'compact' ? 'text-2xs' : 'text-xs']"
       >
         {{ formattedDuration }}
-      </div>
+      </span>
+
       <!-- Stats Overlay on Cover -->
       <div
-        class="absolute bottom-1 left-1 flex items-center gap-3 text-white/90"
-        :class="[variant === 'compact' ? 'text-[10px] gap-2' : 'text-xs']"
+        class="video-card__stats absolute bottom-1 left-1 flex items-center gap-3"
+        :class="[variant === 'compact' ? 'text-2xs gap-2' : 'text-xs']"
       >
-        <div class="flex items-center gap-1">
+        <span class="flex items-center gap-1">
           <!-- B站播放图标 -->
           <svg
             xmlns="http://www.w3.org/2000/svg"
@@ -103,14 +120,15 @@ const handleClick = () => {
             class="h-3.5 w-3.5"
             :class="[variant === 'compact' ? 'h-3 w-3' : '']"
             fill="currentColor"
+            aria-hidden="true"
           >
             <path
               d="M4.5 3.5a.5.5 0 0 1 .77-.42l7 4.5a.5.5 0 0 1 0 .84l-7 4.5A.5.5 0 0 1 4.5 12.5v-9z"
             />
           </svg>
-          <span>{{ formattedViews }}</span>
-        </div>
-        <div class="flex items-center gap-1">
+          <span class="tabular">{{ formattedViews }}</span>
+        </span>
+        <span class="flex items-center gap-1">
           <!-- B站弹幕图标 -->
           <svg
             xmlns="http://www.w3.org/2000/svg"
@@ -118,39 +136,41 @@ const handleClick = () => {
             class="h-3.5 w-3.5"
             :class="[variant === 'compact' ? 'h-3 w-3' : '']"
             fill="currentColor"
+            aria-hidden="true"
           >
             <path
               d="M2 3.5A1.5 1.5 0 0 1 3.5 2h9A1.5 1.5 0 0 1 14 3.5v6a1.5 1.5 0 0 1-1.5 1.5H9.707l-2.354 2.354a.5.5 0 0 1-.707 0L4.293 11H3.5A1.5 1.5 0 0 1 2 9.5v-6zM4 5.5a.5.5 0 0 0 .5.5h4a.5.5 0 0 0 0-1h-4a.5.5 0 0 0-.5.5zm0 2.5a.5.5 0 0 0 .5.5h7a.5.5 0 0 0 0-1h-7a.5.5 0 0 0-.5.5z"
             />
           </svg>
-          <span>{{ formattedDanmu }}</span>
-        </div>
+          <span class="tabular">{{ formattedDanmu }}</span>
+        </span>
       </div>
-      <!-- Hover Overlay -->
-      <div
-        class="absolute inset-0 bg-black/0 transition-colors duration-200 group-hover:bg-black/10"
-      ></div>
+
+      <!-- Hover Veil：只过渡 opacity，不过渡 background-color（后者是 paint 属性） -->
+      <div class="video-card__veil pointer-events-none absolute inset-0"></div>
     </div>
 
     <!-- Video Info -->
-    <div :class="[variant === 'compact' ? 'px-1 py-1' : 'px-0 py-2 h-[78px]']">
-      <!-- Title -->
+    <div class="flex flex-1 flex-col" :class="[variant === 'compact' ? 'px-1 py-1' : 'px-0 py-2']">
+      <!-- Title：被 line-clamp 截掉的部分靠原生 title 兜住，悬停即可读全名 -->
       <h3
-        class="font-medium text-foreground transition-colors group-hover:text-primary"
+        class="video-card__title t-tint font-medium text-foreground tracking-cjk group-hover:text-primary"
         :class="[
           variant === 'compact'
-            ? 'line-clamp-1 text-[11px] leading-tight'
-            : 'mb-1.5 line-clamp-2 text-sm leading-5 h-[40px]',
+            ? 'line-clamp-1 text-2xs leading-tight'
+            : 'mb-1.5 line-clamp-2 text-sm leading-5',
+          { 'video-card__title--break-token': hasLongUnbrokenToken },
         ]"
+        :title="plainTitle"
         v-html="sanitizedTitleHtml"
       ></h3>
 
       <!-- Author & Time Info (default mode only) -->
       <div
         v-if="variant === 'default'"
-        class="flex items-center gap-2 text-xs text-muted-foreground h-[16px] leading-[16px]"
+        class="mt-auto flex items-center gap-2 text-xs leading-4 text-muted-foreground"
       >
-        <div class="flex items-center gap-1 min-w-0">
+        <span class="flex min-w-0 items-center gap-1">
           <!-- UP Icon -->
           <svg
             xmlns="http://www.w3.org/2000/svg"
@@ -159,6 +179,7 @@ const handleClick = () => {
             height="14"
             fill="currentColor"
             class="shrink-0 opacity-70"
+            aria-hidden="true"
           >
             <path
               d="M6.15 8.24805C6.5642 8.24805 6.9 8.58383 6.9 8.99805L6.9 12.7741C6.9 13.5881 7.55988 14.248 8.3739 14.248C9.18791 14.248 9.8478 13.5881 9.8478 12.7741L9.8478 8.99805C9.8478 8.58383 10.1836 8.24805 10.5978 8.24805C11.012 8.24805 11.3478 8.58383 11.3478 8.99805L11.3478 12.7741C11.3478 14.41655 10.01635 15.748 8.3739 15.748C6.73146 15.748 5.4 14.41655 5.4 12.7741L5.4 8.99805C5.4 8.58383 5.73578 8.24805 6.15 8.24805z"
@@ -174,17 +195,109 @@ const handleClick = () => {
             ></path>
           </svg>
           <span class="truncate">{{ video.author.username }}</span>
-        </div>
+        </span>
         <span class="shrink-0 text-muted-foreground/60">·</span>
-        <span class="shrink-0 text-muted-foreground/60">{{ formattedTime }}</span>
+        <span class="tabular shrink-0 text-muted-foreground/60">{{ formattedTime }}</span>
       </div>
     </div>
-  </div>
+  </router-link>
 </template>
 
 <style scoped lang="scss">
 :deep(em) {
   font-style: normal;
   color: var(--color-primary);
+}
+
+/* 抬起只动 transform；阴影交给 ::after 的 opacity。
+   过渡 box-shadow 会让一屏 N 张卡在鼠标扫过时逐帧重绘 48px 模糊，是网格悬停掉帧的主因。 */
+.video-card {
+  transition: transform var(--duration-normal) var(--ease-out-expo);
+
+  &::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    box-shadow: var(--shadow-overlay);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity var(--duration-normal) var(--ease-out-quart);
+  }
+}
+
+/* 标题恒占两行高度，网格底边才对齐。
+   2 × leading-5(1.25rem) —— 由行高推导，不是「40px」这种跨文件魔法数。 */
+.video-card__title {
+  min-height: calc(2 * 1.25rem);
+
+  /* 压制盗版片源那种超长连写标题（`_Renegade_Immortal_S01E148_2023_2160p_WEB_DL_`）。
+     这类串没有空格也没有 CJK 断点，line-clamp 的 -webkit-box 只能横向溢出后被
+     overflow:hidden 齐刷刷切断 —— 看着像掉了半个字，省略号也不出现。
+     anywhere（不是 break-word）才会在任意字符处断，这样第二行末尾能正常收「…」。 */
+  overflow-wrap: anywhere;
+}
+
+.video-card__title--break-token {
+  word-break: break-all;
+}
+
+.video-card__scrim {
+  background-image: linear-gradient(
+    to top,
+    color-mix(in oklch, var(--media-overlay) 88%, transparent),
+    transparent
+  );
+}
+
+.video-card__stats {
+  color: var(--media-overlay-text);
+  text-shadow: 0 1px 2px color-mix(in oklch, var(--media-overlay) 70%, transparent);
+}
+
+.video-card__img {
+  transition: transform var(--duration-slow) var(--ease-out-expo);
+}
+
+.video-card__veil {
+  background-color: color-mix(in oklch, var(--media-overlay) 55%, transparent);
+  opacity: 0;
+  transition: opacity var(--duration-fast) var(--ease-out-quart);
+}
+
+/* 暗色下封面本来就压在深底上，再叠黑等于没有反馈 —— 换成极淡的提亮 */
+:global(html.dark) .video-card__veil {
+  background-color: color-mix(in oklch, var(--media-overlay-text) 10%, transparent);
+}
+
+/* 触屏上 :hover 点完会粘住，卡片会长期停在抬起 + 放大态 */
+@media (hover: hover) and (pointer: fine) {
+  .video-card:hover {
+    transform: translate3d(0, -4px, 0);
+  }
+
+  .video-card:hover::after {
+    opacity: 1;
+  }
+
+  .video-card:hover .video-card__img {
+    /* 全站封面/头像统一 1.04，不再 1.05 / 1.10 / 1.15 各说各话 */
+    transform: scale(1.04);
+  }
+
+  .video-card:hover .video-card__veil {
+    opacity: 1;
+  }
+}
+
+/* 全局 guard 只压时长，位移仍会瞬移，对前庭敏感用户不友好 */
+@media (prefers-reduced-motion: reduce) {
+  .video-card:hover {
+    transform: none;
+  }
+
+  .video-card:hover .video-card__img {
+    transform: none;
+  }
 }
 </style>

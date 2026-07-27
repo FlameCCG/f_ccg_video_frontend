@@ -2,6 +2,7 @@ import type Artplayer from 'artplayer'
 import type {
   ErrorEvent,
   MediaPlayerClass,
+  MediaPlayerSettingClass,
   QualityChangeRenderedEvent,
   Representation,
 } from 'dashjs'
@@ -90,6 +91,54 @@ const formatDashError = (event: ErrorEvent): string => {
   return parts.join(' | ')
 }
 
+/**
+ * dash.js 的 settings 类型把若干「整段覆盖」的子对象标成必填（如
+ * `abr.throughput.sampleSettings` / `ewma`），但运行时是逐字段深合并的。
+ * 用 DeepPartial 收窄后再断言，既保住 key 名的拼写检查，也不必为了通过类型检查
+ * 而写死一整套本该走默认值的采样参数。
+ */
+type DeepPartial<T> = {
+  // NonNullable 不可省：settings 的子对象全是可选属性，`{...} | undefined` 不满足
+  // `extends object`，不剥掉 undefined 就不会递归下去，等于没收窄。
+  [K in keyof T]?: NonNullable<T[K]> extends object ? DeepPartial<NonNullable<T[K]>> : T[K]
+}
+
+/**
+ * 4K/顶档优先「稳缓冲」：避免过小缓冲 + 一切档就 flush 造成「播一会卡一下」。
+ * 局域网带宽通常够用，卡顿更常见于 ABR 抖动与软解尖峰。
+ *
+ * 注意键路径按 dash.js v5 命名：
+ * - v4 的 `buffer.stableBufferTime` 在 v5 改名为 `buffer.bufferTimeDefault`（默认 18s）
+ * - v4 的 `abr.bandwidthSafetyFactor` 在 v5 移到 `abr.throughput.bandwidthSafetyFactor`（默认 0.9）
+ * 用旧名写不会报错，但会被静默忽略。
+ */
+const DASH_STABLE_BUFFER_SETTINGS: DeepPartial<MediaPlayerSettingClass> = {
+  streaming: {
+    buffer: {
+      // 稳定缓冲目标（秒）：顶档与长视频再拉长，减少 underflow
+      bufferTimeDefault: 25,
+      bufferTimeAtTopQuality: 40,
+      bufferTimeAtTopQualityLongForm: 60,
+      longFormContentDurationThreshold: 300,
+      // 切档时不要立刻冲掉已有缓冲，降低「切换一顿」
+      fastSwitchEnabled: false,
+      flushBufferAtTrackSwitch: false,
+      bufferToKeep: 20,
+      bufferPruningInterval: 12,
+    },
+    abr: {
+      autoSwitchBitrate: { video: true },
+      // 不按播放器窗口像素强行限码率（超宽 4K 会被误判）
+      limitBitrateByPortal: false,
+      usePixelRatioInLimitBitrateByPortal: false,
+      throughput: {
+        // 略保守，减少刚够带宽时来回跳档
+        bandwidthSafetyFactor: 0.85,
+      },
+    },
+  },
+}
+
 export interface MpdLoaderOptions {
   /** dash.js 发生致命错误（且尚未起播）时回调，宿主据此降级到 MP4 直链。 */
   onFatalError?: (art: ArtWithDash) => void
@@ -133,33 +182,8 @@ export const createMpdLoader = (options: MpdLoaderOptions = {}) => {
     cleanUrl.searchParams.delete('response-content-type')
 
     const dash = dashjs.MediaPlayer().create()
-    // 4K/顶档优先「稳缓冲」：避免过小缓冲 + 一切档就 flush 造成「播一会卡一下」。
-    // 局域网带宽通常够用，卡顿更常见于 ABR 抖动与软解尖峰。
     try {
-      dash.updateSettings({
-        streaming: {
-          buffer: {
-            // 稳定缓冲目标（秒）：顶档与长视频再拉长，减少 underflow
-            stableBufferTime: 25,
-            bufferTimeAtTopQuality: 40,
-            bufferTimeAtTopQualityLongForm: 60,
-            longFormContentDurationThreshold: 300,
-            // 切档时不要立刻冲掉已有缓冲，降低「切换一顿」
-            fastSwitchEnabled: false,
-            flushBufferAtTrackSwitch: false,
-            bufferToKeep: 20,
-            bufferPruningInterval: 12,
-          },
-          abr: {
-            autoSwitchBitrate: { video: true },
-            // 不按播放器窗口像素强行限码率（超宽 4K 会被误判）
-            limitBitrateByPortal: false,
-            usePixelRatioInLimitBitrateByPortal: false,
-            // 略保守，减少刚够带宽时来回跳档
-            bandwidthSafetyFactor: 0.85,
-          },
-        },
-      })
+      dash.updateSettings(DASH_STABLE_BUFFER_SETTINGS as MediaPlayerSettingClass)
     } catch (error) {
       console.warn('[dash] updateSettings failed', error)
     }

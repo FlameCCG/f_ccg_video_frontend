@@ -1,10 +1,12 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { Search, X, Trash2 } from 'lucide-vue-next'
+import { ChevronDown, Search, X, Trash2 } from 'lucide-vue-next'
 import { Button } from '@/components/ui/button'
 import VideoCard from '@/components/video/VideoCard.vue'
 import VideoCardSkeleton from '@/components/common/VideoCardSkeleton.vue'
+import SkeletonGroup from '@/components/common/SkeletonGroup.vue'
+import EmptyState from '@/components/common/EmptyState.vue'
 import AuthorCard from '@/components/user/AuthorCard.vue'
 import {
   searchVideos,
@@ -68,6 +70,16 @@ const currentSorts = computed(() => {
 // Derive a unique key for each sort option for active-state comparison
 const activeSortKey = computed(() => `${activeSort.value.sort}_${activeSort.value.order}`)
 
+/** 空态里回显用户搜的词，截断防超长词撑破布局 */
+const displayKeyword = computed(() => keyword.value.trim().slice(0, 20))
+
+/** 只有确实改过排序时才提供「清空筛选条件」，否则那个按钮点了没反应 */
+const hasActiveFilters = computed(() => activeSort.value.sort !== 0 || activeSort.value.order !== 0)
+
+const resetFilters = () => {
+  activeSort.value = { sort: 0, order: 0 }
+}
+
 const isLoading = ref(false)
 const searchVideoResults = ref<FeedItem[]>([])
 const searchUserResults = ref<SearchUserHit[]>([])
@@ -113,7 +125,13 @@ const ensureSuggestHighlight = (item: SearchSuggestItem, query: string) => {
   if (!query || !value) return value
   const idx = value.toLowerCase().indexOf(query.toLowerCase())
   if (idx < 0) return value
-  return value.slice(0, idx) + '<em>' + value.slice(idx, idx + query.length) + '</em>' + value.slice(idx + query.length)
+  return (
+    value.slice(0, idx) +
+    '<em>' +
+    value.slice(idx, idx + query.length) +
+    '</em>' +
+    value.slice(idx + query.length)
+  )
 }
 
 // Search input handler – fetch suggestions when typing
@@ -285,7 +303,7 @@ const sanitizeHighlight = (html: string) => {
           <input
             v-model="keyword"
             type="text"
-            class="h-12 w-full rounded-md border-2 border-border bg-secondary pl-12 pr-4 text-base focus:border-primary focus:bg-card focus:outline-none transition-colors"
+            class="h-12 w-full rounded-md border-2 border-border bg-secondary pl-12 pr-4 text-base focus:border-primary focus:bg-card focus:outline-none t-tint"
             placeholder="搜索你感兴趣的视频或 UP 主"
             @input="handleSearchInput"
             @keydown.enter="handleSearch()"
@@ -322,7 +340,7 @@ const sanitizeHighlight = (html: string) => {
                 >
                   <span class="font-medium">搜索历史</span>
                   <button
-                    class="hover:text-primary flex items-center gap-1 transition-colors"
+                    class="hover:text-primary flex items-center gap-1 t-tint"
                     @mousedown.prevent="clearHistory"
                   >
                     <Trash2 class="h-3.5 w-3.5" />清空
@@ -332,12 +350,12 @@ const sanitizeHighlight = (html: string) => {
                   <div
                     v-for="item in history"
                     :key="item"
-                    class="group flex items-center gap-1 rounded-md bg-secondary text-muted-foreground px-2.5 py-1.5 text-xs cursor-pointer hover:bg-muted hover:text-foreground transition-colors"
+                    class="group flex items-center gap-1 rounded-md bg-secondary text-muted-foreground px-2.5 py-1.5 text-xs cursor-pointer hover:bg-muted hover:text-foreground t-tint"
                     @mousedown.prevent="handleSearch(item)"
                   >
                     <span class="max-w-[140px] truncate">{{ item }}</span>
                     <X
-                      class="h-3.5 w-3.5 p-0.5 text-muted-foreground opacity-0 transition-all group-hover:opacity-100 hover:bg-black/10 rounded-full"
+                      class="history-remove h-3.5 w-3.5 rounded-full p-0.5 text-muted-foreground opacity-0 group-hover:opacity-100 hover:bg-foreground/10"
                       @mousedown.prevent.stop="removeHistoryItem(item)"
                     />
                   </div>
@@ -351,7 +369,7 @@ const sanitizeHighlight = (html: string) => {
                   <div
                     v-for="(kw, idx) in hotKeywords.slice(0, 10)"
                     :key="kw.keyword"
-                    class="hot-keyword-item flex cursor-pointer items-center gap-2.5 rounded-md px-2 py-2 text-sm transition-colors hover:bg-accent"
+                    class="hot-keyword-item flex cursor-pointer items-center gap-2.5 rounded-md px-2 py-2 text-sm t-tint hover:bg-accent"
                     @mousedown.prevent="handleSearch(kw.keyword)"
                   >
                     <span
@@ -381,7 +399,7 @@ const sanitizeHighlight = (html: string) => {
         <button
           v-for="tab in tabs"
           :key="tab.value"
-          class="group relative pb-2 text-[15px] font-medium transition-colors"
+          class="group relative pb-2 text-[15px] font-medium t-tint"
           :class="activeTab === tab.value ? 'text-primary' : 'text-foreground hover:text-primary'"
           @click="activeTab = tab.value"
         >
@@ -414,7 +432,7 @@ const sanitizeHighlight = (html: string) => {
           <button
             v-for="sort in currentSorts"
             :key="`${sort.sort}_${sort.order}`"
-            class="rounded-full px-4 py-1.5 text-[13px] transition-colors"
+            class="rounded-full px-4 py-1.5 text-[13px] t-tint"
             :class="
               activeSortKey === `${sort.sort}_${sort.order}`
                 ? 'bg-primary/10 text-primary'
@@ -431,62 +449,147 @@ const sanitizeHighlight = (html: string) => {
           size="sm"
           class="h-8 rounded text-[13px] text-muted-foreground"
         >
-          更多筛选 <span class="ml-1 text-[10px]">▼</span>
+          更多筛选
+          <ChevronDown class="ml-1 h-3.5 w-3.5" />
         </Button>
       </div>
 
-      <!-- Loading State -->
-      <div
-        v-if="isLoading"
-        class="grid grid-cols-1 gap-x-4 gap-y-6 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6"
-      >
-        <VideoCardSkeleton v-for="i in 10" :key="i" />
-      </div>
+      <Transition name="sr-swap" mode="out-in">
+        <!-- Loading State：按当前 tab 给对应形状的骨架，不再用视频卡冒充用户卡 -->
+        <SkeletonGroup
+          v-if="isLoading && activeTab === 'video'"
+          key="loading-video"
+          :count="10"
+          class="grid grid-cols-1 gap-x-4 gap-y-6 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6"
+        >
+          <template #default="{ index }">
+            <VideoCardSkeleton :seed="index" />
+          </template>
+        </SkeletonGroup>
 
-      <!-- Video Results Grid -->
-      <div
-        v-else-if="activeTab === 'video' && searchVideoResults.length > 0"
-        class="grid grid-cols-1 gap-x-4 gap-y-6 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6"
-      >
-        <VideoCard
-          v-for="video in searchVideoResults"
-          :key="video.id"
-          :video="video"
-          class="w-full"
-        />
-      </div>
+        <SkeletonGroup
+          v-else-if="isLoading"
+          key="loading-user"
+          :count="8"
+          class="grid grid-cols-1 gap-x-4 gap-y-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4"
+        >
+          <div class="user-sk-row flex items-center gap-3 rounded-xl border border-border/50 p-4">
+            <div class="skeleton-shimmer h-12 w-12 shrink-0 rounded-full"></div>
+            <div class="min-w-0 flex-1 space-y-2">
+              <div class="user-sk-a skeleton-shimmer h-4 w-24 rounded"></div>
+              <div class="user-sk-b skeleton-shimmer h-3 w-32 rounded"></div>
+            </div>
+            <div class="user-sk-c skeleton-shimmer h-8 w-16 shrink-0 rounded-full"></div>
+          </div>
+        </SkeletonGroup>
 
-      <!-- User Results Grid -->
-      <div
-        v-else-if="activeTab === 'user' && searchUserResults.length > 0"
-        class="grid grid-cols-1 gap-x-4 gap-y-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4"
-      >
-        <AuthorCard
-          v-for="user in searchUserResults"
-          :key="user.id"
-          :author="{
-            id: user.id,
-            username: user.username,
-            avatar: user.avatar,
-            level: user.level,
-            description: `粉丝：${user.followerCount}`,
-          }"
-        />
-      </div>
+        <!-- Video Results Grid -->
+        <div
+          v-else-if="activeTab === 'video' && searchVideoResults.length > 0"
+          key="video"
+          class="grid grid-cols-1 gap-x-4 gap-y-6 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6"
+        >
+          <VideoCard
+            v-for="video in searchVideoResults"
+            :key="video.id"
+            :video="video"
+            class="w-full"
+          />
+        </div>
 
-      <!-- Empty State -->
-      <div
-        v-else
-        class="flex min-h-[400px] flex-col items-center justify-center text-muted-foreground/80"
-      >
-        <div class="mb-4 text-6xl">🔍</div>
-        <p>没有找到相关结果，换个词试试吧</p>
-      </div>
+        <!-- User Results Grid -->
+        <div
+          v-else-if="activeTab === 'user' && searchUserResults.length > 0"
+          key="user"
+          class="grid grid-cols-1 gap-x-4 gap-y-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4"
+        >
+          <AuthorCard
+            v-for="user in searchUserResults"
+            :key="user.id"
+            :author="{
+              id: user.id,
+              username: user.username,
+              avatar: user.avatar,
+              level: user.level,
+              description: `粉丝：${user.followerCount}`,
+            }"
+          />
+        </div>
+
+        <!-- Empty State -->
+        <div v-else key="empty" class="min-h-[400px]">
+          <EmptyState
+            size="lg"
+            :icon="activeTab === 'user' ? 'user' : 'search'"
+            announce
+            title=""
+            :description="
+              activeTab === 'user'
+                ? '试试完整的昵称，或去视频结果里找找 TA 的作品'
+                : '试试更短的关键词，或换一种说法'
+            "
+          >
+            <template #title>
+              <template v-if="displayKeyword">
+                没有找到「{{ displayKeyword }}」相关{{ activeTab === 'user' ? '用户' : '内容' }}
+              </template>
+              <template v-else>输入关键词开始搜索</template>
+            </template>
+
+            <Button v-if="hasActiveFilters" variant="outline" size="sm" @click="resetFilters">
+              清空筛选条件
+            </Button>
+            <Button variant="ghost" size="sm" as-child>
+              <router-link to="/hot">看看热门视频</router-link>
+            </Button>
+          </EmptyState>
+        </div>
+      </Transition>
     </div>
   </div>
 </template>
 
 <style scoped lang="scss">
+/* 历史词条上的删除叉：原来是 transition-all，改成显式三条 */
+.history-remove {
+  transition:
+    opacity var(--duration-fast) linear,
+    background-color var(--duration-fast) var(--ease-out-quart),
+    color var(--duration-fast) linear;
+}
+
+/* 用户卡骨架内部错峰：--skeleton-phase 定义在行容器上，子块基于它偏移
+   （同一元素既读又写 --skeleton-index 会构成 CSS 循环）。 */
+.user-sk-row {
+  --skeleton-phase: var(--skeleton-index, 0);
+}
+
+.user-sk-a {
+  --skeleton-index: calc(var(--skeleton-phase) + 0.3);
+}
+
+.user-sk-b {
+  --skeleton-index: calc(var(--skeleton-phase) + 0.45);
+}
+
+.user-sk-c {
+  --skeleton-index: calc(var(--skeleton-phase) + 0.6);
+}
+
+/* 骨架 ↔ 结果交叉淡出，避免整栅格硬切 */
+.sr-swap-leave-active {
+  transition: opacity var(--duration-fast) linear;
+}
+
+.sr-swap-enter-active {
+  transition: opacity var(--duration-normal) var(--ease-out-quart);
+}
+
+.sr-swap-enter-from,
+.sr-swap-leave-to {
+  opacity: 0;
+}
+
 /* Search suggestion highlight */
 .search-suggestion-item :deep(em) {
   color: var(--brand-blue, oklch(var(--primary)));

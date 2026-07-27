@@ -9,6 +9,9 @@ import {
 } from '@/api/comment'
 import CommentInput from './CommentInput.vue'
 import CommentItem from './CommentItem.vue'
+import EmptyState from '@/components/common/EmptyState.vue'
+import SkeletonGroup from '@/components/common/SkeletonGroup.vue'
+import { Loader2 } from 'lucide-vue-next'
 import { toast } from 'vue-sonner'
 
 const props = defineProps<{
@@ -196,12 +199,12 @@ onMounted(() => {
   <div class="mt-6">
     <!-- Header -->
     <div class="flex items-center gap-4 mb-6">
-      <h3 class="text-xl font-semibold text-foreground">评论</h3>
-      <span class="text-[13px] text-muted-foreground/80">{{ total }}</span>
+      <h3 class="text-xl font-semibold tracking-cjk text-foreground">评论</h3>
+      <span class="tabular text-sm-plus text-muted-foreground/80">{{ total }}</span>
 
-      <div class="flex items-center gap-3 text-[13px] ml-2">
+      <div class="flex items-center gap-3 text-sm-plus ml-2">
         <button
-          class="transition-colors hover:text-primary"
+          class="t-tint hover:text-primary"
           :class="sortBy === 'hot' ? 'text-foreground font-medium' : 'text-muted-foreground/80'"
           @click="handleSortChange('hot')"
         >
@@ -209,7 +212,7 @@ onMounted(() => {
         </button>
         <div class="h-3 w-[1px] bg-accent"></div>
         <button
-          class="transition-colors hover:text-primary"
+          class="t-tint hover:text-primary"
           :class="sortBy === 'time' ? 'text-foreground font-medium' : 'text-muted-foreground/80'"
           @click="handleSortChange('time')"
         >
@@ -225,31 +228,55 @@ onMounted(() => {
 
     <!-- Comment List -->
     <div class="space-y-2">
-      <template v-if="comments.length > 0">
-        <div v-for="(comment, index) in comments" :key="comment.id">
-          <CommentItem
-            :comment="comment"
-            :video-id="videoId"
-            :dynamic-id="dynamicId"
-            :is-author="authorId === comment.userId"
-            :auto-expand-target-id="
-              autoExpandRootId === comment.id ? (autoExpandTargetId ?? undefined) : undefined
-            "
-            @deleted="handleCommentDeleted"
-            @pinned="handleCommentPinned"
-          />
-          <div v-if="index < comments.length - 1" class="h-px w-full bg-border/50 ml-14"></div>
-        </div>
-      </template>
+      <Transition name="cs-swap" mode="out-in">
+        <!-- 首次加载：评论区原来会塌成 0 高度，页面下方内容先上跳再被推下去 -->
+        <SkeletonGroup
+          v-if="isLoading && comments.length === 0"
+          key="skeleton"
+          :count="3"
+          class="space-y-7 py-2"
+        >
+          <div class="cs-sk-row flex gap-3">
+            <div class="skeleton-shimmer h-10 w-10 shrink-0 rounded-full"></div>
+            <div class="min-w-0 flex-1 space-y-2.5 pt-1">
+              <div class="cs-sk-a skeleton-shimmer h-3.5 w-24 rounded"></div>
+              <div class="cs-sk-b skeleton-shimmer h-4 w-full rounded"></div>
+              <div class="cs-sk-c skeleton-shimmer h-4 w-4/5 rounded"></div>
+              <div class="cs-sk-d skeleton-shimmer h-3 w-32 rounded"></div>
+            </div>
+          </div>
+        </SkeletonGroup>
 
-      <div v-else-if="!isLoading" class="py-12 text-center text-muted-foreground/80">
-        还没有评论，快来抢沙发吧~
-      </div>
+        <div v-else-if="comments.length > 0" key="list">
+          <div v-for="(comment, index) in comments" :key="comment.id">
+            <CommentItem
+              :comment="comment"
+              :video-id="videoId"
+              :dynamic-id="dynamicId"
+              :is-author="authorId === comment.userId"
+              :auto-expand-target-id="
+                autoExpandRootId === comment.id ? (autoExpandTargetId ?? undefined) : undefined
+              "
+              @deleted="handleCommentDeleted"
+              @pinned="handleCommentPinned"
+            />
+            <div v-if="index < comments.length - 1" class="h-px w-full bg-border/50 ml-14"></div>
+          </div>
+        </div>
+
+        <EmptyState
+          v-else
+          key="empty"
+          icon="comment"
+          title="还没有人评论"
+          description="说说你的看法，第一条评论往往最容易被看到"
+        />
+      </Transition>
 
       <!-- Load More -->
-      <div v-if="comments.length < total" class="pt-4 text-center">
+      <div v-if="comments.length > 0 && comments.length < total" class="pt-4 text-center">
         <button
-          class="text-[13px] text-muted-foreground/80 hover:text-primary transition-colors"
+          class="ui-button inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-sm-plus text-muted-foreground/80 hover:text-primary"
           :disabled="isLoading"
           @click="
             () => {
@@ -258,9 +285,48 @@ onMounted(() => {
             }
           "
         >
-          {{ isLoading ? '加载中...' : '加载更多评论' }}
+          <Loader2 v-if="isLoading" class="h-3.5 w-3.5 animate-spin" />
+          {{ isLoading ? '正在加载…' : '加载更多评论' }}
         </button>
       </div>
     </div>
   </div>
 </template>
+
+<style scoped lang="scss">
+/* 卡内二级错峰：--skeleton-phase 定义在行容器上，子块基于它偏移
+   （同一元素上既读又写 --skeleton-index 是 CSS 循环，会静默失效）。 */
+.cs-sk-row {
+  --skeleton-phase: var(--skeleton-index, 0);
+}
+
+.cs-sk-a {
+  --skeleton-index: calc(var(--skeleton-phase) + 0.25);
+}
+
+.cs-sk-b {
+  --skeleton-index: calc(var(--skeleton-phase) + 0.4);
+}
+
+.cs-sk-c {
+  --skeleton-index: calc(var(--skeleton-phase) + 0.55);
+}
+
+.cs-sk-d {
+  --skeleton-index: calc(var(--skeleton-phase) + 0.7);
+}
+
+/* 骨架 → 评论列表交叉淡出 */
+.cs-swap-leave-active {
+  transition: opacity var(--duration-fast) linear;
+}
+
+.cs-swap-enter-active {
+  transition: opacity var(--duration-normal) var(--ease-out-quart);
+}
+
+.cs-swap-enter-from,
+.cs-swap-leave-to {
+  opacity: 0;
+}
+</style>

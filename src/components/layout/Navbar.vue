@@ -35,16 +35,21 @@ const AuthDialog = defineAsyncComponent(() => import('@/components/auth/AuthDial
 
 const props = withDefaults(defineProps<{ light?: boolean }>(), { light: false })
 
+/**
+ * 顶栏叠在 banner 视频上时用 --media-overlay-text（明暗两套变量里都已定义），
+ * 不再用 text-white/90 —— 那是 121 处调色板违规里最集中的一处，
+ * 且暗色主题下纯白会比 banner 本身还亮。
+ */
 const navActionTextClass = computed(() =>
   props.light
-    ? 'text-muted-foreground transition-colors hover:text-foreground'
-    : 'text-white/90 transition-colors hover:text-white'
+    ? 't-tint text-muted-foreground hover:text-foreground'
+    : 't-tint text-[color-mix(in_oklch,var(--media-overlay-text)_88%,transparent)] hover:text-[var(--media-overlay-text)]'
 )
 
 const avatarBorderClass = computed(() =>
   props.light
     ? 'border-border group-hover:border-primary'
-    : 'border-white/50 group-hover:border-white'
+    : 'border-[color-mix(in_oklch,var(--media-overlay-text)_50%,transparent)] group-hover:border-[var(--media-overlay-text)]'
 )
 
 const searchContainerClass = computed(() => (props.light ? 'search-bar-solid' : 'search-bar-glass'))
@@ -137,10 +142,19 @@ const fetchSuggestions = useDebounceFn(async (prefix: string) => {
   try {
     const list = await getSearchSuggest({ prefix: q })
     if (seq !== suggestSeq) return
-    searchSuggestions.value = list.map((item) => ({
-      ...item,
-      highlight: ensureSuggestHighlight(item, q),
-    }))
+    // 按 value 去重：下拉用 value 作 key 做 FLIP（同一个词继续输入时条目原地保留），
+    // 重复 value 会撞 key。
+    const seen = new Set<string>()
+    searchSuggestions.value = list
+      .filter((item) => {
+        if (!item.value || seen.has(item.value)) return false
+        seen.add(item.value)
+        return true
+      })
+      .map((item) => ({
+        ...item,
+        highlight: ensureSuggestHighlight(item, q),
+      }))
   } catch (error) {
     if (seq !== suggestSeq) return
     console.error('Failed to fetch suggestions:', error)
@@ -154,7 +168,13 @@ const ensureSuggestHighlight = (item: SearchSuggestItem, query: string) => {
   if (!query || !value) return value
   const idx = value.toLowerCase().indexOf(query.toLowerCase())
   if (idx < 0) return value
-  return value.slice(0, idx) + '<em>' + value.slice(idx, idx + query.length) + '</em>' + value.slice(idx + query.length)
+  return (
+    value.slice(0, idx) +
+    '<em>' +
+    value.slice(idx, idx + query.length) +
+    '</em>' +
+    value.slice(idx + query.length)
+  )
 }
 
 const handleSearchInput = () => {
@@ -236,12 +256,25 @@ const navActions = [
 </script>
 
 <template>
+  <!--
+    顶栏版心全站恒定 = --container-page，不跟随所在 layout 的 --shell-max。
+    曾经让它跟随，想让顶栏与内容左右边缘对齐；但各 layout 的 --shell-max 是
+    1800 / 1400 / 1140 三档，结果就是首页→动态→消息→视频页之间顶栏宽度来回跳，
+    logo 和右侧入口每换一页就位移。顶栏是全局导航，稳定优先于与内容对齐。
+  -->
+  <!--
+    三段式 flex：左右两侧同为 flex-1（等权），中间搜索框因此始终居中，
+    不需要 absolute 定位。原来搜索框是 absolute left-1/2 + max-w-500 居中、
+    右侧集群固定 481px 右对齐，两者在顶栏宽度 < 1526px 时必然重叠
+    （W/2+250 > W-513）—— /dynamic(1140)、/hot·/rank(1400) 以及任何
+    ≤1526px 的视口都会撞。改成 flex item 后空间不够时搜索框自己收窄，撞不了。
+  -->
   <nav
-    class="relative mx-auto flex h-14 max-w-[1800px] items-center justify-between gap-1 px-3 sm:gap-2 sm:px-6 lg:px-8"
+    class="relative mx-auto flex h-14 w-full max-w-[var(--container-page,1800px)] items-center gap-2 px-4 sm:px-6 lg:px-8"
   >
     <!-- Left: Logo -->
-    <div class="flex items-center gap-3 sm:gap-6">
-      <router-link to="/" class="flex items-center gap-2">
+    <div class="flex min-w-max flex-1 items-center gap-3 sm:gap-6">
+      <router-link to="/" class="flex shrink-0 items-center gap-2">
         <img src="/logo.png" alt="Logo" class="h-10 w-auto object-contain drop-shadow-md" />
       </router-link>
     </div>
@@ -249,11 +282,11 @@ const navActions = [
     <!-- Center: Search (hidden on search result page) -->
     <div
       v-if="!isSearchPage"
-      class="absolute left-1/2 top-1/2 z-10 w-full max-w-[500px] -translate-x-1/2 -translate-y-1/2 px-4"
+      class="relative z-20 w-full min-w-0 max-w-[500px] shrink px-2 sm:px-4"
     >
       <div class="relative w-full group">
         <div
-          class="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-4 z-10 transition-colors duration-300"
+          class="t-tint pointer-events-none absolute inset-y-0 left-0 z-10 flex items-center pl-4"
         >
           <Search
             class="h-4 w-4"
@@ -262,14 +295,14 @@ const navActions = [
                 ? 'text-primary'
                 : props.light
                   ? 'text-muted-foreground/80'
-                  : 'text-white/80 group-focus-within:text-muted-foreground/80',
+                  : 'text-[color-mix(in_oklch,var(--media-overlay-text)_80%,transparent)] group-focus-within:text-muted-foreground/80',
             ]"
           />
         </div>
         <input
           v-model="searchQuery"
           type="text"
-          class="flex h-10 w-full rounded-full px-4 py-2 pl-10 pr-4 text-sm focus-visible:outline-none search-input-base"
+          class="search-input-base flex h-10 w-full rounded-full px-4 py-2 pl-10 pr-4 text-sm"
           :class="searchContainerClass"
           placeholder="搜索视频、UP主..."
           @input="handleSearchInput"
@@ -278,84 +311,88 @@ const navActions = [
           @focus="handleSearchInput"
         />
         <!-- Suggestions / History / Hot Search Dropdown -->
-        <div
-          v-if="
-            showSuggestions &&
-            (searchSuggestions.length > 0 ||
-              (!searchQuery.trim() && (history.length > 0 || hotKeywords.length > 0)))
-          "
-          class="absolute left-0 right-0 top-full z-[100] mt-1 max-h-[480px] overflow-y-auto overflow-x-hidden rounded-lg border bg-popover text-popover-foreground shadow-lg"
-        >
-          <!-- Suggestions (when typing) -->
-          <template v-if="searchQuery.trim() && searchSuggestions.length > 0">
-            <div
-              v-for="(item, index) in searchSuggestions"
-              :key="index"
-              class="search-suggestion-item cursor-pointer px-4 py-2.5 text-sm hover:bg-accent hover:text-accent-foreground flex items-center gap-2"
-              @mousedown.prevent="handleSearch(item.value)"
-            >
-              <span class="truncate" v-html="sanitizeHighlight(item.highlight)"></span>
-            </div>
-          </template>
-
-          <!-- History + Hot Search (when empty) -->
-          <template v-else-if="!searchQuery.trim()">
-            <!-- Search History -->
-            <template v-if="history.length > 0">
+        <Transition name="panel-fade">
+          <div
+            v-if="
+              showSuggestions &&
+              (searchSuggestions.length > 0 ||
+                (!searchQuery.trim() && (history.length > 0 || hotKeywords.length > 0)))
+            "
+            class="absolute left-0 right-0 top-full z-[100] mt-1 max-h-[480px] overflow-y-auto overflow-x-hidden rounded-lg border bg-popover text-popover-foreground shadow-overlay"
+          >
+            <!-- Suggestions (when typing)：靠 key=value 的 TransitionGroup 做 FLIP，
+                 同一个词继续输入时未变化的条目原地保留，不再整块闪一次 -->
+            <TransitionGroup v-if="searchQuery.trim() && searchSuggestions.length > 0" name="sug">
               <div
-                class="flex items-center justify-between px-4 pt-3 pb-2 text-sm text-muted-foreground"
+                v-for="(item, index) in searchSuggestions"
+                :key="item.value"
+                class="search-suggestion-item flex cursor-pointer items-center gap-2 px-4 py-2.5 text-sm hover:bg-accent hover:text-accent-foreground"
+                :style="{ '--sug-i': index }"
+                @mousedown.prevent="handleSearch(item.value)"
               >
-                <span class="font-medium">搜索历史</span>
-                <button
-                  class="hover:text-primary flex items-center gap-1 transition-colors"
-                  @mousedown.prevent="clearHistory"
-                >
-                  <Trash2 class="h-3.5 w-3.5" />清空
-                </button>
+                <span class="truncate" v-html="sanitizeHighlight(item.highlight)"></span>
               </div>
-              <div class="flex flex-wrap gap-2 px-4 pb-3">
-                <div
-                  v-for="item in history"
-                  :key="item"
-                  class="group flex items-center gap-1 rounded-md bg-secondary text-secondary-foreground px-2.5 py-1.5 text-xs cursor-pointer hover:bg-accent hover:text-accent-foreground transition-colors"
-                  @mousedown.prevent="handleSearch(item)"
-                >
-                  <span class="truncate max-w-[140px]">{{ item }}</span>
-                  <X
-                    class="h-3.5 w-3.5 rounded-full p-0.5 text-muted-foreground opacity-0 transition-all hover:bg-black/10 group-hover:opacity-100"
-                    @mousedown.prevent.stop="removeHistoryItem(item)"
-                  />
-                </div>
-              </div>
-            </template>
+            </TransitionGroup>
 
-            <!-- Hot Search Keywords -->
-            <template v-if="hotKeywords.length > 0">
-              <div class="px-4 pt-3 pb-2 text-sm font-medium text-muted-foreground">CCG热搜</div>
-              <div class="grid grid-cols-2 gap-x-2 px-2 pb-3">
+            <!-- History + Hot Search (when empty) -->
+            <template v-else-if="!searchQuery.trim()">
+              <!-- Search History -->
+              <template v-if="history.length > 0">
                 <div
-                  v-for="(kw, idx) in hotKeywords.slice(0, 10)"
-                  :key="kw.keyword"
-                  class="hot-keyword-item flex cursor-pointer items-center gap-2.5 rounded-md px-2 py-2 text-sm transition-colors hover:bg-accent"
-                  @mousedown.prevent="handleSearch(kw.keyword)"
+                  class="flex items-center justify-between px-4 pb-2 pt-3 text-sm text-muted-foreground"
                 >
-                  <span
-                    class="hot-rank inline-flex h-[18px] w-[18px] flex-shrink-0 items-center justify-center rounded text-xs font-bold"
-                    :class="idx < 3 ? 'bg-primary/10 text-primary' : 'text-muted-foreground'"
+                  <span class="font-medium">搜索历史</span>
+                  <button
+                    class="t-tint flex items-center gap-1 hover:text-primary"
+                    @mousedown.prevent="clearHistory"
                   >
-                    {{ idx + 1 }}
-                  </span>
-                  <span class="truncate text-foreground">{{ kw.keyword }}</span>
+                    <Trash2 class="h-3.5 w-3.5" />清空
+                  </button>
                 </div>
-              </div>
+                <div class="flex flex-wrap gap-2 px-4 pb-3">
+                  <div
+                    v-for="item in history"
+                    :key="item"
+                    class="t-tint group flex cursor-pointer items-center gap-1 rounded-md bg-secondary px-2.5 py-1.5 text-xs text-secondary-foreground hover:bg-accent hover:text-accent-foreground"
+                    @mousedown.prevent="handleSearch(item)"
+                  >
+                    <span class="max-w-[140px] truncate">{{ item }}</span>
+                    <X
+                      class="history-chip-close h-3.5 w-3.5 rounded-full p-0.5 text-muted-foreground group-hover:opacity-100"
+                      @mousedown.prevent.stop="removeHistoryItem(item)"
+                    />
+                  </div>
+                </div>
+              </template>
+
+              <!-- Hot Search Keywords -->
+              <template v-if="hotKeywords.length > 0">
+                <div class="px-4 pb-2 pt-3 text-sm font-medium text-muted-foreground">CCG热搜</div>
+                <div class="grid grid-cols-2 gap-x-2 px-2 pb-3">
+                  <div
+                    v-for="(kw, idx) in hotKeywords.slice(0, 10)"
+                    :key="kw.keyword"
+                    class="hot-keyword-item t-tint flex cursor-pointer items-center gap-2.5 rounded-md px-2 py-2 text-sm hover:bg-accent"
+                    @mousedown.prevent="handleSearch(kw.keyword)"
+                  >
+                    <span
+                      class="hot-rank tabular inline-flex h-[18px] w-[18px] flex-shrink-0 items-center justify-center rounded text-xs font-bold"
+                      :class="idx < 3 ? 'bg-primary/10 text-primary' : 'text-muted-foreground'"
+                    >
+                      {{ idx + 1 }}
+                    </span>
+                    <span class="truncate text-foreground">{{ kw.keyword }}</span>
+                  </div>
+                </div>
+              </template>
             </template>
-          </template>
-        </div>
+          </div>
+        </Transition>
       </div>
     </div>
 
     <!-- Right: User Actions -->
-    <div class="flex min-w-0 items-center gap-0.5 sm:gap-1">
+    <div class="flex min-w-max flex-1 items-center justify-end gap-0.5 sm:gap-1">
       <!-- User Avatar (when logged in) / Login Button -->
       <template v-if="authStore.isLoggedIn">
         <div
@@ -373,7 +410,7 @@ const navActions = [
               :src="authStore.user?.avatar"
               :name="authStore.user?.username"
               alt="Avatar"
-              :container-class="`h-8 w-8 border-2 transition-colors duration-300 ${showAvatarPanel ? 'border-transparent bg-transparent' : avatarBorderClass}`"
+              :container-class="`h-8 w-8 border-2 t-tint ${showAvatarPanel ? 'border-transparent bg-transparent' : avatarBorderClass}`"
               text-class="text-xs font-bold"
             />
           </div>
@@ -393,7 +430,7 @@ const navActions = [
         <Button
           variant="default"
           size="sm"
-          class="mr-1 h-8 cursor-pointer rounded-full bg-primary px-4 text-white hover:bg-primary/90 sm:mr-2 sm:px-5"
+          class="mr-1 h-8 cursor-pointer rounded-full bg-primary px-4 text-primary-foreground hover:bg-primary/90 sm:mr-2 sm:px-5"
           @click="openLoginDialog"
         >
           登录
@@ -407,7 +444,7 @@ const navActions = [
           <div
             v-if="authStore.isLoggedIn"
             class="relative"
-            :class="action.mobileHidden ? 'hidden sm:flex' : 'flex'"
+            :class="action.mobileHidden ? 'hidden lg:flex' : 'flex'"
             @mouseenter="action.isMessage ? openMessagePanel() : undefined"
             @mouseleave="action.isMessage ? scheduleCloseMessagePanel() : undefined"
           >
@@ -421,81 +458,81 @@ const navActions = [
                 <!-- Badge -->
                 <span
                   v-if="action.badge === 'message' && totalMessageUnread > 0"
-                  class="absolute -right-1 -top-1 flex h-4 min-w-[16px] items-center justify-center rounded-full bg-destructive shadow-[0_0_10px_rgba(var(--color-destructive)/0.6)] px-1 text-[10px] text-destructive-foreground"
+                  class="tabular absolute -right-1 -top-1 flex h-4 min-w-[16px] items-center justify-center rounded-full bg-destructive px-1 text-2xs text-destructive-foreground shadow-surface"
                 >
                   {{ totalMessageUnread > 99 ? '99+' : totalMessageUnread }}
                 </span>
                 <span
                   v-if="action.badge === 'dynamic' && dynamicUnreadCount > 0"
-                  class="absolute -right-1 -top-1 flex h-4 min-w-[16px] items-center justify-center rounded-full bg-destructive shadow-[0_0_10px_rgba(var(--color-destructive)/0.6)] px-1 text-[10px] text-destructive-foreground"
+                  class="tabular absolute -right-1 -top-1 flex h-4 min-w-[16px] items-center justify-center rounded-full bg-destructive px-1 text-2xs text-destructive-foreground shadow-surface"
                 >
                   {{ dynamicUnreadCount > 99 ? '99+' : dynamicUnreadCount }}
                 </span>
               </div>
-              <span class="mt-0.5 hidden text-[10px] font-medium sm:block">{{ action.name }}</span>
+              <span class="mt-0.5 hidden text-2xs font-medium sm:block">{{ action.name }}</span>
             </router-link>
 
             <!-- Message Hover Dropdown -->
             <Transition name="panel-fade">
               <div
                 v-if="action.isMessage && showMessagePanel"
-                class="absolute left-1/2 top-full z-[200] mt-1 -translate-x-1/2 rounded-lg border bg-popover py-2 text-popover-foreground shadow-lg w-32"
+                class="absolute left-1/2 top-full z-[200] mt-1 w-32 -translate-x-1/2 rounded-lg border bg-popover py-2 text-popover-foreground shadow-overlay"
                 @mouseenter="openMessagePanel"
                 @mouseleave="scheduleCloseMessagePanel"
               >
                 <div class="flex flex-col text-sm">
                   <router-link
                     to="/message/reply"
-                    class="flex items-center justify-between px-4 py-2 hover:bg-accent transition-colors"
+                    class="t-tint flex items-center justify-between px-4 py-2 hover:bg-accent"
                   >
                     <span>回复我的</span>
                     <span
                       v-if="counts.reply > 0"
-                      class="rounded-full bg-destructive px-1.5 py-0.5 text-[10px] text-destructive-foreground"
+                      class="tabular rounded-full bg-destructive px-1.5 py-0.5 text-2xs text-destructive-foreground"
                       >{{ counts.reply }}</span
                     >
                   </router-link>
                   <router-link
                     to="/message/at"
-                    class="flex items-center justify-between px-4 py-2 hover:bg-accent transition-colors"
+                    class="t-tint flex items-center justify-between px-4 py-2 hover:bg-accent"
                   >
                     <span>@ 我的</span>
                     <span
                       v-if="counts.at > 0"
-                      class="rounded-full bg-destructive px-1.5 py-0.5 text-[10px] text-destructive-foreground"
+                      class="tabular rounded-full bg-destructive px-1.5 py-0.5 text-2xs text-destructive-foreground"
                       >{{ counts.at }}</span
                     >
                   </router-link>
                   <router-link
                     to="/message/love"
-                    class="flex items-center justify-between px-4 py-2 hover:bg-accent transition-colors"
+                    class="t-tint flex items-center justify-between px-4 py-2 hover:bg-accent"
                   >
                     <span>收到的赞</span>
                     <span
                       v-if="counts.like > 0"
-                      class="rounded-full bg-destructive px-1.5 py-0.5 text-[10px] text-destructive-foreground"
+                      class="tabular rounded-full bg-destructive px-1.5 py-0.5 text-2xs text-destructive-foreground"
                       >{{ counts.like }}</span
                     >
                   </router-link>
                   <router-link
                     to="/message/system"
-                    class="flex items-center justify-between px-4 py-2 hover:bg-accent transition-colors"
+                    class="t-tint flex items-center justify-between px-4 py-2 hover:bg-accent"
                   >
                     <span>系统通知</span>
                     <span
                       v-if="counts.system > 0"
-                      class="rounded-full bg-destructive px-1.5 py-0.5 text-[10px] text-destructive-foreground"
+                      class="tabular rounded-full bg-destructive px-1.5 py-0.5 text-2xs text-destructive-foreground"
                       >{{ counts.system }}</span
                     >
                   </router-link>
                   <router-link
                     to="/message/chat"
-                    class="flex items-center justify-between px-4 py-2 hover:bg-accent transition-colors"
+                    class="t-tint flex items-center justify-between px-4 py-2 hover:bg-accent"
                   >
                     <span>我的消息</span>
                     <span
                       v-if="counts.message > 0"
-                      class="rounded-full bg-destructive px-1.5 py-0.5 text-[10px] text-destructive-foreground"
+                      class="tabular rounded-full bg-destructive px-1.5 py-0.5 text-2xs text-destructive-foreground"
                       >{{ counts.message }}</span
                     >
                   </router-link>
@@ -507,13 +544,13 @@ const navActions = [
           <div
             v-else
             class="group relative cursor-pointer flex-col items-center justify-center px-1 py-1 sm:px-3"
-            :class="[navActionTextClass, action.mobileHidden ? 'hidden sm:flex' : 'flex']"
+            :class="[navActionTextClass, action.mobileHidden ? 'hidden lg:flex' : 'flex']"
             @click="openLoginDialog"
           >
             <div class="relative">
               <component :is="action.icon" class="h-5 w-5" />
             </div>
-            <span class="mt-0.5 hidden text-[10px] font-medium sm:block">{{ action.name }}</span>
+            <span class="mt-0.5 hidden text-2xs font-medium sm:block">{{ action.name }}</span>
           </div>
         </template>
       </div>
@@ -525,7 +562,7 @@ const navActions = [
         v-if="authStore.isLoggedIn"
         as-child
         size="sm"
-        class="ml-1 h-8 rounded-lg border-0 bg-primary px-2 text-primary-foreground hover:bg-primary/90 shadow-[0_0_15px_rgba(var(--color-primary)/0.3)] sm:ml-3 sm:px-4 transition-all"
+        class="ml-1 h-8 rounded-lg border-0 bg-primary px-2 text-primary-foreground shadow-raised hover:bg-primary/90 sm:ml-3 sm:px-4"
       >
         <router-link to="/upload" class="flex items-center gap-1.5">
           <Upload class="h-4 w-4" />
@@ -535,7 +572,7 @@ const navActions = [
       <Button
         v-else
         size="sm"
-        class="ml-1 h-8 cursor-pointer rounded-lg border-0 bg-primary px-2 text-primary-foreground hover:bg-primary/90 shadow-[0_0_15px_rgba(var(--color-primary)/0.3)] sm:ml-3 sm:px-4 transition-all"
+        class="ml-1 h-8 cursor-pointer rounded-lg border-0 bg-primary px-2 text-primary-foreground shadow-raised hover:bg-primary/90 sm:ml-3 sm:px-4"
         @click="openLoginDialog"
       >
         <Upload class="h-4 w-4" />
@@ -555,62 +592,113 @@ const navActions = [
 <style scoped lang="scss">
 /* Search suggestion highlight */
 .search-suggestion-item :deep(em) {
-  color: var(--brand-blue, oklch(var(--primary)));
+  color: var(--color-primary, var(--brand-blue));
   font-style: normal;
   font-weight: 700;
-  background: oklch(var(--primary) / 0.12);
+  background: color-mix(in oklch, var(--color-primary) 12%, transparent);
   border-radius: 2px;
   padding: 0 1px;
 }
 
+/* ------------------------------------------------------------------
+ * 浮层出现/消失（头像面板、消息面板、搜索联想下拉）
+ * 联想下拉原来是裸 v-if：实时联想每返回一批、结果从有到无都会整块硬闪一次，
+ * 而同文件里头像面板和消息面板早就有 panel-fade —— 最高频的那个反而没有。
+ * ------------------------------------------------------------------ */
 .panel-fade-enter-active {
   transition:
-    opacity 0.18s ease,
-    transform 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+    opacity var(--duration-fast) linear,
+    transform var(--duration-fast) var(--ease-out-expo);
 }
 
 .panel-fade-leave-active {
   transition:
-    opacity 0.12s ease,
-    transform 0.12s ease;
+    opacity var(--duration-fast) linear,
+    transform var(--duration-fast) var(--ease-out-quart);
 }
 
 .panel-fade-enter-from,
 .panel-fade-leave-to {
   opacity: 0;
-  transform: translateY(-4px);
+  transform: translate3d(0, -4px, 0);
 }
 
-.nav-avatar-wrapper {
-  will-change: transform;
+/* 联想条目：key 用 value，同一批里没变的词原地不动，
+   新词做 18ms 阶梯入场（高频输入场景的上限，再大就有迟钝感），
+   -move 让下拉高度变化时条目滑过去而不是跳过去。 */
+.sug-move {
+  transition: transform var(--duration-normal) var(--ease-out-quart);
+}
+
+.sug-enter-active {
+  transition:
+    opacity var(--duration-fast) linear,
+    transform var(--duration-fast) var(--ease-out-expo);
+  transition-delay: calc(min(var(--sug-i, 0), 6) * 18ms);
+}
+
+.sug-leave-active {
+  position: absolute;
+  left: 0;
+  right: 0;
+  transition: opacity var(--duration-fast) linear;
+}
+
+.sug-enter-from {
+  opacity: 0;
+  transform: translate3d(0, -6px, 0);
+}
+
+.sug-leave-to {
+  opacity: 0;
 }
 
 .avatar-normal {
   transform: scale(1) translateY(0);
   opacity: 1;
   transition:
-    transform 0.3s cubic-bezier(0.22, 1, 0.36, 1),
-    opacity 0.2s ease 0.05s;
+    transform var(--duration-normal) var(--ease-out-quint),
+    opacity var(--duration-fast) linear var(--duration-fast);
 }
 
 .avatar-expanded {
   transform: scale(2.5) translateY(0);
   opacity: 0;
+  /* will-change 只在真正会动的那一态挂上，不常驻占合成层 */
+  will-change: transform;
   transition:
-    transform 0.35s cubic-bezier(0.22, 1, 0.36, 1),
-    opacity 0.2s ease;
+    transform var(--duration-normal) var(--ease-out-quint),
+    opacity var(--duration-fast) linear;
+}
+
+.history-chip-close {
+  opacity: 0;
+  transition:
+    opacity var(--duration-fast) linear,
+    background-color var(--duration-fast) var(--ease-out-quart);
+
+  &:hover {
+    background-color: color-mix(in oklch, var(--color-foreground) 12%, transparent);
+  }
 }
 
 .search-input-base {
   border: 1px solid transparent;
-  transition: all 0.3s ease;
-  backdrop-filter: blur(8px);
+  /* 显式列出：原来是 transition: all 0.3s ease，会把 focus 的 3px 扩散阴影一起插值，
+     每次聚焦搜索框都在重绘一层阴影；ease 也不是项目的任何一条缓动 token。 */
+  transition:
+    background-color var(--duration-normal) var(--ease-out-quart),
+    border-color var(--duration-normal) var(--ease-out-quart),
+    color var(--duration-fast) linear;
+  backdrop-filter: blur(var(--blur-scrim, 8px));
 
   &:focus-visible {
     background-color: var(--color-background);
     color: var(--color-foreground);
     border-color: color-mix(in oklch, var(--color-primary) 40%, transparent);
-    box-shadow: 0 0 0 3px color-mix(in oklch, var(--color-primary) 20%, transparent);
+    /* 光晕改用 outline：不参与过渡、不触发重绘链，且与全站焦点语言同源 */
+    outline: 3px solid color-mix(in oklch, var(--color-primary) 20%, transparent);
+    outline-offset: 0;
 
     &::placeholder {
       color: color-mix(in oklch, var(--color-muted-foreground) 70%, transparent);
@@ -621,7 +709,7 @@ const navActions = [
 .search-bar-solid {
   background-color: color-mix(in oklch, var(--color-secondary) 60%, transparent);
   color: var(--color-foreground);
-  box-shadow: inset 0 1px 2px rgb(0, 0, 0, 0.05);
+  box-shadow: var(--shadow-surface) inset;
 
   &:hover:not(:focus-visible) {
     background-color: color-mix(in oklch, var(--color-secondary) 90%, transparent);
@@ -632,40 +720,22 @@ const navActions = [
   }
 }
 
-:global(.dark) .search-bar-solid {
-  box-shadow: none;
-}
-
+/* 玻璃态：整块改走 media-overlay 语义。
+   原实现是 rgb(255,255,255,.2) / #ffffff / rgb(0,0,0,.4) 明暗各写一遍硬编码，
+   正是「两套主题各手搓一次」的典型；--media-overlay-text 明暗两套都已定义，
+   所以 :global(.dark) 覆盖块可以整块删掉。 */
 .search-bar-glass {
-  background-color: rgb(255, 255, 255, 0.2);
-  border-color: rgb(255, 255, 255, 0.2);
-  color: #ffffff;
-  box-shadow: 0 1px 2px rgb(0, 0, 0, 0.05);
-  backdrop-filter: blur(12px);
+  background-color: color-mix(in oklch, var(--media-overlay-text) 18%, transparent);
+  border-color: color-mix(in oklch, var(--media-overlay-text) 22%, transparent);
+  color: var(--media-overlay-text);
+  backdrop-filter: blur(var(--blur-glass, 22px));
 
   &:hover:not(:focus-visible) {
-    background-color: rgb(255, 255, 255, 0.3);
+    background-color: color-mix(in oklch, var(--media-overlay-text) 28%, transparent);
   }
 
   &::placeholder {
-    color: rgb(255, 255, 255, 0.7);
+    color: color-mix(in oklch, var(--media-overlay-text) 68%, transparent);
   }
 }
-
-:global(.dark) .search-bar-glass {
-  background-color: rgb(0, 0, 0, 0.4);
-  border-color: rgb(255, 255, 255, 0.1);
-
-  &:hover:not(:focus-visible) {
-    background-color: rgb(0, 0, 0, 0.6);
-  }
-}
-
-/* Bulletproof CSS for search bar to evade Tailwind JIT cache bugs */
-
-/* 1. Solid variant (for video detail page / solid headers) */
-
-/* 2. Glass variant (for homepage / banner overlay headers) */
-
-/* Dark mode overrides for glass variant */
 </style>

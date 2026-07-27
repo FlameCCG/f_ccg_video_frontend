@@ -56,7 +56,7 @@ const navItems = [
           <div class="hidden h-4 w-px bg-border sm:block"></div>
           <router-link
             to="/"
-            class="flex items-center gap-1 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground sm:gap-1.5 sm:text-sm"
+            class="t-tint flex items-center gap-1 text-xs font-medium text-muted-foreground hover:text-foreground sm:gap-1.5 sm:text-sm"
           >
             <MonitorPlay class="h-4 w-4" />
             <span class="hidden sm:inline">主站</span>
@@ -70,7 +70,7 @@ const navItems = [
               <DropdownMenuTrigger as-child>
                 <div class="cursor-pointer group">
                   <div
-                    class="h-8 w-8 rounded-full border-2 border-transparent group-hover:border-primary transition-colors overflow-hidden"
+                    class="t-tint h-8 w-8 overflow-hidden rounded-full border-2 border-transparent group-hover:border-primary"
                   >
                     <AppAvatar
                       :src="authStore.user?.avatar"
@@ -119,7 +119,7 @@ const navItems = [
     </header>
 
     <!-- Main Content -->
-    <div class="mx-auto flex w-full max-w-[1400px] flex-1">
+    <div class="mx-auto flex w-full max-w-reading flex-1">
       <!-- Left Sidebar -->
       <aside class="w-64 shrink-0 border-r bg-background hidden md:block">
         <div class="p-6 flex flex-col gap-6 sticky top-14">
@@ -127,7 +127,7 @@ const navItems = [
           <Button
             as-child
             size="lg"
-            class="w-full bg-primary hover:bg-primary/90 text-primary-foreground shadow-sm"
+            class="w-full bg-primary text-primary-foreground shadow-surface hover:bg-primary/90"
           >
             <router-link to="/creator/upload" class="flex items-center justify-center gap-2">
               <Upload class="h-5 w-5" />
@@ -141,7 +141,7 @@ const navItems = [
               v-for="item in navItems"
               :key="item.path"
               :to="item.path"
-              class="flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-colors"
+              class="t-tint flex items-center gap-3 rounded-lg px-4 py-3 text-sm font-medium"
               :class="[
                 route.path.startsWith(item.path) ||
                 (item.path === '/creator/home' && route.path === '/creator')
@@ -158,7 +158,11 @@ const navItems = [
 
       <!-- Main View -->
       <main class="min-w-0 flex-1 p-4 sm:p-6">
-        <RouterView />
+        <RouterView v-slot="{ Component, route: current }">
+          <Transition name="route" mode="out-in">
+            <component :is="Component" :key="current.path" />
+          </Transition>
+        </RouterView>
       </main>
     </div>
   </div>

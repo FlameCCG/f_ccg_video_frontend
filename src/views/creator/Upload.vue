@@ -1,19 +1,22 @@
 ﻿<script setup lang="ts">
 import { ref, onMounted, onBeforeUnmount, computed, watch } from 'vue'
+import type { Component } from 'vue'
 import { useRouter } from 'vue-router'
 import {
   UploadCloud,
   AlertTriangle,
-  Image as ImageIcon,
-  Bot,
+  CalendarClock,
+  Film,
+  Globe,
+  HardDrive,
+  Layers,
+  Lock,
+  MonitorPlay,
+  Repeat2,
   X,
   Loader2,
   Plus,
-  Play,
-  Pause,
-  RotateCcw,
-  CheckCircle2,
-  RefreshCw,
+  Zap,
 } from 'lucide-vue-next'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -22,6 +25,24 @@ import { useToast } from '@/components/ui/toast/use-toast'
 import ScheduledPublishPicker from '@/components/creator/ScheduledPublishPicker.vue'
 import TagInput from '@/components/creator/TagInput.vue'
 import BatchOperationDialog from '@/components/creator/BatchOperationDialog.vue'
+import PartitionPicker from '@/components/creator/PartitionPicker.vue'
+import SegmentedChoice from '@/components/creator/SegmentedChoice.vue'
+import UploadChecklist from '@/components/creator/UploadChecklist.vue'
+import UploadCoverCard from '@/components/creator/UploadCoverCard.vue'
+import UploadDropOverlay from '@/components/creator/UploadDropOverlay.vue'
+import UploadPartRow from '@/components/creator/UploadPartRow.vue'
+import UploadWorkTabs from '@/components/creator/UploadWorkTabs.vue'
+import {
+  dataAttrs,
+  hasBlockingIssue,
+  isBusyPartStatus,
+  type ChecklistField,
+  type SegmentedOption,
+  type VideoPart,
+  type VideoWork,
+  type VideoWorkForm,
+  type WorkIssues,
+} from '@/components/creator/upload-shared'
 import {
   Dialog,
   DialogContent,
@@ -52,31 +73,6 @@ import { useCreatorBridgeStore } from '@/stores/creatorBridge'
 const router = useRouter()
 const { toast } = useToast()
 const creatorBridgeStore = useCreatorBridgeStore()
-
-interface VideoPart {
-  id: string
-  file: File
-  /** 源文件名（含扩展名），与分P标题分离，发布时作为 fileName 提交 */
-  sourceFileName: string
-  /** 分P标题；仅多P时可编辑，单P时不展示/不提交 */
-  title: string
-  progress: number
-  status:
-    | 'pending'
-    | 'hashing'
-    | 'checking'
-    | 'uploading'
-    | 'merging'
-    | 'success'
-    | 'error'
-    | 'canceled'
-    | 'paused'
-  hash: string
-  filePath: string
-  instant: boolean
-  errorMessage?: string
-  abortController?: AbortController
-}
 
 /** 与后端 video_resources / video_part_resources.source_file_name 列长一致 */
 const MAX_SOURCE_FILE_NAME_LENGTH = 255
@@ -113,30 +109,14 @@ const createVideoPart = (
   hash: '',
   filePath: '',
   instant: false,
+  uploadedBytes: 0,
+  speedBps: 0,
+  etaMs: 0,
   ...overrides,
 })
 
-interface VideoWorkForm {
-  title: string
-  description: string
-  partitionId: number | undefined
-  tags: string[]
-  tagInput: string
-  isOriginal: boolean
-  isPrivate: boolean
-  publishType: 'immediate' | 'scheduled'
-  publishTime: string
-}
-
-interface VideoWork {
-  id: string
-  parts: VideoPart[]
-  form: VideoWorkForm
-  coverFile: File | null
-  coverPreview: string
-  currentCoverUrl: string
-  coverSource: 'none' | 'auto' | 'manual'
-}
+/** 传输指标写回 UI 的最小间隔：大文件分片多，逐片写会把状态行顶到每秒几十次渲染 */
+const UPLOAD_UI_PUSH_INTERVAL = 220
 
 interface UploadFeedback {
   description: string
@@ -163,6 +143,7 @@ const createWork = (initialParts: VideoPart[] = []): VideoWork => ({
   coverPreview: '',
   currentCoverUrl: '',
   coverSource: 'none',
+  publishState: 'idle',
 })
 
 // State
@@ -203,18 +184,31 @@ const VIDEO_FILE_EXTENSIONS = [
 ] as const
 const VIDEO_INPUT_ACCEPT = `video/*,${VIDEO_FILE_EXTENSIONS.map((ext) => `.${ext}`).join(',')}`
 const COMMON_VIDEO_FORMAT_TEXT = `${VIDEO_FILE_EXTENSIONS.slice(0, 6).join(' / ')} 等常见格式`
-const DEFAULT_PART_LIMIT_TEXT = `最多 ${DEFAULT_STORAGE_CONFIG.maxUploadNum} 个分P`
 const FILE_HASH_CACHE_KEY = 'creator-upload-file-hash-cache'
 const FILE_HASH_CACHE_LIMIT = 24
 const SCHEDULE_MIN_DELAY_MS = 5 * 60 * 1000
 const SCHEDULE_MAX_DELAY_MS = 14 * 24 * 60 * 60 * 1000
-const uploadConstraintsText = computed(() => {
-  if (hasExplicitStorageConfig.value) {
-    return `支持 ${COMMON_VIDEO_FORMAT_TEXT}，单文件不超过 ${storageConfig.value.maxFileSize}MB，最多 ${storageConfig.value.maxUploadNum} 个分P，按 ${storageConfig.value.chunkSize}MB 分片上传。若文件未进入列表，会直接提示具体原因。`
-  }
 
-  return `支持 ${COMMON_VIDEO_FORMAT_TEXT}，当前站点未公开单文件大小限制，前端不会提前拦截；若服务端拒绝，会在列表中显示具体失败原因。${DEFAULT_PART_LIMIT_TEXT}。`
-})
+/**
+ * 空态的约束说明。原来是一整段密排小字，读完才知道能不能传；
+ * 拆成四条带图标的要点，并把「秒传」这个产品能力前置 —— 它是用户最该先知道的一条。
+ */
+const uploadFacts = computed<{ icon: Component; title: string; text: string }[]>(() => [
+  { icon: Film, title: '支持的格式', text: COMMON_VIDEO_FORMAT_TEXT },
+  {
+    icon: HardDrive,
+    title: '单文件大小',
+    text: hasExplicitStorageConfig.value
+      ? `不超过 ${storageConfig.value.maxFileSize}MB`
+      : '本站未公开上限，超限时会明确提示原因',
+  },
+  {
+    icon: Layers,
+    title: '分P 与续传',
+    text: `单个作品最多 ${storageConfig.value.maxUploadNum} 个分P，按 ${storageConfig.value.chunkSize}MB 分片，断了可以接着传`,
+  },
+  { icon: Zap, title: '秒传', text: '传过的文件会被识别出来，直接跳过传输' },
+])
 
 // Active work computed
 const activeWork = computed(() => works.value[activeWorkIndex.value])
@@ -222,12 +216,101 @@ const activeParts = computed(() => activeWork.value?.parts ?? [])
 const allParts = computed(() => works.value.flatMap((w) => w.parts))
 const isActiveScheduleDisabled = computed(() => Boolean(activeWork.value?.form.isPrivate))
 
-const isUploadingAny = computed(() =>
-  allParts.value.some((p) =>
-    ['pending', 'hashing', 'checking', 'uploading', 'merging'].includes(p.status)
-  )
-)
+const isUploadingAny = computed(() => allParts.value.some((p) => isBusyPartStatus(p.status)))
 const showPartLabels = computed(() => activeParts.value.length > 1)
+const remainingPartSlots = computed(() =>
+  Math.max(storageConfig.value.maxUploadNum - activeParts.value.length, 0)
+)
+
+/** 已经点过一次「发布视频」：此后才把未填项显示成错误态，避免一进页面就满屏红 */
+const hasTriedPublish = ref(false)
+
+const workIssues = computed<WorkIssues[]>(() =>
+  works.value.map((work) => ({
+    noParts: work.parts.length === 0,
+    uploading: work.parts.some((part) => isBusyPartStatus(part.status)),
+    failed: work.parts.some((part) => ['error', 'canceled', 'paused'].includes(part.status)),
+    title: !work.form.title.trim(),
+    partition: !work.form.partitionId,
+    cover: !work.coverFile && !work.coverPreview,
+  }))
+)
+
+const activeIssues = computed<WorkIssues | undefined>(() => workIssues.value[activeWorkIndex.value])
+
+/** 字段级 inline 错误只在点过发布之后出现 */
+const showIssue = (key: keyof WorkIssues) =>
+  hasTriedPublish.value && Boolean(activeIssues.value?.[key])
+
+const publishBlockReason = computed(() => {
+  if (works.value.length === 0) return '先添加视频文件'
+  if (isPublishing.value) return '正在发布…'
+
+  const busyCount = allParts.value.filter((part) => isBusyPartStatus(part.status)).length
+  if (busyCount > 0) return `${busyCount} 个文件传输中，完成后即可发布`
+
+  const pendingWorks = workIssues.value.filter(hasBlockingIssue).length
+  if (pendingWorks > 0) {
+    return works.value.length > 1 ? `${pendingWorks} 个作品还有必填项没填` : '还有必填项没填完'
+  }
+  return ''
+})
+
+const activePartitionName = computed(
+  () => partitions.value.find((item) => item.id === activeWork.value?.form.partitionId)?.name ?? ''
+)
+
+const headSummary = computed(() => {
+  if (works.value.length === 0) return '支持多文件、分P 与秒传'
+  return `${works.value.length} 个作品 · ${allParts.value.length} 个视频文件`
+})
+
+const originalOptions: SegmentedOption<boolean>[] = [
+  { value: true, label: '自制', icon: MonitorPlay },
+  { value: false, label: '转载', icon: Repeat2 },
+]
+
+const visibilityOptions: SegmentedOption<boolean>[] = [
+  { value: false, label: '公开', icon: Globe },
+  { value: true, label: '私密', icon: Lock },
+]
+
+const publishTypeOptions = computed<SegmentedOption<'immediate' | 'scheduled'>[]>(() => [
+  { value: 'immediate', label: '立即发布', icon: Zap },
+  {
+    value: 'scheduled',
+    label: '定时发布',
+    icon: CalendarClock,
+    disabled: isActiveScheduleDisabled.value,
+  },
+])
+
+const updateActiveForm = <K extends keyof VideoWorkForm>(key: K, value: VideoWorkForm[K]) => {
+  if (!activeWork.value) return
+  activeWork.value.form[key] = value
+}
+
+const FIELD_ANCHORS: Record<ChecklistField, string> = {
+  parts: 'upload-field-parts',
+  title: 'upload-field-title',
+  partition: 'upload-field-partition',
+  cover: 'upload-field-cover',
+}
+
+const focusField = (field: ChecklistField) => {
+  const target = document.getElementById(FIELD_ANCHORS[field])
+  if (!target) return
+
+  const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+  target.scrollIntoView({
+    block: 'center',
+    behavior: prefersReducedMotion ? 'auto' : 'smooth',
+  })
+  const focusable = target.querySelector<HTMLElement>(
+    'input, textarea, button:not([tabindex="-1"]), [tabindex="0"]'
+  )
+  focusable?.focus({ preventScroll: true })
+}
 
 // Cover Setting State
 const showCoverSetting = ref(false)
@@ -869,10 +952,40 @@ const onDrop = (e: DragEvent) => {
   e.preventDefault()
   e.stopPropagation()
   isDragging.value = false
+
+  // 已经有作品时，落点由 UploadDropOverlay 的两个区域接管：
+  // 「加为分P」和「新建作品」是两件完全不同的事，不能替用户默认选一个。
+  if (works.value.length > 0) return
+
   const files = getFilesFromDataTransfer(e.dataTransfer)
   if (files.length > 0) {
     handleFilesSelect(files)
   }
+}
+
+const onDropAsParts = (e: DragEvent) => {
+  isDragging.value = false
+  const files = getFilesFromDataTransfer(e.dataTransfer)
+  if (files.length > 0) {
+    handleFilesSelect(files)
+  }
+}
+
+const onDropAsNewWorks = (e: DragEvent) => {
+  isDragging.value = false
+  const files = getFilesFromDataTransfer(e.dataTransfer)
+  if (files.length > 0) {
+    addFilesAsNewWorks(files)
+  }
+}
+
+const onDropMissed = () => {
+  isDragging.value = false
+  // 用 toast 而不是页面顶部的提示条：拖拽多发生在页面中段，顶部提示条用户根本看不到
+  toast({
+    title: '文件还没有添加进来',
+    description: '松手前请把文件移到「加为当前作品的分P」或「作为新的作品」区域内。',
+  })
 }
 const onFileChange = (e: Event) => {
   const target = e.target as HTMLInputElement
@@ -906,15 +1019,20 @@ const handleWindowDrop = (e: DragEvent) => {
 // Concurrency & retry helpers
 const activeUploads = ref(0)
 
-const queuePosition = (part: VideoPart): number => {
-  if (part.status !== 'pending') return 0
-  let pos = 0
-  for (const p of allParts.value) {
-    if (p.id === part.id) return pos + 1
-    if (p.status === 'pending') pos++
+/**
+ * 排队序号。原来是模板里直接调用的函数，每次 render × 每个 pending 分P 都要
+ * 重新遍历一遍 allParts；改成一次算完的 Map，只在 status 变化时失效。
+ */
+const queuePositions = computed(() => {
+  const positions = new Map<string, number>()
+  let position = 0
+  for (const part of allParts.value) {
+    if (part.status !== 'pending') continue
+    position += 1
+    positions.set(part.id, position)
   }
-  return 0
-}
+  return positions
+})
 
 const hasDraggedFiles = (dataTransfer: DataTransfer | null | undefined) => {
   if (!dataTransfer) return false
@@ -1011,7 +1129,9 @@ const handleFilesSelect = (files: FileList | File[]) => {
 
   const videoFiles = allFiles.filter(isLikelyVideoFile)
   if (videoFiles.length === 0) {
-    const longNameOnly = unsupportedFiles.filter((entry) => isSourceFileNameTooLong(entry.file.name))
+    const longNameOnly = unsupportedFiles.filter((entry) =>
+      isSourceFileNameTooLong(entry.file.name)
+    )
     const formatOnly = unsupportedFiles.filter((entry) => !isSourceFileNameTooLong(entry.file.name))
     if (longNameOnly.length > 0 && formatOnly.length === 0) {
       uploadFeedback.value = {
@@ -1019,7 +1139,9 @@ const handleFilesSelect = (files: FileList | File[]) => {
         description:
           longNameOnly.length === 1
             ? getSourceFileNameTooLongMessage(longNameOnly[0]!.file.name)
-            : longNameOnly.map((entry) => getSourceFileNameTooLongMessage(entry.file.name)).join('；'),
+            : longNameOnly
+                .map((entry) => getSourceFileNameTooLongMessage(entry.file.name))
+                .join('；'),
       }
       return
     }
@@ -1054,8 +1176,12 @@ const handleFilesSelect = (files: FileList | File[]) => {
 
   const uploadIssues: string[] = []
   if (unsupportedFiles.length > 0) {
-    const longNameFiles = unsupportedFiles.filter((entry) => isSourceFileNameTooLong(entry.file.name))
-    const formatFiles = unsupportedFiles.filter((entry) => !isSourceFileNameTooLong(entry.file.name))
+    const longNameFiles = unsupportedFiles.filter((entry) =>
+      isSourceFileNameTooLong(entry.file.name)
+    )
+    const formatFiles = unsupportedFiles.filter(
+      (entry) => !isSourceFileNameTooLong(entry.file.name)
+    )
     if (longNameFiles.length > 0) {
       uploadIssues.push(
         longNameFiles.length === 1
@@ -1127,6 +1253,8 @@ const uploadPart = async (part: VideoPart, isResume = false) => {
     } else {
       part.errorMessage = ''
     }
+    part.speedBps = 0
+    part.etaMs = 0
 
     if (!isResume || !part.hash) {
       const cachedHash = getCachedFileHash(part.file)
@@ -1157,6 +1285,7 @@ const uploadPart = async (part: VideoPart, isResume = false) => {
     if (status.completed) {
       part.filePath = status.filePath
       part.progress = 100
+      part.uploadedBytes = part.file.size
       part.instant = true
       part.status = 'success'
       void autoRecommendCoverForPart(part)
@@ -1171,6 +1300,13 @@ const uploadPart = async (part: VideoPart, isResume = false) => {
 
     part.status = 'uploading'
     part.progress = totalChunks > 0 ? Math.round((uploadedCount / totalChunks) * 100) : 100
+    part.uploadedBytes = Math.min(uploadedCount * cSize, part.file.size)
+
+    // 传输指标只在本地累积，按 UPLOAD_UI_PUSH_INTERVAL 批量写回响应式对象
+    let transferredBytes = part.uploadedBytes
+    let smoothedSpeed = 0
+    let lastTickAt = performance.now()
+    let lastUiPushAt = 0
 
     for (let i = 0; i < totalChunks; i++) {
       if (signal.aborted) throw new Error('canceled')
@@ -1195,12 +1331,34 @@ const uploadPart = async (part: VideoPart, isResume = false) => {
       )
 
       uploadedCount++
-      part.progress = Math.round((uploadedCount / totalChunks) * 100)
+      transferredBytes = Math.min(transferredBytes + (end - start), part.file.size)
+
+      const now = performance.now()
+      const elapsedSeconds = (now - lastTickAt) / 1000
+      lastTickAt = now
+      if (elapsedSeconds > 0) {
+        // 单片耗时抖动很大，不做 EMA 平滑的话速度数字会一直乱跳，反而读不出信息
+        const instantSpeed = (end - start) / elapsedSeconds
+        smoothedSpeed =
+          smoothedSpeed > 0 ? smoothedSpeed * 0.75 + instantSpeed * 0.25 : instantSpeed
+      }
+
+      if (now - lastUiPushAt >= UPLOAD_UI_PUSH_INTERVAL || uploadedCount === totalChunks) {
+        lastUiPushAt = now
+        part.uploadedBytes = transferredBytes
+        part.progress = Math.round((uploadedCount / totalChunks) * 100)
+        part.speedBps = smoothedSpeed
+        part.etaMs =
+          smoothedSpeed > 0 ? ((part.file.size - transferredBytes) / smoothedSpeed) * 1000 : 0
+      }
     }
 
     // Phase 4: merge (serialized)
     part.status = 'merging'
     part.progress = 100
+    part.uploadedBytes = part.file.size
+    part.speedBps = 0
+    part.etaMs = 0
     await acquireCompleteLock()
     try {
       if (signal.aborted) throw new Error('canceled')
@@ -1278,17 +1436,14 @@ const removeWork = (index: number) => {
   previewVideoError.value = false
 }
 
-const onAddWorkFileChange = (e: Event) => {
-  const target = e.target as HTMLInputElement
-  if (!target.files?.length) return
-  const allFiles = Array.from(target.files)
-  const videoFiles = allFiles.filter(isLikelyVideoFile)
+/** 每个文件各自成为一个独立作品（「添加作品」按钮与拖拽落点共用） */
+const addFilesAsNewWorks = (files: File[]) => {
+  const videoFiles = files.filter(isLikelyVideoFile)
   if (videoFiles.length === 0) {
     uploadFeedback.value = {
       title: '没有可上传的视频文件',
       description: `请上传 ${COMMON_VIDEO_FORMAT_TEXT}。`,
     }
-    target.value = ''
     return
   }
   const validFiles = videoFiles.filter((file) => !exceedsConfiguredFileSizeLimit(file))
@@ -1301,7 +1456,6 @@ const onAddWorkFileChange = (e: Event) => {
         description: '当前选择的文件未通过上传校验，请检查后重试。',
       }
     }
-    target.value = ''
     return
   }
   uploadFeedback.value = null
@@ -1312,8 +1466,14 @@ const onAddWorkFileChange = (e: Event) => {
     works.value.push(work)
   })
   activeWorkIndex.value = works.value.length - 1
-  target.value = ''
   processUploadQueue()
+}
+
+const onAddWorkFileChange = (e: Event) => {
+  const target = e.target as HTMLInputElement
+  if (!target.files?.length) return
+  addFilesAsNewWorks(Array.from(target.files))
+  target.value = ''
 }
 
 const replaceFileInputRef = ref<HTMLInputElement | null>(null)
@@ -1376,6 +1536,9 @@ const onReplaceFileChange = (e: Event) => {
   part.filePath = ''
   part.errorMessage = ''
   part.instant = false
+  part.uploadedBytes = 0
+  part.speedBps = 0
+  part.etaMs = 0
 
   target.value = ''
   replaceTargetPartIndex.value = null
@@ -1418,6 +1581,9 @@ onBeforeUnmount(() => {
 
 // Publish
 const handlePublish = async () => {
+  // 从这一刻起，未填项在对应字段上常驻显示为错误态，而不是只弹一条会消失的 toast
+  hasTriedPublish.value = true
+
   if (works.value.length === 0) {
     toast({ title: '请至少添加一个作品', variant: 'destructive' })
     return
@@ -1428,26 +1594,31 @@ const handlePublish = async () => {
     if (work.parts.length === 0) {
       toast({ title: `${wLabel}请至少上传一个视频`, variant: 'destructive' })
       activeWorkIndex.value = i
+      focusField('parts')
       return
     }
     if (work.parts.some((p) => p.status !== 'success')) {
       toast({ title: `${wLabel}请等待所有视频上传完成`, variant: 'destructive' })
       activeWorkIndex.value = i
+      focusField('parts')
       return
     }
     if (!work.form.title) {
       toast({ title: `${wLabel}请填写标题`, variant: 'destructive' })
       activeWorkIndex.value = i
+      focusField('title')
       return
     }
     if (!work.form.partitionId) {
       toast({ title: `${wLabel}请选择分区`, variant: 'destructive' })
       activeWorkIndex.value = i
+      focusField('partition')
       return
     }
     if (!work.coverFile && !work.coverPreview) {
       toast({ title: `${wLabel}请上传封面`, variant: 'destructive' })
       activeWorkIndex.value = i
+      focusField('cover')
       return
     }
     const longNamePart = work.parts.find((p) => isSourceFileNameTooLong(p.sourceFileName))
@@ -1462,6 +1633,7 @@ const handlePublish = async () => {
     }
   }
 
+  let publishedCount = 0
   try {
     isPublishing.value = true
     for (const work of works.value) {
@@ -1474,6 +1646,7 @@ const handlePublish = async () => {
         }
         publishTimeStr = new Date(normalized).toISOString()
       }
+      work.publishState = 'publishing'
       const tagIds = await resolveCreatorTagIds(work.form.tags)
       let coverUrl = work.currentCoverUrl
       if (work.coverFile) {
@@ -1507,15 +1680,29 @@ const handlePublish = async () => {
             }),
       }
       await publishVideo(publishPayload)
+      work.publishState = 'done'
+      publishedCount += 1
     }
     toast({ title: works.value.length > 1 ? `${works.value.length} 个作品发布成功` : '发布成功' })
     void router.push('/creator/content')
   } catch (error) {
     console.error('Publish failed', error)
+    // 串行发布：前面成功的已经落库了，必须让用户知道断在哪一个，否则会重复投稿
+    works.value.forEach((work) => {
+      if (work.publishState === 'publishing') work.publishState = 'failed'
+    })
+    const partialText =
+      publishedCount > 0 ? `前 ${publishedCount} 个作品已发布成功，其余未发布。` : ''
     // 业务错误文案（含源文件名过长）已由 request 拦截器 toast，避免再弹笼统的「发布失败」盖掉原因
     const message = error instanceof Error ? error.message.trim() : ''
     if (!message) {
-      toast({ title: '发布失败', description: '请稍后重试', variant: 'destructive' })
+      toast({
+        title: '发布失败',
+        description: `${partialText}请稍后重试`,
+        variant: 'destructive',
+      })
+    } else if (partialText) {
+      toast({ title: '部分作品未发布', description: partialText, variant: 'destructive' })
     }
   } finally {
     isPublishing.value = false
@@ -1526,7 +1713,7 @@ const handlePublish = async () => {
 <template>
   <div
     ref="uploadRootRef"
-    class="max-w-5xl mx-auto py-8 px-4"
+    class="upload-page"
     @dragenter="onDragEnter"
     @dragover="onDragOver"
     @dragleave="onDragLeave"
@@ -1564,16 +1751,28 @@ const handlePublish = async () => {
       @change="onReplaceFileChange"
     />
 
+    <header class="mb-5 flex flex-wrap items-end justify-between gap-3">
+      <div class="min-w-0">
+        <h1 class="text-xl font-semibold tracking-tight">投稿</h1>
+        <p class="mt-1 text-sm text-muted-foreground">{{ headSummary }}</p>
+      </div>
+      <Button v-if="works.length > 1" variant="outline" size="sm" @click="showBatchDialog = true">
+        <Layers class="h-3.5 w-3.5" />
+        批量设置
+      </Button>
+    </header>
+
     <div
       v-if="uploadFeedback"
-      class="upload-feedback-alert mb-6 flex items-start gap-3 rounded-2xl px-4 py-4"
+      class="upload-feedback-alert mb-5 flex items-start gap-3 rounded-2xl px-4 py-4"
+      role="status"
     >
       <div
         class="upload-feedback-alert__icon mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-full"
       >
         <AlertTriangle class="h-4.5 w-4.5" />
       </div>
-      <div class="min-w-0 space-y-1">
+      <div class="min-w-0 flex-1 space-y-1">
         <p class="upload-feedback-alert__title text-sm font-semibold tracking-[0.01em]">
           {{ uploadFeedback.title }}
         </p>
@@ -1581,549 +1780,333 @@ const handlePublish = async () => {
           {{ uploadFeedback.description }}
         </p>
       </div>
+      <button
+        type="button"
+        class="upload-feedback-alert__close active-scale"
+        aria-label="关闭提示"
+        @click="uploadFeedback = null"
+      >
+        <X class="h-4 w-4" />
+      </button>
     </div>
 
-    <!-- Step 1: Upload Area -->
-    <div
-      v-if="works.length === 0"
-      class="bg-card rounded-3xl border-2 border-dashed p-16 transition-all duration-300 flex flex-col items-center justify-center min-h-[440px] hover:border-primary/50 hover:bg-muted/10"
-      :class="{ 'border-primary bg-primary/5 scale-[1.02] shadow-xl': isDragging }"
-    >
-      <div
-        class="h-24 w-24 bg-primary/10 rounded-full flex items-center justify-center mb-6 transition-transform duration-500 group-hover:scale-110"
+    <!--
+      Step 1: 选择文件
+
+      整块空态本身就是按钮（<button> 而不是 <section> + 中间一个小 Button）。
+      原来 320px 高的虚线框里只有正中那颗按钮可点，其余全是死区 —— 用户按直觉
+      去点框子，什么也不会发生，只能再瞄准中间点一次。拖拽热区已经是整块了，
+      点击热区没有理由比它小。
+
+      说明文字放在按钮里会被读屏当成一长串按钮名念出来，所以 facts 列表留在按钮
+      外面（aria-describedby 关联），标题与副标题则用 aria-label 收成一句话。
+    -->
+    <section v-if="works.length === 0">
+      <button
+        type="button"
+        class="upload-empty"
+        aria-label="把视频拖到这里，或点击选择文件"
+        aria-describedby="upload-empty-facts"
+        v-bind="dataAttrs({ 'data-dragging': isDragging ? 'true' : 'false' })"
+        @click="openVideoPicker('initial')"
       >
-        <UploadCloud class="h-12 w-12 text-primary" />
+        <span class="upload-empty__icon">
+          <UploadCloud class="h-7 w-7" aria-hidden="true" />
+        </span>
+        <span class="text-xl font-semibold tracking-cjk" aria-hidden="true">
+          把视频拖到这里，或点击选择文件
+        </span>
+        <span class="mt-2 max-w-md text-sm leading-6 text-muted-foreground" aria-hidden="true">
+          一次可以选多个文件：既能合成同一个作品的多个分P，也能各自独立成稿。
+        </span>
+        <span class="upload-empty__cta" aria-hidden="true">
+          <UploadCloud class="h-4 w-4" />
+          选择视频文件
+        </span>
+      </button>
+
+      <ul id="upload-empty-facts" class="upload-empty__facts">
+        <li v-for="fact in uploadFacts" :key="fact.title" class="upload-empty__fact">
+          <component :is="fact.icon" class="h-4 w-4 shrink-0 text-primary" aria-hidden="true" />
+          <div class="min-w-0">
+            <p class="text-xs font-medium text-foreground">{{ fact.title }}</p>
+            <p class="mt-0.5 text-xs leading-5 text-muted-foreground">{{ fact.text }}</p>
+          </div>
+        </li>
+      </ul>
+    </section>
+
+    <!-- Step 2: 填写与发布（单栏顺序流，理由见样式区 .upload-layout 注释） -->
+    <div v-else class="upload-layout">
+      <div class="min-w-0 space-y-5">
+        <section id="upload-field-parts" class="upload-section">
+          <div class="upload-section__head">
+            <h2 class="upload-section__title">视频文件</h2>
+            <span class="tabular text-xs text-muted-foreground">
+              {{ activeParts.length }} / {{ storageConfig.maxUploadNum }} 个分P
+            </span>
+          </div>
+
+          <UploadWorkTabs
+            :works="works"
+            :active-index="activeWorkIndex"
+            :issues="workIssues"
+            :strict="hasTriedPublish"
+            @select="activeWorkIndex = $event"
+            @remove="removeWork"
+            @add="addWorkFileInputRef?.click()"
+          />
+
+          <template v-if="activeWork">
+            <div
+              :id="`upload-work-panel-${activeWork.id}`"
+              class="mt-3 space-y-2"
+              role="tabpanel"
+              :aria-labelledby="`upload-work-tab-${activeWork.id}`"
+            >
+              <UploadPartRow
+                v-for="(part, index) in activeParts"
+                :key="part.id"
+                :part="part"
+                :index="index"
+                :show-label="showPartLabels"
+                :queue-position="queuePositions.get(part.id) ?? 0"
+                :chunk-size="chunkSizeBytes"
+                @update:title="part.title = $event"
+                @replace="openReplacePicker(index)"
+                @pause="pausePart(part)"
+                @resume="resumePart(part)"
+                @remove="removePart(index)"
+              />
+            </div>
+
+            <div class="mt-3 flex flex-wrap items-center justify-between gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                :disabled="remainingPartSlots === 0"
+                @click="openVideoPicker('append')"
+              >
+                <Plus class="h-3.5 w-3.5" />
+                添加分P
+              </Button>
+              <p class="text-xs text-muted-foreground">
+                {{
+                  remainingPartSlots === 0
+                    ? '已达分P上限，再多的视频请新建一个作品'
+                    : '同一作品的分P共用标题、封面与分区'
+                }}
+              </p>
+            </div>
+          </template>
+        </section>
+
+        <section v-if="activeWork" class="upload-section">
+          <div class="upload-section__head">
+            <h2 class="upload-section__title">基础信息</h2>
+          </div>
+
+          <div class="space-y-5">
+            <div id="upload-field-title" class="space-y-2">
+              <div class="flex items-center justify-between gap-2">
+                <Label for="title" class="text-sm font-medium">
+                  标题 <span class="text-destructive">*</span>
+                </Label>
+                <span
+                  class="tabular text-xs"
+                  :class="
+                    activeWork.form.title.length > 80
+                      ? 'text-[var(--status-warning-ink)]'
+                      : 'text-muted-foreground'
+                  "
+                >
+                  {{ activeWork.form.title.length }}/80
+                </span>
+              </div>
+              <Input
+                id="title"
+                :model-value="activeWork.form.title"
+                placeholder="用一句话说清这个视频讲了什么"
+                class="h-11 text-base"
+                :class="showIssue('title') ? 'border-destructive' : ''"
+                @update:model-value="(v) => updateActiveForm('title', String(v))"
+              />
+              <p v-if="showIssue('title')" class="text-xs text-destructive">
+                标题是必填项，先给作品起个名字
+              </p>
+            </div>
+
+            <div class="space-y-2">
+              <Label for="desc" class="text-sm font-medium">简介</Label>
+              <textarea
+                id="desc"
+                :value="activeWork.form.description"
+                class="flex min-h-[7.5rem] w-full resize-y rounded-md border border-input bg-background px-3 py-2 text-sm leading-6 ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                placeholder="补充视频背景、制作过程或参考来源，让更多人能搜到你的视频"
+                rows="4"
+                @input="
+                  (e) => updateActiveForm('description', (e.target as HTMLTextAreaElement).value)
+                "
+              ></textarea>
+            </div>
+
+            <div class="space-y-2">
+              <Label class="text-sm font-medium">标签</Label>
+              <TagInput
+                :model-value="activeWork.form.tags"
+                :max="10"
+                @update:model-value="(v) => updateActiveForm('tags', v)"
+              />
+            </div>
+          </div>
+        </section>
+
+        <section v-if="activeWork" class="upload-section">
+          <div class="upload-section__head">
+            <h2 class="upload-section__title">分类与授权</h2>
+          </div>
+
+          <div class="space-y-5">
+            <div id="upload-field-partition" class="space-y-2.5">
+              <div class="flex items-center justify-between gap-2">
+                <Label class="text-sm font-medium">
+                  分区 <span class="text-destructive">*</span>
+                </Label>
+                <span v-if="activePartitionName" class="text-xs text-muted-foreground">
+                  已选择 {{ activePartitionName }}
+                </span>
+              </div>
+              <PartitionPicker
+                :partitions="partitions"
+                :model-value="activeWork.form.partitionId"
+                :invalid="showIssue('partition')"
+                @update:model-value="(v) => updateActiveForm('partitionId', v)"
+              />
+              <p v-if="showIssue('partition')" class="text-xs text-destructive">
+                请选择一个分区，它决定视频出现在哪个频道
+              </p>
+              <p v-else-if="partitions.length === 0" class="text-xs text-muted-foreground">
+                分区列表加载中…
+              </p>
+            </div>
+
+            <div class="space-y-2.5">
+              <Label class="text-sm font-medium"
+                >类型 <span class="text-destructive">*</span></Label
+              >
+              <SegmentedChoice
+                :model-value="activeWork.form.isOriginal"
+                :options="originalOptions"
+                label="视频类型"
+                block
+                @update:model-value="(v) => updateActiveForm('isOriginal', v)"
+              />
+              <p class="text-xs leading-5 text-muted-foreground">
+                {{
+                  activeWork.form.isOriginal
+                    ? '自制：内容由你本人拍摄或制作。'
+                    : '转载：请在简介里注明原作者与来源链接。'
+                }}
+              </p>
+            </div>
+          </div>
+        </section>
+
+        <section v-if="activeWork" class="upload-section">
+          <div class="upload-section__head">
+            <h2 class="upload-section__title">发布设置</h2>
+          </div>
+
+          <div class="grid gap-5 sm:grid-cols-2">
+            <div class="space-y-2.5">
+              <Label class="text-sm font-medium">可见性</Label>
+              <SegmentedChoice
+                :model-value="activeWork.form.isPrivate"
+                :options="visibilityOptions"
+                label="可见性"
+                block
+                @update:model-value="(v) => updateActiveForm('isPrivate', v)"
+              />
+              <p class="text-xs leading-5 text-muted-foreground">
+                {{
+                  activeWork.form.isPrivate
+                    ? '私密作品只有你自己能看到，不进入推荐与搜索。'
+                    : '公开后所有人都能看到，也会进入推荐与搜索。'
+                }}
+              </p>
+            </div>
+
+            <div class="space-y-2.5">
+              <Label class="text-sm font-medium">发布时间</Label>
+              <SegmentedChoice
+                :model-value="activeWork.form.publishType"
+                :options="publishTypeOptions"
+                label="发布时间"
+                block
+                @update:model-value="(v) => updateActiveForm('publishType', v)"
+              />
+              <p v-if="isActiveScheduleDisabled" class="text-xs leading-5 text-muted-foreground">
+                私密作品只能立即发布，取消私密后可以预约 5 分钟到 15 天内的时间。
+              </p>
+              <p v-else class="text-xs leading-5 text-muted-foreground">
+                定时发布可预约最早 5 分钟后、最晚 15 天内。
+              </p>
+            </div>
+          </div>
+
+          <div
+            v-if="!isActiveScheduleDisabled && activeWork.form.publishType === 'scheduled'"
+            class="mt-4 rounded-xl border border-border bg-muted/30 p-3"
+          >
+            <ScheduledPublishPicker v-model="activeWork.form.publishTime" />
+          </div>
+        </section>
       </div>
-      <h3 class="text-3xl font-bold tracking-tight mb-4">拖拽视频到此处，或点击上传</h3>
-      <p class="text-muted-foreground mb-10 text-center max-w-lg leading-relaxed">
-        {{ uploadConstraintsText }}
+
+      <!--
+        封面与检查清单在流程里的位置：
+        封面是必填项，跟「基础信息 / 分类」同级，排在发布设置之后、检查清单之前；
+        检查清单是「发布前最后一眼」，紧挨着底部发布条，看完就能按发布。
+        （原来这两块在右侧 20rem sticky 栏里，见 .upload-layout 注释。）
+      -->
+      <UploadCoverCard
+        v-if="activeWork"
+        :cover-preview="activeWork.coverPreview"
+        :cover-source="activeWork.coverSource"
+        :title="activeWork.form.title"
+        :invalid="showIssue('cover')"
+        :ai-busy="applyingAICover"
+        :tip="coverDialogTip"
+        @open="openCoverSetting"
+        @ai="showAICoverDialog = true"
+      />
+
+      <UploadChecklist
+        v-if="activeWork"
+        :works="works"
+        :active-index="activeWorkIndex"
+        :issues="workIssues"
+        :strict="hasTriedPublish"
+        @jump="focusField"
+        @select="activeWorkIndex = $event"
+      />
+    </div>
+
+    <div v-if="works.length > 0" class="upload-actionbar">
+      <p class="min-w-0 flex-1 text-xs leading-5 text-muted-foreground">
+        {{ publishBlockReason || '所有必填项都填好了，随时可以发布' }}
       </p>
       <Button
         size="lg"
-        class="cursor-pointer text-lg px-10 py-7 rounded-2xl shadow-lg shadow-primary/20 hover:shadow-primary/30 transition-all font-medium"
-        @click="openVideoPicker('initial')"
+        class="shrink-0 rounded-full px-8"
+        :disabled="isPublishing || isUploadingAny"
+        @click="handlePublish"
       >
-        选择视频
+        <Loader2 v-if="isPublishing" class="h-4 w-4 animate-spin" />
+        {{
+          isPublishing ? '发布中…' : works.length > 1 ? `发布 ${works.length} 个作品` : '发布视频'
+        }}
       </Button>
-    </div>
-
-    <!-- Step 2: Form Area -->
-    <div v-else class="space-y-8">
-      <!-- Video Works Section -->
-      <div class="bg-card rounded-2xl border p-8 shadow-sm">
-        <div class="flex items-center justify-between mb-6">
-          <h2 class="text-2xl font-bold tracking-tight">发布视频</h2>
-          <Button
-            variant="outline"
-            size="sm"
-            class="hover:border-primary hover:text-primary hover:bg-primary/5"
-            @click="showBatchDialog = true"
-            >批量操作</Button
-          >
-        </div>
-
-        <!-- Work Tabs -->
-        <div class="flex items-center gap-2 mb-4 overflow-x-auto pb-2 pt-2 pr-2 upload-tabs-scroll">
-          <div
-            v-for="(work, wIdx) in works"
-            :key="work.id"
-            class="upload-work-tab flex-shrink-0 relative flex flex-col items-start gap-1 p-3 rounded-lg border cursor-pointer transition-all w-[200px] group"
-            :class="
-              activeWorkIndex === wIdx
-                ? 'bg-primary text-primary-foreground border-primary shadow-sm'
-                : 'bg-card text-foreground border-border hover:border-primary/50'
-            "
-            @click="activeWorkIndex = wIdx"
-          >
-            <div class="w-full pr-4">
-              <span class="truncate block text-[13px] font-medium w-full text-left">{{
-                work.form.title || work.parts[0]?.sourceFileName || `作品${wIdx + 1}`
-              }}</span>
-            </div>
-            <div
-              v-if="work.parts.length > 0 && work.parts.every((p) => p.status === 'success')"
-              class="flex items-center gap-1 shrink-0 mt-0.5"
-              :class="
-                activeWorkIndex === wIdx
-                  ? 'text-[var(--signal-foreground)] opacity-90'
-                  : 'text-[var(--status-success-ink)]'
-              "
-            >
-              <CheckCircle2
-                class="w-3.5 h-3.5"
-                :class="
-                  activeWorkIndex === wIdx
-                    ? 'fill-primary-foreground text-primary'
-                    : 'fill-[var(--status-success)] text-[var(--signal-foreground)]'
-                "
-              />
-              <span class="text-[11px] font-medium">上传完成</span>
-            </div>
-            <div
-              v-else-if="
-                work.parts.length > 0 &&
-                work.parts.some((p) =>
-                  ['uploading', 'hashing', 'checking', 'merging', 'pending'].includes(p.status)
-                )
-              "
-              class="flex items-center gap-1 shrink-0 mt-0.5"
-              :class="activeWorkIndex === wIdx ? 'text-white/80' : 'text-primary'"
-            >
-              <Loader2 class="w-3 h-3 animate-spin" />
-              <span class="text-[11px] font-medium">上传中</span>
-            </div>
-            <div v-else class="h-4"></div>
-
-            <button
-              v-if="works.length > 1"
-              class="absolute top-2 right-2 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"
-              :class="
-                activeWorkIndex === wIdx
-                  ? 'text-white/80 hover:text-white'
-                  : 'text-muted-foreground hover:text-foreground'
-              "
-              @click.stop="removeWork(wIdx)"
-            >
-              <X class="w-3.5 h-3.5" />
-            </button>
-          </div>
-          <button
-            class="flex-shrink-0 flex items-center gap-1 px-4 py-2.5 rounded-lg border border-dashed text-sm text-muted-foreground hover:text-foreground hover:bg-muted/40 transition-colors"
-            @click="addWorkFileInputRef?.click()"
-          >
-            <Plus class="h-3.5 w-3.5" />
-            添加视频
-          </button>
-        </div>
-
-        <!-- Active Work Parts -->
-        <template v-if="activeWork">
-          <Button
-            variant="ghost"
-            size="sm"
-            class="text-primary hover:bg-primary/10 mb-3"
-            :disabled="activeParts.length >= storageConfig.maxUploadNum"
-            @click="openVideoPicker('append')"
-          >
-            <Plus class="mr-1 h-3.5 w-3.5" />
-            添加分P
-          </Button>
-
-          <div class="space-y-2">
-            <div
-              v-for="(part, index) in activeParts"
-              :key="part.id"
-              class="flex items-center gap-4 p-4 rounded-lg border bg-muted/20"
-            >
-              <div
-                v-if="showPartLabels"
-                class="flex-shrink-0 w-8 h-8 rounded bg-primary/10 text-primary flex items-center justify-center font-semibold text-sm"
-              >
-                P{{ index + 1 }}
-              </div>
-              <div
-                v-else
-                class="flex-shrink-0 w-8 h-8 rounded bg-primary/10 text-primary flex items-center justify-center"
-              >
-                <Play class="h-4 w-4" />
-              </div>
-              <div class="flex-grow min-w-0">
-                <!--
-                  列表只展示「一个」名称字段：
-                  - 单P：只读展示（默认=源文件名去扩展名），不可改
-                  - 多P：可编辑分P标题（默认=源文件名去扩展名）
-                  源文件名 sourceFileName 始终内部保存，发布时作为 fileName 提交，UI 不单独展示
-                -->
-                <div
-                  class="flex items-center justify-between gap-3"
-                  :class="part.status !== 'success' ? 'mb-1' : ''"
-                >
-                  <template v-if="showPartLabels">
-                    <Label :for="`part-title-${part.id}`" class="sr-only">分P标题</Label>
-                    <input
-                      :id="`part-title-${part.id}`"
-                      :value="part.title"
-                      maxlength="200"
-                      class="flex h-8 min-w-0 flex-1 rounded-md border border-input bg-background px-3 py-1.5 text-xs ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-                      placeholder="请输入分P标题"
-                      @input="part.title = ($event.target as HTMLInputElement).value"
-                    />
-                  </template>
-                  <span
-                    v-else
-                    class="min-w-0 flex-1 truncate text-sm font-medium"
-                    :title="part.title"
-                    >{{ part.title }}</span
-                  >
-                  <div
-                    v-if="part.status === 'success'"
-                    class="flex shrink-0 items-center gap-1.5 text-[var(--status-success-ink)]"
-                  >
-                    <CheckCircle2
-                      class="h-[16px] w-[16px] fill-[var(--status-success)] text-[var(--signal-foreground)]"
-                    />
-                    <span class="text-xs font-medium">{{
-                      part?.instant ? '秒传完成' : '上传完成'
-                    }}</span>
-                  </div>
-                </div>
-                <div v-if="part.status !== 'success'" class="flex items-center gap-3">
-                  <div class="flex-grow bg-muted rounded-full h-1.5 overflow-hidden">
-                    <div
-                      class="h-full transition-all duration-300"
-                      :class="{
-                        'bg-primary': part.status === 'uploading',
-                        'bg-destructive': part.status === 'error',
-                        'bg-[var(--status-warning)]': ['hashing', 'checking', 'merging'].includes(
-                          part.status
-                        ),
-                        'bg-muted-foreground': ['pending', 'canceled', 'paused'].includes(
-                          part.status
-                        ),
-                      }"
-                      :style="{ width: `${part.progress}%` }"
-                    ></div>
-                  </div>
-                  <span
-                    class="text-xs w-16 text-right shrink-0"
-                    :class="{
-                      'text-destructive': part.status === 'error',
-                      'text-[var(--status-warning-ink)]': [
-                        'hashing',
-                        'checking',
-                        'merging',
-                      ].includes(part.status),
-                      'text-muted-foreground': [
-                        'pending',
-                        'uploading',
-                        'canceled',
-                        'paused',
-                      ].includes(part.status),
-                    }"
-                  >
-                    <template v-if="part.status === 'error'"
-                      ><span :title="part.errorMessage">上传失败</span></template
-                    >
-                    <template v-else-if="part.status === 'pending'"
-                      >排队 #{{ queuePosition(part) }}</template
-                    >
-                    <template v-else-if="part.status === 'hashing'">计算哈希</template>
-                    <template v-else-if="part.status === 'checking'">校验中</template>
-                    <template v-else-if="part.status === 'merging'">合并中</template>
-                    <template v-else-if="part.status === 'canceled'">已取消</template>
-                    <template v-else-if="part.status === 'paused'">已暂停</template>
-                    <template v-else>{{ part.progress }}%</template>
-                  </span>
-                </div>
-              </div>
-              <div class="flex items-center gap-1 shrink-0">
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  class="h-7 text-xs text-primary hover:bg-primary/10 px-2"
-                  @click="openReplacePicker(index)"
-                >
-                  <RefreshCw class="h-3.5 w-3.5 mr-1" />更换视频
-                </Button>
-                <Button
-                  v-if="['uploading', 'hashing', 'checking'].includes(part.status)"
-                  variant="ghost"
-                  size="icon"
-                  class="h-7 w-7 text-muted-foreground hover:text-primary hover:bg-primary/10"
-                  @click="pausePart(part)"
-                >
-                  <Pause class="h-3.5 w-3.5" />
-                </Button>
-                <Button
-                  v-if="
-                    part.status === 'paused' ||
-                    part.status === 'error' ||
-                    part.status === 'canceled'
-                  "
-                  variant="ghost"
-                  size="icon"
-                  class="h-7 w-7 text-primary hover:bg-primary/10"
-                  @click="resumePart(part)"
-                >
-                  <RotateCcw class="h-3.5 w-3.5" />
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  class="h-7 w-7 text-muted-foreground hover:text-destructive hover:bg-destructive/10"
-                  @click="removePart(index)"
-                >
-                  <X class="h-3.5 w-3.5" />
-                </Button>
-              </div>
-            </div>
-          </div>
-        </template>
-      </div>
-
-      <!-- Basic Settings Section -->
-      <div v-if="activeWork" class="bg-card rounded-2xl border p-8 shadow-sm">
-        <h2 class="text-2xl font-bold tracking-tight mb-8">基本设置</h2>
-
-        <div class="max-w-4xl space-y-10">
-          <!-- Cover -->
-          <div class="space-y-4">
-            <div class="flex items-center gap-3">
-              <Label class="text-base">视频封面 <span class="text-red-500">*</span></Label>
-              <span title="AI 生成封面">
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="icon"
-                  class="h-9 w-9 rounded-full"
-                  :disabled="applyingAICover"
-                  @click="showAICoverDialog = true"
-                >
-                  <Loader2 v-if="applyingAICover" class="h-4 w-4 animate-spin" />
-                  <Bot v-else class="h-4 w-4" />
-                </Button>
-              </span>
-            </div>
-
-            <div class="flex flex-col gap-4">
-              <!-- Main Cover -->
-              <div
-                class="relative w-[240px] aspect-video rounded-xl border-2 overflow-hidden group bg-muted/30 transition-all duration-300 hover:shadow-lg hover:border-primary/50"
-                :class="
-                  !activeWork?.coverPreview ? 'border-dashed' : 'border-transparent shadow-md'
-                "
-              >
-                <img
-                  v-if="activeWork?.coverPreview"
-                  :src="activeWork.coverPreview"
-                  class="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
-                />
-                <div
-                  v-else
-                  class="absolute inset-0 flex flex-col items-center justify-center text-muted-foreground"
-                >
-                  <ImageIcon
-                    class="h-8 w-8 mb-2 opacity-50 group-hover:scale-110 transition-transform"
-                  />
-                  <span class="text-sm font-medium">点击设置封面</span>
-                </div>
-
-                <div
-                  class="absolute bottom-0 left-0 right-0 p-2 bg-gradient-to-t from-black/80 to-transparent opacity-0 group-hover:opacity-100 transition-opacity flex justify-center cursor-pointer"
-                  @click="openCoverSetting"
-                >
-                  <Button size="sm" variant="secondary" class="h-7 text-xs"> 封面设置 </Button>
-                </div>
-                <div
-                  v-if="!activeWork?.coverPreview"
-                  class="absolute inset-0 cursor-pointer"
-                  @click="openCoverSetting"
-                ></div>
-              </div>
-
-              <div class="rounded-lg border bg-muted/30 p-4 text-sm text-muted-foreground">
-                <p>{{ coverDialogTip }}</p>
-              </div>
-            </div>
-          </div>
-
-          <!-- Title -->
-          <div class="space-y-2">
-            <Label for="title" class="text-base">标题 <span class="text-red-500">*</span></Label>
-            <Input
-              id="title"
-              :model-value="activeWork?.form.title ?? ''"
-              placeholder="给视频起个响亮的标题吧"
-              class="text-lg"
-              @update:model-value="
-                (v) => {
-                  if (activeWork) activeWork.form.title = String(v)
-                }
-              "
-            />
-            <div class="text-xs text-muted-foreground text-right">
-              {{ activeWork?.form.title.length ?? 0 }}/80
-            </div>
-          </div>
-
-          <!-- Type (Original / Copied) -->
-          <div class="space-y-2">
-            <Label class="text-base">类型 <span class="text-red-500">*</span></Label>
-            <div class="flex gap-6 mt-2">
-              <label class="flex items-center gap-2 cursor-pointer">
-                <input
-                  v-model="activeWork.form.isOriginal"
-                  type="radio"
-                  :value="true"
-                  class="accent-primary w-4 h-4"
-                />
-                <span class="text-sm">自制</span>
-              </label>
-              <label class="flex items-center gap-2 cursor-pointer">
-                <input
-                  v-model="activeWork.form.isOriginal"
-                  type="radio"
-                  :value="false"
-                  class="accent-primary w-4 h-4"
-                />
-                <span class="text-sm">转载</span>
-              </label>
-            </div>
-          </div>
-
-          <!-- Partition -->
-          <div class="space-y-3">
-            <Label class="text-base">分区 <span class="text-red-500">*</span></Label>
-            <div class="grid grid-cols-3 sm:grid-cols-5 md:grid-cols-8 gap-3 mt-2">
-              <div
-                v-for="p in partitions"
-                :key="p.id"
-                class="px-3 py-2.5 rounded-xl border text-center text-sm cursor-pointer transition-all duration-200"
-                :class="
-                  activeWork?.form.partitionId === p.id
-                    ? 'bg-primary text-primary-foreground font-medium shadow-md shadow-primary/30 scale-105 border-transparent'
-                    : 'hover:bg-muted/80 hover:scale-105 border-border/60 bg-card'
-                "
-                @click="
-                  () => {
-                    if (activeWork) activeWork.form.partitionId = p.id
-                  }
-                "
-              >
-                {{ p.name }}
-              </div>
-            </div>
-          </div>
-
-          <!-- Tags -->
-          <div class="space-y-2">
-            <Label class="text-base">标签</Label>
-            <TagInput
-              :model-value="activeWork.form.tags"
-              :max="10"
-              @update:model-value="
-                (v) => {
-                  if (activeWork) activeWork.form.tags = v
-                }
-              "
-            />
-          </div>
-
-          <!-- Description -->
-          <div class="space-y-2">
-            <Label for="desc" class="text-base">简介</Label>
-            <textarea
-              id="desc"
-              :value="activeWork?.form.description ?? ''"
-              class="flex w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 min-h-[120px] resize-y"
-              placeholder="填写更全面的相关信息，让更多人能找到你的视频"
-              rows="4"
-              @input="
-                (e) => {
-                  if (activeWork)
-                    activeWork.form.description = (e.target as HTMLTextAreaElement).value
-                }
-              "
-            ></textarea>
-          </div>
-
-          <!-- Privacy -->
-          <div class="space-y-3">
-            <Label class="text-base">可见性</Label>
-            <label
-              class="flex items-start gap-3 rounded-2xl border border-border/60 bg-muted/20 p-4 transition-colors hover:border-primary/40"
-            >
-              <input
-                v-model="activeWork.form.isPrivate"
-                type="checkbox"
-                class="mt-1 h-4 w-4 shrink-0 accent-primary"
-              />
-              <div class="space-y-1">
-                <div class="flex flex-wrap items-center gap-2">
-                  <span class="text-sm font-medium text-foreground">设为私密视频</span>
-                  <span
-                    class="rounded-full px-2 py-0.5 text-[11px] font-medium"
-                    :class="
-                      activeWork.form.isPrivate
-                        ? 'bg-[var(--status-warning-soft)] text-[var(--status-warning-ink)]'
-                        : 'bg-[var(--status-success-soft)] text-[var(--status-success-ink)]'
-                    "
-                  >
-                    {{ activeWork.form.isPrivate ? '仅自己可见' : '公开视频' }}
-                  </span>
-                </div>
-                <p class="text-sm text-muted-foreground">
-                  私密作品不会出现在公开列表、推荐和搜索中，且前端不允许设置定时发布。
-                </p>
-              </div>
-            </label>
-          </div>
-
-          <!-- Publish Time -->
-          <div class="space-y-2">
-            <Label class="text-base">发布时间</Label>
-            <div class="flex flex-col gap-4 mt-2">
-              <div class="flex gap-6">
-                <label class="flex items-center gap-2 cursor-pointer">
-                  <input
-                    v-model="activeWork.form.publishType"
-                    type="radio"
-                    value="immediate"
-                    class="accent-primary w-4 h-4"
-                  />
-                  <span class="text-sm">立即发布</span>
-                </label>
-                <label
-                  class="flex items-center gap-2 transition-opacity"
-                  :class="
-                    isActiveScheduleDisabled
-                      ? 'cursor-not-allowed text-muted-foreground/60 opacity-50'
-                      : 'cursor-pointer'
-                  "
-                >
-                  <input
-                    v-model="activeWork.form.publishType"
-                    type="radio"
-                    value="scheduled"
-                    class="accent-primary w-4 h-4"
-                    :disabled="isActiveScheduleDisabled"
-                  />
-                  <span class="text-sm">定时发布</span>
-                </label>
-              </div>
-
-              <div
-                v-if="isActiveScheduleDisabled"
-                class="rounded-2xl border border-dashed border-border/60 bg-muted/15 px-4 py-3 text-sm text-muted-foreground"
-              >
-                私密视频仅支持立即发布。取消私密后，才可以设置最早 5 分钟、最晚 15 天的定时发布。
-              </div>
-
-              <div
-                v-if="activeWork?.form.publishType === 'scheduled'"
-                class="mt-3 flex items-center gap-4 rounded-2xl border border-border/60 bg-muted/20 p-4"
-              >
-                <ScheduledPublishPicker v-model="activeWork.form.publishTime" />
-                <div class="text-sm text-muted-foreground whitespace-nowrap">
-                  (目前支持最早≥5分钟，最晚≤15天)
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <!-- Actions -->
-      <div class="flex items-center justify-end gap-4 pt-4">
-        <Button
-          class="px-12 py-7 text-lg rounded-2xl font-semibold shadow-lg shadow-primary/20 hover:shadow-primary/30 transition-all"
-          :disabled="isPublishing || isUploadingAny"
-          @click="handlePublish"
-        >
-          <Loader2 v-if="isPublishing" class="mr-2 h-5 w-5 animate-spin" />
-          发布视频
-        </Button>
-      </div>
     </div>
 
     <!-- Batch Operations Dialog -->
@@ -2158,7 +2141,7 @@ const handlePublish = async () => {
           >
             <div v-if="canCaptureCover" class="space-y-4">
               <div
-                class="relative aspect-video max-h-[38vh] min-h-[220px] overflow-hidden rounded-2xl bg-black flex items-center justify-center"
+                class="relative flex aspect-video max-h-[38vh] min-h-[220px] items-center justify-center overflow-hidden rounded-2xl bg-[var(--media-overlay)]"
               >
                 <video
                   v-if="previewVideoUrl"
@@ -2172,7 +2155,7 @@ const handlePublish = async () => {
                 ></video>
                 <div
                   v-else
-                  class="absolute inset-0 flex items-center justify-center px-6 text-center text-sm text-white/70"
+                  class="absolute inset-0 flex items-center justify-center px-6 text-center text-sm text-[var(--media-overlay-text)]"
                 >
                   暂无可预览视频
                 </div>
@@ -2195,11 +2178,12 @@ const handlePublish = async () => {
 
             <div class="space-y-4">
               <div
-                class="relative aspect-video overflow-hidden rounded-2xl border-2 border-dashed group bg-muted/30 cursor-pointer transition-colors hover:border-primary/50"
+                class="t-tint group relative aspect-video cursor-pointer overflow-hidden rounded-2xl border-2 border-dashed bg-muted/30 hover:border-primary/50"
               >
                 <img
                   v-if="tempCoverPreview"
                   :src="tempCoverPreview"
+                  alt="待应用的封面"
                   class="h-full w-full object-cover"
                 />
                 <div
@@ -2213,14 +2197,15 @@ const handlePublish = async () => {
 
                 <div
                   v-if="tempCoverPreview"
-                  class="absolute inset-0 flex items-center justify-center bg-black/50 opacity-0 transition-opacity group-hover:opacity-100"
+                  class="cover-picker__veil absolute inset-0 flex items-center justify-center bg-[var(--media-overlay)] opacity-0 group-hover:opacity-100"
                 >
-                  <span class="text-sm font-medium text-white">更换封面</span>
+                  <span class="text-sm font-medium text-[var(--media-overlay-text)]">更换封面</span>
                 </div>
                 <input
                   type="file"
                   accept="image/*"
                   class="absolute inset-0 cursor-pointer opacity-0"
+                  aria-label="上传封面图片"
                   @change="onTempCoverChange"
                 />
               </div>
@@ -2233,6 +2218,7 @@ const handlePublish = async () => {
                   <img
                     v-if="tempCoverPreview"
                     :src="tempCoverPreview"
+                    alt="封面预览"
                     class="h-full w-full object-cover"
                   />
                   <div v-else class="px-6 text-center text-sm text-muted-foreground">
@@ -2263,10 +2249,194 @@ const handlePublish = async () => {
       @update:open="showAICoverDialog = $event"
       @cover-pick="handleAICoverPick"
     />
+
+    <UploadDropOverlay
+      v-if="isDragging && works.length > 0"
+      :active-title="activeWork?.form.title ?? ''"
+      :remaining="remainingPartSlots"
+      @append="onDropAsParts"
+      @new-works="onDropAsNewWorks"
+      @miss="onDropMissed"
+    />
   </div>
 </template>
 
-<style lang="scss">
+<style scoped lang="scss">
+/* 单栏表单，版心收窄到 56rem。
+   72rem 是给「左表单 + 右侧栏」两栏留的宽度；单栏下 72rem 会让输入框拉到近千像素，
+   一行标题跑完整个屏幕，眼睛从行尾扫回行首要横跨半个显示器。 */
+.upload-page {
+  max-width: 56rem;
+  margin: 0 auto;
+  padding-bottom: 0.5rem;
+}
+
+/*
+ * 投稿是一条线性的填表流程：文件 → 基础信息 → 分类 → 发布设置 → 封面 → 检查清单。
+ * 原来把封面和检查清单甩到右边 20rem 的 sticky 侧栏，代价有三个：
+ * 1) 阅读动线被劈成两条，左边填到一半得抬头去右边看还差什么，回来还要找回原位；
+ * 2) 右栏 20rem 固定宽，左栏在 1024~1280 之间被压到 ~40rem，输入框和分区选择器挤成一团；
+ * 3) 封面是必填项，却因为在侧栏而看起来像个附属信息，用户经常漏填。
+ * 改回单栏顺序流：每一步占满版心宽度，从上往下填完就能发布。
+ */
+.upload-layout {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+.upload-section {
+  padding: 1.25rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-2xl);
+  background-color: var(--color-card);
+  box-shadow: var(--shadow-surface);
+}
+
+@media (width >= 640px) {
+  .upload-section {
+    padding: 1.5rem;
+  }
+}
+
+.upload-section__head {
+  display: flex;
+  gap: 0.75rem;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: 1rem;
+}
+
+.upload-section__title {
+  font-size: 1.0625rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+/* ── 底部操作条 ───────────────────────────────────────────────
+   用 sticky 而不是 fixed：创作中心有 256px 侧栏 + 居中版心，
+   fixed 条要么盖住侧栏、要么和内容对不齐；sticky 天然跟随内容列，
+   且退化时只是回到内容末尾（等于改造前的位置），不会遮挡任何东西。 */
+.upload-actionbar {
+  display: flex;
+  position: sticky;
+  z-index: 20;
+  bottom: 1rem;
+  flex-wrap: wrap;
+  gap: 0.75rem 1rem;
+  align-items: center;
+  justify-content: flex-end;
+  margin-top: 1.25rem;
+  padding: 0.75rem 0.875rem 0.75rem 1.125rem;
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-xl);
+  background-color: var(--glass-bg);
+  box-shadow: var(--shadow-overlay);
+  backdrop-filter: blur(var(--glass-blur));
+}
+
+/* ── 空态 ───────────────────────────────────────────────────── */
+.upload-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  min-height: 20rem;
+  padding: 2.5rem 1.5rem;
+  border: 2px dashed var(--color-border);
+  border-radius: var(--radius-2xl);
+  background-color: var(--color-card);
+  text-align: center;
+  cursor: pointer;
+  /* 拖拽态只改颜色：对一个 320px 高的块做 scale 会让内部文字重新栅格化发虚 */
+  transition:
+    border-color var(--duration-fast) var(--ease-out-quart),
+    background-color var(--duration-fast) var(--ease-out-quart);
+
+  &[data-dragging='true'] {
+    border-color: var(--color-primary);
+    border-style: solid;
+    background-color: color-mix(in oklch, var(--color-primary) 6%, var(--color-card));
+  }
+
+  /* 整块可点就得整块给反馈，否则用户还是以为只有中间那颗按钮活着 */
+  &:focus-visible {
+    outline: 2px solid var(--color-ring, var(--brand-blue));
+    outline-offset: 2px;
+  }
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .upload-empty:hover {
+    border-color: color-mix(in oklch, var(--color-primary) 50%, var(--color-border));
+    background-color: color-mix(in oklch, var(--color-primary) 3%, var(--color-card));
+  }
+
+  .upload-empty:hover .upload-empty__cta {
+    background-color: color-mix(in oklch, var(--color-primary) 88%, var(--color-foreground));
+  }
+}
+
+@media (width >= 640px) {
+  .upload-empty {
+    padding: 3.5rem 3rem;
+  }
+}
+
+/* 视觉上的「按钮」，实际是整块按钮里的一个装饰件：
+   保留原来那颗 CTA 的召唤力，但不再是唯一的点击目标。 */
+.upload-empty__cta {
+  display: inline-flex;
+  gap: 0.5rem;
+  align-items: center;
+  margin-top: 1.5rem;
+  padding: 0.625rem 1.5rem;
+  border-radius: var(--radius-md);
+  background-color: var(--color-primary);
+  color: var(--color-primary-foreground);
+  font-size: 0.875rem;
+  font-weight: 500;
+  transition: background-color var(--duration-fast) var(--ease-out-quart);
+}
+
+.upload-empty__icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 3.5rem;
+  height: 3.5rem;
+  margin-bottom: 1.25rem;
+  border-radius: 999px;
+  background-color: color-mix(in oklch, var(--color-primary) 12%, transparent);
+  color: var(--color-primary);
+}
+
+.upload-empty__facts {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0.75rem 1.5rem;
+  width: 100%;
+  max-width: 38rem;
+  margin-top: 2.5rem;
+  padding-top: 1.5rem;
+  border-top: 1px solid var(--color-border);
+  text-align: left;
+}
+
+@media (width >= 640px) {
+  .upload-empty__facts {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+.upload-empty__fact {
+  display: flex;
+  gap: 0.625rem;
+  align-items: flex-start;
+}
+
+/* ── 文件校验提示 ───────────────────────────────────────────── */
 .upload-feedback-alert {
   position: relative;
   overflow: hidden;
@@ -2294,47 +2464,55 @@ const handlePublish = async () => {
   &__description {
     color: color-mix(in oklch, var(--status-warning-ink) 64%, var(--text-2));
   }
+
+  &__close {
+    display: flex;
+    flex-shrink: 0;
+    align-items: center;
+    justify-content: center;
+    width: 1.75rem;
+    height: 1.75rem;
+    border-radius: var(--radius-md);
+    color: color-mix(in oklch, var(--status-warning-ink) 70%, var(--text-2));
+    transition: background-color var(--duration-fast) var(--ease-out-quart);
+
+    &:hover {
+      background-color: color-mix(in oklch, var(--status-warning) 14%, transparent);
+    }
+  }
 }
 
-.dark .upload-feedback-alert {
+:global(html.dark) .upload-feedback-alert {
   box-shadow:
-    inset 0 1px 0 color-mix(in oklch, white 10%, transparent),
+    inset 0 1px 0 color-mix(in oklch, var(--text-1) 10%, transparent),
     0 24px 60px -38px color-mix(in oklch, var(--status-warning) 46%, transparent);
+}
+
+/* hover 遮罩：只动 opacity，时长/缓动走 token（原来是 Tailwind 默认 150ms ease） */
+.cover-picker__veil {
+  transition: opacity var(--duration-fast) var(--ease-out-quart);
 }
 
 .cover-dialog-scroll {
   scrollbar-width: thin;
-  scrollbar-color: oklch(var(--foreground) / 0.15) transparent;
+  scrollbar-color: color-mix(in oklch, var(--color-foreground) 15%, transparent) transparent;
 
   &::-webkit-scrollbar {
     width: 6px;
-
-    &-track {
-      background: transparent;
-    }
-
-    &-thumb {
-      border-radius: 999px;
-      background: oklch(var(--foreground) / 0.15);
-      background-clip: padding-box;
-
-      &:hover {
-        background: oklch(var(--foreground) / 0.25);
-      }
-    }
   }
-}
 
-.upload-tabs-scroll::-webkit-scrollbar {
-  height: 4px;
-
-  &-track {
+  &::-webkit-scrollbar-track {
     background: transparent;
   }
 
-  &-thumb {
+  &::-webkit-scrollbar-thumb {
     border-radius: 999px;
-    background: oklch(var(--foreground) / 0.12);
+    background: color-mix(in oklch, var(--color-foreground) 15%, transparent);
+    background-clip: padding-box;
+
+    &:hover {
+      background: color-mix(in oklch, var(--color-foreground) 25%, transparent);
+    }
   }
 }
 </style>

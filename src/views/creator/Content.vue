@@ -3,6 +3,9 @@ import { ref, onMounted } from 'vue'
 import { getUserVideoList, deleteVideo, type UserVideoItem } from '@/api/user'
 import { useAuthStore } from '@/stores/auth'
 import { PlaySquare, MessageSquare, Clock, MoreVertical, Trash2, Edit } from 'lucide-vue-next'
+import AppImage from '@/components/common/AppImage.vue'
+import EmptyState from '@/components/common/EmptyState.vue'
+import SkeletonGroup from '@/components/common/SkeletonGroup.vue'
 import { Button } from '@/components/ui/button'
 import { useToast } from '@/components/ui/toast/use-toast'
 import {
@@ -32,7 +35,16 @@ const page = ref(1)
 const deleteDialogOpen = ref(false)
 const videoToDelete = ref<number | null>(null)
 
-const activeTab = ref<'all' | 'published' | 'private' | 'reviewing'>('all')
+type ContentTab = 'all' | 'published' | 'private' | 'reviewing'
+
+const TAB_LABELS: Record<ContentTab, string> = {
+  all: '全部',
+  published: '已发布',
+  private: '私密',
+  reviewing: '审核中',
+}
+
+const activeTab = ref<ContentTab>('all')
 
 const fetchVideos = async () => {
   if (!authStore.userId) return
@@ -58,7 +70,7 @@ const fetchVideos = async () => {
   }
 }
 
-const handleTabChange = (tab: 'all' | 'published' | 'private' | 'reviewing') => {
+const handleTabChange = (tab: ContentTab) => {
   activeTab.value = tab
   page.value = 1
   void fetchVideos()
@@ -109,7 +121,7 @@ const handleDelete = async () => {
       <!-- Tabs / Filters placeholder -->
       <div class="border-b px-6 py-3 flex gap-6 text-sm font-medium">
         <div
-          class="pb-3 -mb-3 cursor-pointer transition-colors"
+          class="pb-3 -mb-3 cursor-pointer t-tint"
           :class="
             activeTab === 'all'
               ? 'text-primary border-b-2 border-primary'
@@ -120,7 +132,7 @@ const handleDelete = async () => {
           全部视频 <span v-if="activeTab === 'all'">({{ total }})</span>
         </div>
         <div
-          class="pb-3 -mb-3 cursor-pointer transition-colors"
+          class="pb-3 -mb-3 cursor-pointer t-tint"
           :class="
             activeTab === 'published'
               ? 'text-primary border-b-2 border-primary'
@@ -131,7 +143,7 @@ const handleDelete = async () => {
           已发布 <span v-if="activeTab === 'published'">({{ total }})</span>
         </div>
         <div
-          class="pb-3 -mb-3 cursor-pointer transition-colors"
+          class="pb-3 -mb-3 cursor-pointer t-tint"
           :class="
             activeTab === 'reviewing'
               ? 'text-primary border-b-2 border-primary'
@@ -142,7 +154,7 @@ const handleDelete = async () => {
           审核中 <span v-if="activeTab === 'reviewing'">({{ total }})</span>
         </div>
         <div
-          class="pb-3 -mb-3 cursor-pointer transition-colors"
+          class="pb-3 -mb-3 cursor-pointer t-tint"
           :class="
             activeTab === 'private'
               ? 'text-primary border-b-2 border-primary'
@@ -155,35 +167,59 @@ const handleDelete = async () => {
       </div>
 
       <div class="p-6">
-        <div v-if="loading" class="space-y-4">
-          <div v-for="i in 3" :key="i" class="flex gap-4 animate-pulse">
-            <div class="w-40 h-24 bg-muted rounded-lg shrink-0"></div>
-            <div class="flex-1 space-y-2 py-1">
-              <div class="h-5 bg-muted rounded w-1/3"></div>
-              <div class="h-4 bg-muted rounded w-1/4 mt-4"></div>
+        <!-- 骨架形状对齐真实条目：160×90 封面 + 标题 + 状态标签 + 三段统计 -->
+        <SkeletonGroup v-if="loading" :count="4" class="space-y-6">
+          <div class="ct-sk-row flex gap-4">
+            <div class="skeleton-shimmer aspect-video w-40 shrink-0 rounded-lg"></div>
+            <div class="min-w-0 flex-1 space-y-3 py-1">
+              <div class="flex items-center gap-2">
+                <div class="ct-sk-a skeleton-shimmer h-5 w-2/5 rounded"></div>
+                <div class="ct-sk-b skeleton-shimmer h-4 w-12 rounded-sm"></div>
+              </div>
+              <div class="flex items-center gap-4 pt-1">
+                <div class="ct-sk-c skeleton-shimmer h-3.5 w-14 rounded"></div>
+                <div class="ct-sk-c skeleton-shimmer h-3.5 w-14 rounded"></div>
+                <div class="ct-sk-d skeleton-shimmer h-3.5 w-24 rounded"></div>
+              </div>
             </div>
           </div>
-        </div>
+        </SkeletonGroup>
 
-        <div
-          v-else-if="videos.length === 0"
-          class="py-20 text-center text-muted-foreground flex flex-col items-center"
+        <EmptyState
+          v-else-if="videos.length === 0 && activeTab === 'all'"
+          size="lg"
+          icon="video"
+          title="这里还没有你的稿件"
+          description="发布第一个视频，数据和评论都会汇总到创作中心"
         >
-          <PlaySquare class="h-12 w-12 mb-4 opacity-20" />
-          <p>还没有发布过视频</p>
-          <Button class="mt-4" as-child>
+          <Button size="sm" as-child>
             <router-link to="/creator/upload">去发布</router-link>
           </Button>
-        </div>
+        </EmptyState>
+
+        <EmptyState
+          v-else-if="videos.length === 0"
+          size="lg"
+          icon="folder"
+          :title="`没有${TAB_LABELS[activeTab]}的稿件`"
+          description="换个标签看看，或者去发布一个新视频"
+        >
+          <Button variant="outline" size="sm" @click="handleTabChange('all')">
+            查看全部视频
+          </Button>
+        </EmptyState>
 
         <div v-else class="space-y-6">
           <div v-for="video in videos" :key="video.id" class="flex gap-4 group">
             <!-- Cover -->
-            <div class="relative w-40 aspect-video rounded-lg overflow-hidden shrink-0 bg-muted">
-              <img :src="video.cover" :alt="video.title" class="w-full h-full object-cover" />
-              <div class="media-chip absolute bottom-1 right-1 rounded px-1.5 py-0.5 text-xs">
-                {{ formatClock(video.duration) }}
-              </div>
+            <div class="relative w-40 shrink-0">
+              <AppImage :src="video.cover" :alt="video.title" aspect="16 / 9" rounded="lg">
+                <div
+                  class="media-chip tabular absolute bottom-1 right-1 rounded px-1.5 py-0.5 text-xs"
+                >
+                  {{ formatClock(video.duration) }}
+                </div>
+              </AppImage>
             </div>
 
             <!-- Info -->
@@ -191,7 +227,7 @@ const handleDelete = async () => {
               <div>
                 <div class="flex items-center gap-2">
                   <h3
-                    class="font-medium text-base line-clamp-2 hover:text-primary cursor-pointer transition-colors"
+                    class="font-medium text-base line-clamp-2 hover:text-primary cursor-pointer t-tint"
                   >
                     <router-link :to="`/video/${video.id}`">{{ video.title }}</router-link>
                   </h3>
@@ -249,23 +285,24 @@ const handleDelete = async () => {
                   </div>
                 </div>
                 <div class="flex items-center gap-4 text-xs text-muted-foreground mt-2">
-                  <span class="flex items-center gap-1"
-                    ><PlaySquare class="h-3.5 w-3.5" /> {{ video.views }}</span
-                  >
-                  <span class="flex items-center gap-1"
-                    ><MessageSquare class="h-3.5 w-3.5" /> {{ video.danmuCount }}</span
-                  >
-                  <span class="flex items-center gap-1"
-                    ><Clock class="h-3.5 w-3.5" /> {{ formatDate(video.createdAt) }}</span
-                  >
+                  <span class="flex items-center gap-1">
+                    <PlaySquare class="h-3.5 w-3.5" />
+                    <span class="tabular">{{ video.views }}</span>
+                  </span>
+                  <span class="flex items-center gap-1">
+                    <MessageSquare class="h-3.5 w-3.5" />
+                    <span class="tabular">{{ video.danmuCount }}</span>
+                  </span>
+                  <span class="flex items-center gap-1">
+                    <Clock class="h-3.5 w-3.5" />
+                    <span class="tabular">{{ formatDate(video.createdAt) }}</span>
+                  </span>
                 </div>
               </div>
             </div>
 
             <!-- Actions -->
-            <div
-              class="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity"
-            >
+            <div class="flex items-center gap-2 opacity-0 group-hover:opacity-100 t-motion">
               <Button
                 as-child
                 variant="ghost"
@@ -326,3 +363,27 @@ const handleDelete = async () => {
     </Dialog>
   </div>
 </template>
+
+<style scoped lang="scss">
+/* 卡内二级错峰：--skeleton-phase 落在行容器上，子块基于它偏移
+   （同一元素既读又写 --skeleton-index 会构成 CSS 循环）。 */
+.ct-sk-row {
+  --skeleton-phase: var(--skeleton-index, 0);
+}
+
+.ct-sk-a {
+  --skeleton-index: calc(var(--skeleton-phase) + 0.3);
+}
+
+.ct-sk-b {
+  --skeleton-index: calc(var(--skeleton-phase) + 0.4);
+}
+
+.ct-sk-c {
+  --skeleton-index: calc(var(--skeleton-phase) + 0.55);
+}
+
+.ct-sk-d {
+  --skeleton-index: calc(var(--skeleton-phase) + 0.7);
+}
+</style>

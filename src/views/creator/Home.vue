@@ -27,6 +27,7 @@ import {
   Users,
 } from 'lucide-vue-next'
 
+import SkeletonGroup from '@/components/common/SkeletonGroup.vue'
 import {
   getCreatorAnalytics,
   getCreatorOverview,
@@ -287,7 +288,7 @@ const renderChart = () => {
             left: 'center',
             top: 'middle',
             style: {
-              text: '暂无趋势数据',
+              text: '这段时间还没有数据',
               fill: mutedFg,
               font: '500 14px sans-serif',
             },
@@ -395,17 +396,17 @@ onBeforeUnmount(() => {
         <h3 class="flat-panel__title">视频数据</h3>
       </div>
 
-      <div v-if="overviewLoading" class="flat-grid">
-        <div v-for="i in 6" :key="i" class="flat-card pointer-events-none">
+      <SkeletonGroup v-if="overviewLoading" :count="6" class="flat-grid">
+        <div class="flat-card ov-sk pointer-events-none">
           <div class="flat-card__top">
             <div class="skeleton-shimmer w-16 h-[18px] rounded"></div>
-            <div class="skeleton-shimmer w-6 h-[12px] rounded"></div>
+            <div class="ov-sk-b skeleton-shimmer w-6 h-[12px] rounded"></div>
           </div>
           <div class="flat-card__bottom mt-1">
-            <div class="skeleton-shimmer w-20 h-[24px] rounded"></div>
+            <div class="ov-sk-c skeleton-shimmer w-20 h-[24px] rounded"></div>
           </div>
         </div>
-      </div>
+      </SkeletonGroup>
 
       <div v-else-if="overview" class="flat-grid">
         <button
@@ -500,7 +501,7 @@ onBeforeUnmount(() => {
         </div>
 
         <div v-else-if="trendError" class="flat-chart-overlay">
-          <p class="text-red-500 mb-2">{{ trendError }}</p>
+          <p class="mb-2 text-destructive">{{ trendError }}</p>
           <button type="button" class="flat-action" @click="fetchTrend">重试</button>
         </div>
       </div>
@@ -675,6 +676,20 @@ onBeforeUnmount(() => {
   border-radius: 4px;
   font-size: 13px;
   cursor: pointer;
+}
+
+/* 概览卡骨架错峰：--skeleton-phase 落在卡片上，卡内两块基于它偏移
+   （同一元素既读又写 --skeleton-index 会构成 CSS 循环）。 */
+.ov-sk {
+  --skeleton-phase: var(--skeleton-index, 0);
+}
+
+.ov-sk-b {
+  --skeleton-index: calc(var(--skeleton-phase) + 0.25);
+}
+
+.ov-sk-c {
+  --skeleton-index: calc(var(--skeleton-phase) + 0.45);
 }
 
 .chart-skeleton {

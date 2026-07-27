@@ -19,6 +19,7 @@ import { Label } from '@/components/ui/label'
 import { useToast } from '@/components/ui/toast/use-toast'
 import TagInput from '@/components/creator/TagInput.vue'
 import ScheduledPublishPicker from '@/components/creator/ScheduledPublishPicker.vue'
+import AppImage from '@/components/common/AppImage.vue'
 import { uploadImage } from '@/api/upload'
 import {
   getPartitions,
@@ -479,11 +480,74 @@ onBeforeUnmount(() => {
         </div>
       </header>
 
-      <div v-if="loading" class="grid gap-8 lg:grid-cols-[1fr_360px]">
-        <div class="space-y-6">
-          <div class="h-[500px] animate-pulse rounded-2xl bg-muted/60"></div>
+      <!-- 骨架按真实结构铺：左栏「基础信息」+「发布设置」两张卡，右栏封面卡 -->
+      <div v-if="loading" class="grid items-start gap-8 lg:grid-cols-[1fr_360px]" aria-busy="true">
+        <div class="space-y-8">
+          <section class="rounded-2xl border border-border bg-card p-6 shadow-surface sm:p-8">
+            <div class="skeleton-shimmer mb-6 h-5 w-24 rounded"></div>
+            <div class="space-y-6">
+              <div class="space-y-2.5" :style="{ '--skeleton-index': 0.3 }">
+                <div class="skeleton-shimmer h-3.5 w-16 rounded"></div>
+                <div class="skeleton-shimmer h-11 w-full rounded-lg"></div>
+              </div>
+              <div class="space-y-2.5" :style="{ '--skeleton-index': 0.5 }">
+                <div class="skeleton-shimmer h-3.5 w-12 rounded"></div>
+                <div class="skeleton-shimmer h-28 w-full rounded-xl"></div>
+              </div>
+              <div class="space-y-3" :style="{ '--skeleton-index': 0.7 }">
+                <div class="skeleton-shimmer h-3.5 w-12 rounded"></div>
+                <div class="flex flex-wrap gap-2.5">
+                  <div
+                    v-for="i in 6"
+                    :key="i"
+                    class="skeleton-shimmer h-8 rounded-full"
+                    :class="['w-16', 'w-20', 'w-14', 'w-24', 'w-16', 'w-20'][i - 1]"
+                  ></div>
+                </div>
+              </div>
+              <div class="space-y-3" :style="{ '--skeleton-index': 0.9 }">
+                <div class="skeleton-shimmer h-3.5 w-12 rounded"></div>
+                <div class="skeleton-shimmer h-10 w-full rounded-xl"></div>
+              </div>
+            </div>
+          </section>
+
+          <section class="rounded-2xl border border-border bg-card p-6 shadow-surface sm:p-8">
+            <div
+              class="skeleton-shimmer mb-6 h-5 w-24 rounded"
+              :style="{ '--skeleton-index': 1.1 }"
+            ></div>
+            <div class="grid gap-6 sm:grid-cols-2" :style="{ '--skeleton-index': 1.3 }">
+              <div class="space-y-3">
+                <div class="skeleton-shimmer h-3.5 w-16 rounded"></div>
+                <div class="flex gap-3">
+                  <div class="skeleton-shimmer h-12 flex-1 rounded-xl"></div>
+                  <div class="skeleton-shimmer h-12 flex-1 rounded-xl"></div>
+                </div>
+              </div>
+              <div class="space-y-3">
+                <div class="skeleton-shimmer h-3.5 w-16 rounded"></div>
+                <div class="flex gap-3">
+                  <div class="skeleton-shimmer h-12 flex-1 rounded-xl"></div>
+                  <div class="skeleton-shimmer h-12 flex-1 rounded-xl"></div>
+                </div>
+              </div>
+            </div>
+          </section>
         </div>
-        <div class="h-[300px] animate-pulse rounded-2xl bg-muted/60"></div>
+
+        <aside class="space-y-6">
+          <section
+            class="rounded-2xl border border-border bg-card p-5 shadow-surface"
+            :style="{ '--skeleton-index': 0.6 }"
+          >
+            <div class="skeleton-shimmer mb-4 h-4 w-20 rounded"></div>
+            <div class="skeleton-shimmer aspect-video w-full rounded-xl"></div>
+            <div class="mt-4 flex items-center justify-between">
+              <div class="skeleton-shimmer h-3 w-40 rounded"></div>
+            </div>
+          </section>
+        </aside>
       </div>
 
       <div
@@ -547,7 +611,7 @@ onBeforeUnmount(() => {
                     v-for="partition in partitions"
                     :key="partition.id"
                     type="button"
-                    class="rounded-full border px-4 py-1.5 text-sm transition-colors"
+                    class="rounded-full border px-4 py-1.5 text-sm t-tint"
                     :class="
                       form.partitionId === partition.id
                         ? 'border-primary bg-primary text-primary-foreground font-medium'
@@ -575,7 +639,7 @@ onBeforeUnmount(() => {
                 <Label class="text-sm font-medium text-muted-foreground">视频类型</Label>
                 <div class="flex gap-3">
                   <div
-                    class="flex flex-1 cursor-pointer items-center justify-center gap-2 rounded-xl border p-3 transition-colors"
+                    class="flex flex-1 cursor-pointer items-center justify-center gap-2 rounded-xl border p-3 t-tint"
                     :class="
                       form.isOriginal
                         ? 'border-primary bg-primary/5 text-primary'
@@ -587,7 +651,7 @@ onBeforeUnmount(() => {
                     <span class="text-sm font-medium">自制</span>
                   </div>
                   <div
-                    class="flex flex-1 cursor-pointer items-center justify-center gap-2 rounded-xl border p-3 transition-colors"
+                    class="flex flex-1 cursor-pointer items-center justify-center gap-2 rounded-xl border p-3 t-tint"
                     :class="
                       !form.isOriginal
                         ? 'border-primary bg-primary/5 text-primary'
@@ -605,7 +669,7 @@ onBeforeUnmount(() => {
                 <Label class="text-sm font-medium text-muted-foreground">可见性</Label>
                 <div class="flex gap-3">
                   <div
-                    class="flex flex-1 cursor-pointer items-center justify-center gap-2 rounded-xl border p-3 transition-colors"
+                    class="flex flex-1 cursor-pointer items-center justify-center gap-2 rounded-xl border p-3 t-tint"
                     :class="
                       !form.isPrivate
                         ? 'border-primary bg-primary/5 text-primary'
@@ -617,7 +681,7 @@ onBeforeUnmount(() => {
                     <span class="text-sm font-medium">公开</span>
                   </div>
                   <div
-                    class="flex flex-1 cursor-pointer items-center justify-center gap-2 rounded-xl border p-3 transition-colors"
+                    class="flex flex-1 cursor-pointer items-center justify-center gap-2 rounded-xl border p-3 t-tint"
                     :class="
                       form.isPrivate
                         ? 'border-primary bg-primary/5 text-primary'
@@ -638,7 +702,7 @@ onBeforeUnmount(() => {
               <Label class="text-sm font-medium text-muted-foreground">发布时间</Label>
               <div class="flex flex-wrap gap-3">
                 <div
-                  class="flex cursor-pointer items-center gap-2 rounded-xl border px-4 py-2.5 transition-colors"
+                  class="flex cursor-pointer items-center gap-2 rounded-xl border px-4 py-2.5 t-tint"
                   :class="
                     form.publishType === 'immediate'
                       ? 'border-primary bg-primary/5 text-primary'
@@ -650,7 +714,7 @@ onBeforeUnmount(() => {
                   <span class="text-sm font-medium">立即发布</span>
                 </div>
                 <div
-                  class="flex cursor-pointer items-center gap-2 rounded-xl border px-4 py-2.5 transition-colors"
+                  class="flex cursor-pointer items-center gap-2 rounded-xl border px-4 py-2.5 t-tint"
                   :class="[
                     form.publishType === 'scheduled'
                       ? 'border-primary bg-primary/5 text-primary'
@@ -699,13 +763,14 @@ onBeforeUnmount(() => {
             </div>
 
             <label
-              class="group relative block aspect-video w-full cursor-pointer overflow-hidden rounded-xl border-2 border-dashed border-border/80 bg-muted/30 transition-all hover:border-primary/50 hover:bg-muted/50"
+              class="t-tint group relative block aspect-video w-full cursor-pointer overflow-hidden rounded-xl border-2 border-dashed border-border/80 bg-muted/30 hover:border-primary/50 hover:bg-muted/50"
             >
-              <img
+              <AppImage
                 v-if="form.coverPreview"
                 :src="form.coverPreview"
                 :alt="form.title || '视频封面'"
-                class="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"
+                aspect="auto"
+                img-class="ev-cover-img group-hover:scale-105"
               />
               <div
                 v-else
@@ -716,11 +781,9 @@ onBeforeUnmount(() => {
               </div>
 
               <div
-                class="absolute inset-0 flex items-center justify-center bg-black/50 opacity-0 backdrop-blur-[2px] transition-opacity group-hover:opacity-100"
+                class="cover-veil absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100"
               >
-                <span
-                  class="rounded-full bg-black/70 px-4 py-2 text-xs font-medium text-white shadow-sm"
-                >
+                <span class="media-chip rounded-full px-4 py-2 text-xs font-medium">
                   {{ form.coverFile ? '更换文件' : '替换封面' }}
                 </span>
               </div>
@@ -752,15 +815,25 @@ onBeforeUnmount(() => {
         <Button variant="ghost" as-child class="rounded-full">
           <router-link to="/creator/content">取消</router-link>
         </Button>
-        <Button
-          class="rounded-full px-8 shadow-md transition-transform hover:-translate-y-0.5 active:translate-y-0"
-          :disabled="saving"
-          @click="handleSave"
-        >
+        <Button class="rounded-full px-8 shadow-raised" :disabled="saving" @click="handleSave">
           <Loader2 v-if="saving" class="mr-2 h-4 w-4 animate-spin" />
-          {{ saving ? '保存中...' : '保存更改' }}
+          {{ saving ? '保存中…' : '保存更改' }}
         </Button>
       </div>
     </div>
   </div>
 </template>
+
+<style scoped lang="scss">
+/* Tailwind v4 的 scale-* 是独立的 `scale` 属性；显式过渡它，否则 hover 缩放是瞬移 */
+:deep(.ev-cover-img) {
+  transition: scale var(--duration-slow) var(--ease-out-expo);
+}
+
+/* 封面 hover 遮罩：底色走 media 叠色 token，只过渡 opacity */
+.cover-veil {
+  background-color: color-mix(in oklch, var(--media-overlay) 70%, transparent);
+  backdrop-filter: blur(2px);
+  transition: opacity var(--duration-normal) var(--ease-out-quart);
+}
+</style>

@@ -7,6 +7,8 @@ import {
   deleteNotifications,
 } from '@/api/notification'
 import AppAvatar from '@/components/common/AppAvatar.vue'
+import EmptyState from '@/components/common/EmptyState.vue'
+import SkeletonGroup from '@/components/common/SkeletonGroup.vue'
 import { useNotificationStore } from '@/stores/notification'
 import { formatDateTimeAgo } from '@/utils/time'
 import { Trash2 } from 'lucide-vue-next'
@@ -101,25 +103,31 @@ const handleDelete = async (item: NotificationItem) => {
     <div
       class="flex-1 overflow-y-auto px-4 py-2 [&::-webkit-scrollbar-thumb]:rounded-[6px] [&::-webkit-scrollbar-thumb]:bg-muted-foreground/20 hover:[&::-webkit-scrollbar-thumb]:bg-muted-foreground/40 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar]:w-1.5"
     >
-      <div
-        v-if="loading && list.length === 0"
-        class="flex items-center justify-center p-10 text-muted-foreground"
-      >
-        加载中...
-      </div>
+      <SkeletonGroup v-if="loading && list.length === 0" :count="5" class="space-y-4">
+        <div class="msg-sk-row flex gap-4 rounded-lg p-4">
+          <div class="skeleton-shimmer h-[46px] w-[46px] shrink-0 rounded-full"></div>
+          <div class="min-w-0 flex-1 space-y-2.5 pt-1">
+            <div class="msg-sk-a skeleton-shimmer h-3.5 w-28 rounded"></div>
+            <div class="msg-sk-b skeleton-shimmer h-4 w-full rounded"></div>
+            <div class="msg-sk-c skeleton-shimmer h-3 w-24 rounded"></div>
+          </div>
+          <div class="msg-sk-d skeleton-shimmer h-[60px] w-[100px] shrink-0 rounded"></div>
+        </div>
+      </SkeletonGroup>
 
-      <div
+      <EmptyState
         v-else-if="list.length === 0"
-        class="flex flex-col items-center justify-center p-20 text-muted-foreground"
-      >
-        <div class="text-sm opacity-60">暂无新回复哦~</div>
-      </div>
+        size="lg"
+        icon="message"
+        title="还没有收到回复"
+        description="你发出的评论有人回复时，会第一时间出现在这里"
+      />
 
       <div v-else class="space-y-4">
         <div
           v-for="item in list"
           :key="item.id"
-          class="group flex gap-4 rounded-lg p-4 transition-colors hover:bg-muted/50"
+          class="group flex gap-4 rounded-lg p-4 t-tint hover:bg-muted/50"
         >
           <!-- Left Avatar -->
           <div class="shrink-0 pt-1">
@@ -133,7 +141,7 @@ const handleDelete = async (item: NotificationItem) => {
                 :src="item.actionUserAvatar"
                 :name="item.actionUserName"
                 container-class="w-[46px] h-[46px] text-lg"
-                class="transition-transform hover:scale-105"
+                class="msg-avatar hover:scale-105"
               />
             </button>
           </div>
@@ -153,7 +161,7 @@ const handleDelete = async (item: NotificationItem) => {
               <button
                 v-if="canOpenTarget(item)"
                 type="button"
-                class="-ml-2 inline-flex max-w-full cursor-pointer rounded-md px-2 py-1 text-left text-sm text-foreground transition-colors hover:bg-primary/8 hover:text-primary"
+                class="-ml-2 inline-flex max-w-full cursor-pointer rounded-md px-2 py-1 text-left text-sm text-foreground t-tint hover:bg-primary/8 hover:text-primary"
                 @click="goReply(item)"
               >
                 <span class="break-words whitespace-pre-wrap">{{ item.content }}</span>
@@ -172,20 +180,16 @@ const handleDelete = async (item: NotificationItem) => {
           <div class="flex shrink-0 items-start gap-2">
             <button
               type="button"
-              class="mt-1 rounded-md p-1.5 text-muted-foreground opacity-0 transition-all hover:bg-destructive/10 hover:text-destructive group-hover:opacity-100 focus-visible:opacity-100 disabled:pointer-events-none disabled:opacity-40"
+              class="msg-action-btn mt-1 rounded-md p-1.5 text-muted-foreground opacity-0 hover:bg-destructive/10 hover:text-destructive group-hover:opacity-100 focus-visible:opacity-100 disabled:pointer-events-none disabled:opacity-40"
               :disabled="deletingIds.has(item.id)"
               :aria-label="`删除来自 ${item.actionUserName || '用户'} 的回复通知`"
               @click.stop="handleDelete(item)"
             >
               <Trash2 class="h-4 w-4" />
             </button>
-            <div
-              v-if="item.videoTitle"
-              class="max-w-[120px] cursor-pointer"
-              @click="goReply(item)"
-            >
+            <div v-if="item.videoTitle" class="max-w-[120px] cursor-pointer" @click="goReply(item)">
               <div
-                class="h-[60px] overflow-hidden rounded bg-muted p-2 text-xs text-muted-foreground line-clamp-2 transition-colors hover:text-primary"
+                class="h-[60px] overflow-hidden rounded bg-muted p-2 text-xs text-muted-foreground line-clamp-2 t-tint hover:text-primary"
               >
                 {{ item.videoTitle }}
               </div>
@@ -196,3 +200,41 @@ const handleDelete = async (item: NotificationItem) => {
     </div>
   </div>
 </template>
+
+<style scoped lang="scss">
+/* 骨架条目内部错峰：--skeleton-phase 定义在行容器上，子块基于它偏移
+   （同一元素既读又写 --skeleton-index 会构成 CSS 循环）。 */
+.msg-sk-row {
+  --skeleton-phase: var(--skeleton-index, 0);
+}
+
+.msg-sk-a {
+  --skeleton-index: calc(var(--skeleton-phase) + 0.25);
+}
+
+.msg-sk-b {
+  --skeleton-index: calc(var(--skeleton-phase) + 0.4);
+}
+
+.msg-sk-c {
+  --skeleton-index: calc(var(--skeleton-phase) + 0.55);
+}
+
+.msg-sk-d {
+  --skeleton-index: calc(var(--skeleton-phase) + 0.7);
+}
+
+/* 删除按钮：原来是 transition-all（会把 box-shadow / filter 一起卷进去），改成显式三条 */
+.msg-action-btn {
+  transition:
+    color var(--duration-fast) linear,
+    background-color var(--duration-fast) var(--ease-out-quart),
+    opacity var(--duration-fast) linear;
+}
+
+/* Tailwind v4 的 scale-* 写的是独立的 `scale` 属性，t-motion 只过渡 transform，
+   所以缩放必须显式过渡 scale，否则 hover 是瞬移。 */
+.msg-avatar {
+  transition: scale var(--duration-normal) var(--ease-out-expo);
+}
+</style>

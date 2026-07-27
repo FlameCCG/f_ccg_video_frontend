@@ -2,7 +2,7 @@
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { onClickOutside } from '@vueuse/core'
 import { toast } from 'vue-sonner'
-import { ImagePlus, MoreVertical, SmilePlus } from 'lucide-vue-next'
+import { ImageOff, ImagePlus, MoreVertical, SmilePlus } from 'lucide-vue-next'
 import { useRoute, useRouter } from 'vue-router'
 import {
   getConversationList,
@@ -23,6 +23,8 @@ import { getUserDetail, type UserDetail } from '@/api/user'
 import EmojiPicker from '@/components/common/EmojiPicker.vue'
 import ImageViewer from '@/components/common/ImageViewer.vue'
 import AppAvatar from '@/components/common/AppAvatar.vue'
+import EmptyState from '@/components/common/EmptyState.vue'
+import SkeletonGroup from '@/components/common/SkeletonGroup.vue'
 import { useWebSocket } from '@/composables/useWebSocket'
 import { useAuthStore } from '@/stores/auth'
 import { useNotificationStore } from '@/stores/notification'
@@ -55,6 +57,17 @@ const openImagePreview = (url?: string) => {
   if (!url) return
   previewImageUrl.value = url
   showPreview.value = true
+}
+
+/** 图片/表情包加载失败的消息 id，命中后渲染 token 化失效面而不是浏览器碎图标 */
+const brokenMediaIds = ref<Set<string>>(new Set())
+
+const isMediaBroken = (message: { id: string; media?: ChatMessageMedia }) =>
+  !message.media?.url || brokenMediaIds.value.has(message.id)
+
+const markMediaBroken = (message: { id: string }) => {
+  if (brokenMediaIds.value.has(message.id)) return
+  brokenMediaIds.value = new Set(brokenMediaIds.value).add(message.id)
 }
 
 const emojiPickerRef = ref<HTMLElement | null>(null)
@@ -138,7 +151,7 @@ const resolveMessagePreview = (message: Pick<ChatMessage, 'type' | 'text' | 'emo
 }
 
 const getConversationPreview = (conversation: ChatConversationItem): string => {
-  if (!conversation.lastMessage) return '[暂无消息]'
+  if (!conversation.lastMessage) return '还没有消息'
   return conversation.lastMessage.preview || resolveMessagePreview(conversation.lastMessage)
 }
 
@@ -661,20 +674,27 @@ onMounted(() => {
       <div
         class="max-h-[240px] flex-1 overflow-y-auto lg:max-h-none [&::-webkit-scrollbar-thumb]:rounded-[6px] [&::-webkit-scrollbar-thumb]:bg-border hover:[&::-webkit-scrollbar-thumb]:bg-muted-foreground/30 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar]:w-1.5"
       >
-        <div v-if="loadingConversations" class="p-4 text-center text-xs text-muted-foreground">
-          加载中...
-        </div>
-        <div
+        <SkeletonGroup v-if="loadingConversations" :count="6" class="py-1">
+          <div class="conv-sk-row flex items-center gap-3 px-4 py-3">
+            <div class="skeleton-shimmer h-[42px] w-[42px] shrink-0 rounded-full"></div>
+            <div class="min-w-0 flex-1 space-y-2">
+              <div class="conv-sk-a skeleton-shimmer h-3 w-24 rounded"></div>
+              <div class="conv-sk-b skeleton-shimmer h-3 w-4/5 rounded"></div>
+            </div>
+          </div>
+        </SkeletonGroup>
+        <EmptyState
           v-else-if="conversations.length === 0"
-          class="p-6 text-center text-xs text-muted-foreground"
-        >
-          暂无消息
-        </div>
+          size="sm"
+          icon="chat"
+          title="还没有聊过天"
+          description="在别人的主页点「发消息」就能开始一段对话"
+        />
         <template v-else>
           <div
             v-for="conversation in conversations"
             :key="conversation.id"
-            class="group flex items-center gap-3 px-4 py-3 text-left transition-colors"
+            class="group flex items-center gap-3 px-4 py-3 text-left t-tint"
             :class="
               currentPeerId === conversation.peerId
                 ? 'bg-muted/80 text-foreground'
@@ -735,7 +755,7 @@ onMounted(() => {
             </h2>
             <button
               type="button"
-              class="rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+              class="rounded-lg p-1.5 text-muted-foreground t-tint hover:bg-muted hover:text-foreground"
               @click="openUserHome(currentPeerId)"
             >
               <MoreVertical class="h-[18px] w-[18px]" />
@@ -747,15 +767,16 @@ onMounted(() => {
             ref="messageScrollerRef"
             class="flex-1 overflow-y-auto bg-muted/10 px-5 py-4 [&::-webkit-scrollbar-thumb]:rounded-[6px] [&::-webkit-scrollbar-thumb]:bg-muted-foreground/20 hover:[&::-webkit-scrollbar-thumb]:bg-muted-foreground/40 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar]:w-1.5"
           >
-            <div v-if="loadingMessages" class="mt-4 text-center text-xs text-muted-foreground">
-              加载中...
-            </div>
+            <!-- 首载：左右交替的气泡骨架，宽度错落，避免整列等宽灰条 -->
+            <SkeletonGroup v-if="loadingMessages" :count="6" class="space-y-4 pt-2">
+              <div class="bubble-sk flex items-end gap-3">
+                <div class="skeleton-shimmer h-[38px] w-[38px] shrink-0 rounded-full"></div>
+                <div class="bubble-sk__body skeleton-shimmer h-[46px] rounded-[22px]"></div>
+              </div>
+            </SkeletonGroup>
 
-            <div
-              v-else-if="messages.length === 0"
-              class="flex h-full items-center justify-center text-sm text-muted-foreground"
-            >
-              还没有消息，发一句打个招呼吧
+            <div v-else-if="messages.length === 0" class="flex h-full items-center justify-center">
+              <EmptyState size="sm" icon="chat" title="还没有消息" description="发一句打个招呼吧" />
             </div>
 
             <div v-else class="space-y-3">
@@ -805,7 +826,7 @@ onMounted(() => {
                     </div>
 
                     <div
-                      class="text-[14px] transition-opacity"
+                      class="text-[14px] t-motion"
                       :class="[
                         message.type === 'emoji'
                           ? 'chat-emoji-bubble'
@@ -823,15 +844,29 @@ onMounted(() => {
                       </div>
 
                       <div v-else-if="message.type === 'image' || message.type === 'sticker'">
+                        <!-- 图片挂了不能露浏览器碎图标：换成 token 化的失效面 -->
+                        <div
+                          v-if="isMediaBroken(message)"
+                          class="flex h-[120px] w-[180px] flex-col items-center justify-center gap-1.5 rounded-[20px] border border-border/50 bg-muted text-muted-foreground"
+                          role="img"
+                          aria-label="图片已失效"
+                        >
+                          <ImageOff class="h-5 w-5 opacity-60" :stroke-width="1.5" />
+                          <span class="text-2xs opacity-75">图片已失效</span>
+                        </div>
                         <img
+                          v-else
                           :src="message.media?.url"
                           :alt="message.type === 'sticker' ? '表情包消息' : '图片消息'"
-                          class="rounded-[20px] object-cover cursor-pointer border border-border/50 bg-card transition duration-200 hover:-translate-y-0.5 hover:opacity-95"
+                          class="chat-media-img cursor-pointer rounded-[20px] border border-border/50 bg-card object-cover"
                           :class="
                             message.type === 'sticker'
                               ? 'max-h-[200px] max-w-[200px]'
                               : 'max-h-[280px] max-w-full'
                           "
+                          loading="lazy"
+                          decoding="async"
+                          @error="markMediaBroken(message)"
                           @click="openImagePreview(message.media?.url)"
                         />
                       </div>
@@ -842,10 +877,10 @@ onMounted(() => {
 
                       <span
                         v-if="message.pending"
-                        class="mt-1 block px-1 text-[11px] tracking-[0.08em] text-muted-foreground/65"
+                        class="mt-1 block px-1 text-2xs tracking-[0.08em] text-muted-foreground/65"
                         :class="message.senderId === currentUserId ? 'text-right' : ''"
                       >
-                        发送中...
+                        发送中…
                       </span>
                     </div>
                   </div>
@@ -860,7 +895,7 @@ onMounted(() => {
             <div class="mb-2 flex items-center gap-1">
               <div ref="emojiPickerRef" class="relative">
                 <button
-                  class="rounded-lg p-2 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
+                  class="rounded-lg p-2 text-muted-foreground t-tint hover:bg-muted hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
                   :disabled="composerDisabled"
                   title="表情"
                   @click="showEmojiPicker = !showEmojiPicker"
@@ -874,7 +909,7 @@ onMounted(() => {
               </div>
 
               <button
-                class="rounded-lg p-2 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
+                class="rounded-lg p-2 text-muted-foreground t-tint hover:bg-muted hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
                 :disabled="composerDisabled"
                 title="图片/表情包"
                 @click="openMediaPicker"
@@ -893,14 +928,14 @@ onMounted(() => {
 
             <!-- Text input + Send -->
             <div
-              class="rounded-xl border border-border/50 bg-muted/30 px-3 py-2 transition-colors focus-within:border-primary/50 focus-within:bg-background shadow-sm"
+              class="rounded-xl border border-border/50 bg-muted/30 px-3 py-2 t-tint focus-within:border-primary/50 focus-within:bg-background shadow-sm"
             >
               <textarea
                 v-model="draftText"
                 class="min-h-[36px] w-full resize-none border-0 bg-transparent text-[13px] leading-5 text-foreground outline-none placeholder:text-muted-foreground/60"
                 :disabled="composerDisabled"
                 :maxlength="MAX_TEXT_LENGTH"
-                placeholder="请输入消息内容"
+                placeholder="说点什么…（Enter 发送，Shift + Enter 换行）"
                 rows="1"
                 @keydown="handleEditorKeydown"
               ></textarea>
@@ -910,7 +945,7 @@ onMounted(() => {
                   {{ charCount }}/{{ MAX_TEXT_LENGTH }}
                 </span>
                 <button
-                  class="rounded-lg bg-primary px-4 py-1.5 text-[12px] font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:bg-muted disabled:text-muted-foreground"
+                  class="rounded-lg bg-primary px-4 py-1.5 text-[12px] font-medium text-primary-foreground t-tint hover:bg-primary/90 disabled:cursor-not-allowed disabled:bg-muted disabled:text-muted-foreground"
                   :disabled="composerDisabled || !draftText.trim() || !connected"
                   @click="sendTextMessage"
                 >
@@ -924,13 +959,13 @@ onMounted(() => {
 
       <!-- Empty State -->
       <template v-else>
-        <div class="absolute inset-0 flex flex-col items-center justify-center gap-2 p-6">
-          <img
-            src="https://s1.hdslb.com/bfs/seed/jinkela/short/message/img/gochat.png"
-            alt="开始聊天"
-            class="mb-2 h-auto w-[280px] opacity-90"
+        <div class="absolute inset-0 flex items-center justify-center">
+          <EmptyState
+            size="lg"
+            icon="chat"
+            title="从左边选一个会话开始聊天"
+            description="也可以到别人的主页点「发消息」，开启一段新的对话"
           />
-          <p class="text-[13px] text-muted-foreground">快找小伙伴聊天吧！（＾▽＾）ﾉ</p>
         </div>
       </template>
     </div>
@@ -941,6 +976,56 @@ onMounted(() => {
 </template>
 
 <style scoped lang="scss">
+/* ---- 骨架 ---- */
+
+/* 会话行：--skeleton-phase 定义在行容器上，子块基于它偏移
+   （同一元素既读又写 --skeleton-index 会构成 CSS 循环）。 */
+.conv-sk-row {
+  --skeleton-phase: var(--skeleton-index, 0);
+}
+
+.conv-sk-a {
+  --skeleton-index: calc(var(--skeleton-phase) + 0.25);
+}
+
+.conv-sk-b {
+  --skeleton-index: calc(var(--skeleton-phase) + 0.4);
+}
+
+/* 气泡骨架：按 nth-child 左右交替 + 宽度错落，形状贴合真实对话 */
+.bubble-sk {
+  &__body {
+    width: 46%;
+  }
+
+  &:nth-child(even) {
+    flex-direction: row-reverse;
+
+    .bubble-sk__body {
+      width: 38%;
+    }
+  }
+
+  &:nth-child(3n) .bubble-sk__body {
+    width: 58%;
+  }
+
+  &:nth-child(4n) .bubble-sk__body {
+    width: 32%;
+  }
+}
+
+.chat-media-img {
+  transition:
+    transform var(--duration-normal) var(--ease-out-expo),
+    opacity var(--duration-fast) linear;
+
+  &:hover {
+    transform: translate3d(0, -2px, 0);
+    opacity: 0.95;
+  }
+}
+
 .chat-message-row {
   display: flex;
   align-items: flex-end;

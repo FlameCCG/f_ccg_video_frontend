@@ -9,6 +9,8 @@ import {
 import { useNotificationStore } from '@/stores/notification'
 import { formatDateTimeAgo } from '@/utils/time'
 import { navigateToNotificationTarget } from '@/utils/notification-target'
+import EmptyState from '@/components/common/EmptyState.vue'
+import SkeletonGroup from '@/components/common/SkeletonGroup.vue'
 import { Bell } from 'lucide-vue-next'
 
 const router = useRouter()
@@ -67,47 +69,37 @@ const openLink = (item: NotificationItem) => {
     <div
       class="flex-1 overflow-y-auto px-4 py-2 [&::-webkit-scrollbar-thumb]:rounded-[6px] [&::-webkit-scrollbar-thumb]:bg-muted-foreground/20 hover:[&::-webkit-scrollbar-thumb]:bg-muted-foreground/40 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar]:w-1.5"
     >
-      <div
-        v-if="loading && list.length === 0"
-        class="flex items-center justify-center p-10 text-muted-foreground"
-      >
-        加载中...
-      </div>
+      <SkeletonGroup v-if="loading && list.length === 0" :count="5" class="space-y-4">
+        <div class="msg-sk-row flex gap-4 rounded-lg p-4">
+          <div class="skeleton-shimmer h-[46px] w-[46px] shrink-0 rounded-full"></div>
+          <div class="min-w-0 flex-1 space-y-2.5 pt-1">
+            <div class="msg-sk-a skeleton-shimmer h-3.5 w-32 rounded"></div>
+            <div class="msg-sk-b skeleton-shimmer h-4 w-full rounded"></div>
+            <div class="msg-sk-c skeleton-shimmer h-3 w-24 rounded"></div>
+          </div>
+        </div>
+      </SkeletonGroup>
 
-      <div
+      <EmptyState
         v-else-if="list.length === 0"
-        class="flex flex-col items-center justify-center p-20 text-muted-foreground"
-      >
-        <Bell class="h-12 w-12 text-muted-foreground/30 mb-4" />
-        <div class="text-sm opacity-60">暂无新通知哦~</div>
-      </div>
+        size="lg"
+        icon="bell"
+        title="暂时没有新通知"
+        description="稿件审核结果、账号安全提醒都会发到这里"
+      />
 
       <div v-else class="space-y-4">
         <div
           v-for="item in list"
           :key="item.id"
-          class="flex gap-4 rounded-lg p-4 transition-colors hover:bg-muted/50"
+          class="flex gap-4 rounded-lg p-4 t-tint hover:bg-muted/50"
         >
           <!-- Left Avatar (System Icon) -->
           <div class="shrink-0 pt-1">
             <div
               class="flex h-[46px] w-[46px] items-center justify-center rounded-full bg-[var(--status-info-soft)] text-[var(--status-info-ink)]"
             >
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                width="24"
-                height="24"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="2"
-                stroke-linecap="round"
-                stroke-linejoin="round"
-                class="lucide lucide-bell"
-              >
-                <path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9" />
-                <path d="M10.3 21a1.94 1.94 0 0 0 3.4 0" />
-              </svg>
+              <Bell class="h-6 w-6" :stroke-width="1.75" aria-hidden="true" />
             </div>
           </div>
 
@@ -121,13 +113,14 @@ const openLink = (item: NotificationItem) => {
               {{ item.content }}
             </div>
 
-            <div
+            <button
               v-if="item.link"
-              class="mb-2 text-sm text-primary underline cursor-pointer hover:text-primary/80"
+              type="button"
+              class="t-tint mb-2 self-start text-sm text-primary underline hover:text-primary/80"
               @click="openLink(item)"
             >
               查看详情
-            </div>
+            </button>
 
             <div class="flex items-center gap-4 text-xs text-muted-foreground mt-1">
               <span>{{ formatDateTimeAgo(item.createdAt) }}</span>
@@ -138,3 +131,23 @@ const openLink = (item: NotificationItem) => {
     </div>
   </div>
 </template>
+
+<style scoped lang="scss">
+/* 骨架条目内部错峰：--skeleton-phase 定义在行容器上，子块基于它偏移
+   （同一元素既读又写 --skeleton-index 会构成 CSS 循环）。 */
+.msg-sk-row {
+  --skeleton-phase: var(--skeleton-index, 0);
+}
+
+.msg-sk-a {
+  --skeleton-index: calc(var(--skeleton-phase) + 0.25);
+}
+
+.msg-sk-b {
+  --skeleton-index: calc(var(--skeleton-phase) + 0.4);
+}
+
+.msg-sk-c {
+  --skeleton-index: calc(var(--skeleton-phase) + 0.55);
+}
+</style>

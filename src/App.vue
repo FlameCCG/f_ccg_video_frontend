@@ -63,6 +63,43 @@ const handleChatOpenChange = (open: boolean) => {
   if (open) chatDialogMounted.value = true
 }
 
+/**
+ * 主题切换过渡窗口。
+ *
+ * 切主题时只有 body 背景在过渡，卡片 / 文字 / 边框全部硬跳，整页像分两批变色。
+ * 但常驻的 `*` 过渡会让之后每一次 hover / 滚动都拖尾，所以改成开一个短窗口：
+ * 检测到 <html> 的 dark 类翻转时挂上 .theme-switching，动画跑完再摘掉。
+ * 真正的过渡声明在 main.scss 末尾（含 prefers-reduced-motion 降级与播放器豁免）。
+ *
+ * 用 MutationObserver 而不是 watch(themeStore.theme)：theme === 'system' 时
+ * 系统配色变化会直接改 html 的类，theme 这个 ref 并不变，watch 收不到。
+ * MutationObserver 回调是微任务，在浏览器做样式重算之前执行 —— 变量新值与
+ * .theme-switching 会落在同一次重算里，过渡才起得来。
+ */
+const THEME_TRANSITION_WINDOW = 360
+let themeSwitchTimer: ReturnType<typeof setTimeout> | undefined
+let themeObserver: MutationObserver | undefined
+
+const observeThemeSwitch = () => {
+  const root = document.documentElement
+  let wasDark = root.classList.contains('dark')
+
+  themeObserver = new MutationObserver(() => {
+    const isDark = root.classList.contains('dark')
+    if (isDark === wasDark) return
+    wasDark = isDark
+
+    root.classList.add('theme-switching')
+    if (themeSwitchTimer) clearTimeout(themeSwitchTimer)
+    themeSwitchTimer = setTimeout(() => {
+      root.classList.remove('theme-switching')
+      themeSwitchTimer = undefined
+    }, THEME_TRANSITION_WINDOW)
+  })
+
+  themeObserver.observe(root, { attributes: true, attributeFilter: ['class'] })
+}
+
 onMounted(() => {
   void authStore.initAuth()
   // 预拉站点配置，登录 Dialog 首次打开即可展示完整 OAuth 开关
@@ -70,6 +107,7 @@ onMounted(() => {
   window.addEventListener('auth:session-expired', handleSessionExpired as EventListener)
   window.addEventListener('auth:login-required', handleLoginRequired as EventListener)
   window.addEventListener('oml2d:open-chat', handleOpenChat)
+  observeThemeSwitch()
   initLive2d()
 })
 
@@ -77,11 +115,21 @@ onUnmounted(() => {
   window.removeEventListener('auth:session-expired', handleSessionExpired as EventListener)
   window.removeEventListener('auth:login-required', handleLoginRequired as EventListener)
   window.removeEventListener('oml2d:open-chat', handleOpenChat)
+  themeObserver?.disconnect()
+  themeObserver = undefined
+  if (themeSwitchTimer) clearTimeout(themeSwitchTimer)
+  document.documentElement.classList.remove('theme-switching')
 })
 </script>
 
 <template>
+  <!--
+    顶层 layout 直接切换：Vue Router 会先解析 lazy component，再更新当前路由。
+    因此加载 UserLayout 等分包时旧页面会继续保留；解析完成后一次性交接，
+    不再经过 out-in 的全空白帧。各 layout 内部仍负责自己的内容区转场。
+  -->
   <RouterView />
+
   <AuthDialog v-if="showAuthDialog" :open="showAuthDialog" @update:open="showAuthDialog = $event" />
 
   <AiChatDialog

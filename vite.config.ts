@@ -124,7 +124,12 @@ export default defineConfig({
             if (id.includes('echarts') || id.includes('zrender')) return 'echarts'
             if (id.includes('dashjs')) return 'dashjs'
             if (id.includes('highlight.js')) return 'highlight'
-            if (id.includes('marked') || id.includes('dompurify')) return 'markdown'
+            // dompurify 与 marked 必须分家：Navbar/VideoCard/SearchResult/Partition
+            // 只需要 dompurify 做搜索高亮转义，而 Navbar 在每个 layout 里都渲染。
+            // 合并成一个 chunk 会让 marked(~40KB) 跟着上首屏关键路径，
+            // 而 marked 实际只有异步的 AiChatDialog 用得到。
+            if (id.includes('dompurify')) return 'sanitize'
+            if (id.includes('marked')) return 'markdown'
             if (id.includes('artplayer')) return 'artplayer'
           }
         },

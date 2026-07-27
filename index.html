@@ -6,9 +6,167 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Bilibili Video Platform</title>
     <link rel="stylesheet" href="/iconfront.css" />
+    <style>
+      /*
+       * Vue 挂载前的首屏占位。它只存在于初始导航解析期间，app.mount 后会被
+       * 完整应用替换；颜色是独立的启动 token，避免样式分包尚未执行时露出空背景。
+       */
+      :root {
+        --boot-background: oklch(98.5% 0.004 240deg);
+        --boot-surface: oklch(94.5% 0.009 240deg);
+        --boot-sheen: oklch(99% 0.003 240deg / 0.82);
+        --boot-brand: oklch(62% 0.17 230deg);
+      }
+
+      html.dark {
+        --boot-background: oklch(17% 0.01 250deg);
+        --boot-surface: oklch(24% 0.012 250deg);
+        --boot-sheen: oklch(92% 0.01 250deg / 0.08);
+        --boot-brand: oklch(70% 0.14 230deg);
+      }
+
+      html,
+      body,
+      #app {
+        min-height: 100%;
+        margin: 0;
+      }
+
+      body:has(> #app > .app-boot) {
+        background: var(--boot-background);
+      }
+
+      .app-boot {
+        min-height: 100vh;
+        overflow: hidden;
+        background: var(--boot-background);
+      }
+
+      .app-boot__nav {
+        display: flex;
+        height: 64px;
+        align-items: center;
+        gap: 12px;
+        padding: 0 clamp(16px, 4vw, 64px);
+        border-bottom: 1px solid color-mix(in oklch, var(--boot-surface) 78%, transparent);
+      }
+
+      .app-boot__brand {
+        width: 86px;
+        height: 24px;
+        border-radius: 8px;
+        background: var(--boot-brand);
+        opacity: 0.9;
+      }
+
+      .app-boot__nav-line {
+        width: 48px;
+        height: 12px;
+        border-radius: 999px;
+        background: var(--boot-surface);
+      }
+
+      .app-boot__content {
+        width: min(1180px, calc(100% - 32px));
+        margin: 28px auto 0;
+      }
+
+      .app-boot__hero,
+      .app-boot__card {
+        position: relative;
+        overflow: hidden;
+        background: var(--boot-surface);
+      }
+
+      .app-boot__hero::after,
+      .app-boot__card::after {
+        position: absolute;
+        inset: 0;
+        content: '';
+        background: linear-gradient(90deg, transparent, var(--boot-sheen), transparent);
+        transform: translate3d(-100%, 0, 0);
+        animation: app-boot-sheen 1.6s linear infinite;
+      }
+
+      .app-boot__hero {
+        height: clamp(150px, 22vw, 260px);
+        border-radius: 18px;
+      }
+
+      .app-boot__grid {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 18px;
+        margin-top: 24px;
+      }
+
+      .app-boot__card {
+        aspect-ratio: 16 / 10;
+        border-radius: 12px;
+      }
+
+      @keyframes app-boot-sheen {
+        to {
+          transform: translate3d(100%, 0, 0);
+        }
+      }
+
+      @media (width <= 720px) {
+        .app-boot__grid {
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+          gap: 12px;
+        }
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        .app-boot__hero::after,
+        .app-boot__card::after {
+          animation: none;
+        }
+      }
+    </style>
+    <script>
+      /*
+       * 主题预置：在首次绘制之前把 html.dark 定下来。
+       * 主题存在 pinia-plugin-persistedstate 的 localStorage['theme'] 里，
+       * 但 store 要等 JS bundle 解析、app.mount 之后才应用 —— 中间这段时间
+       * 页面会先按浅色渲染再整屏翻黑，这一下闪白是打开站点的第一印象。
+       * 默认值与 stores/theme.ts 的 ref<Theme>('dark') 保持一致。
+       */
+      ;(function () {
+        try {
+          var raw = window.localStorage.getItem('theme')
+          var theme = raw ? JSON.parse(raw).theme || 'dark' : 'dark'
+          var isDark =
+            theme === 'dark' ||
+            (theme === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches)
+          document.documentElement.classList.toggle('dark', isDark)
+        } catch (e) {
+          document.documentElement.classList.add('dark')
+        }
+      })()
+    </script>
   </head>
   <body>
-    <div id="app"></div>
+    <div id="app">
+      <div class="app-boot" role="status" aria-label="页面加载中">
+        <div class="app-boot__nav" aria-hidden="true">
+          <span class="app-boot__brand"></span>
+          <span class="app-boot__nav-line"></span>
+          <span class="app-boot__nav-line"></span>
+          <span class="app-boot__nav-line"></span>
+        </div>
+        <div class="app-boot__content" aria-hidden="true">
+          <div class="app-boot__hero"></div>
+          <div class="app-boot__grid">
+            <span class="app-boot__card"></span>
+            <span class="app-boot__card"></span>
+            <span class="app-boot__card"></span>
+            <span class="app-boot__card"></span>
+          </div>
+        </div>
+      </div>
+    </div>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>

@@ -16,4 +16,7 @@ pinia.use(piniaPluginPersistedstate)
 app.use(pinia)
 app.use(router)
 
+// 初始导航包含异步 layout / view。等待它解析完再挂载，避免 RouterView
+// 先渲染一次空内容，露出 body 背景形成刷新时的“黑屏”。
+await router.isReady()
 app.mount('#app')

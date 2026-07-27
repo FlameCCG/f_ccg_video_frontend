@@ -61,9 +61,12 @@ const handleError = () => {
       :src="normalizedSrc"
       :alt="alt"
       :class="imageClass"
+      loading="lazy"
+      decoding="async"
+      draggable="false"
       @error="handleError"
     />
-    <span v-else :class="['pointer-events-none leading-none', textClass]">
+    <span v-else aria-hidden="true" :class="['pointer-events-none leading-none', textClass]">
       {{ displayInitial }}
     </span>
   </div>

@@ -3,6 +3,14 @@
 // Tailwind 入口见同目录 tailwind.css（纯 CSS，保证 utility 生成）
 // 暗色：html.dark 换变量，禁止 dark: 工具类
 
+// 「减少动态效果」与「主题切换窗口」都必须绕开的区域。
+// - .artplayer-app 内部：弹幕位移就是内容本身，压平 = 把核心功能删掉；
+//   且 artplayer-plugin-danmuku 靠 inline `transition: transform Xs linear` 驱动，
+//   样式表里的 !important 优先级高于内联非 !important，会直接把弹幕钉死在终点。
+// - [data-is-danmu-clone]：VideoPlayer hover 暂停时克隆出来的弹幕节点，松手后靠 inline transition 复飘。
+// - .motion-keep：业务侧显式声明「这是功能性动效，不是装饰」的逃生舱。
+$motion-exempt: '.artplayer-app, .artplayer-app *, [data-is-danmu-clone], .motion-keep, .motion-keep *';
+
 @layer base {
   :root {
     color-scheme: light;
@@ -25,6 +33,16 @@
     --signal-foreground: oklch(98.5% 0.004 230deg);
     --media-overlay: oklch(29% 0.02 242deg / 0.72);
     --media-overlay-text: oklch(97.8% 0.004 230deg);
+
+    /* 弹层遮罩：替代 dialog 里硬编码的 bg-black/80，随主题走 */
+    --scrim-overlay: oklch(24% 0.02 242deg / 0.64);
+
+    /* 骨架屏：sheen 必须比 base 更亮，否则浅色主题下扫过去的是暗影不是高光（极性反了） */
+    --skeleton-base: var(--bg-surface-2);
+    --skeleton-sheen: color-mix(in oklch, var(--bg-surface-0) 88%, transparent);
+    /* 循环型 loading 动效专用；不属于交互时长三档，勿用于 transition */
+    --duration-shimmer: 1600ms;
+    --skeleton-step: 80ms;
 
     --page-wash-1: oklch(82% 0.04 236deg / 0.22);
     --page-wash-2: oklch(87% 0.03 34deg / 0.18);
@@ -112,6 +130,10 @@
     --media-overlay: oklch(18% 0.01 240deg / 0.76);
     --media-overlay-text: oklch(96.5% 0.006 225deg);
 
+    --scrim-overlay: oklch(10% 0.012 242deg / 0.72);
+    /* 暗色下 base 本来就深，sheen 用 foreground 的低透明度叠色才是「亮起来」 */
+    --skeleton-sheen: color-mix(in oklch, var(--text-1) 9%, transparent);
+
     --page-wash-1: oklch(40% 0.04 236deg / 0.18);
     --page-wash-2: oklch(42% 0.04 28deg / 0.14);
     --page-wash-3: oklch(20% 0.014 240deg / 0.92);
@@ -174,10 +196,10 @@
     --ring: 0.74 0.11 236;
   }
 
-  * {
+  *,
+  *::before,
+  *::after {
     border-color: var(--color-border);
-    -webkit-font-smoothing: antialiased;
-    -moz-osx-font-smoothing: grayscale;
   }
 
   button,
@@ -190,8 +212,12 @@
     cursor: pointer;
   }
 
+  /* 全站唯一焦点语言。
+   * 原写法 oklch(var(--ring)) 依赖 main.scss 里 `--ring: 0.64 0.12 238` 这条裸三元组 ——
+   * 语法虽然能解析出颜色，但它是与 @theme 平行的第二套真值（改 --brand-blue 时不跟随）。
+   * 统一走 Tailwind @theme 映射出来的 --color-ring，明暗两套自动跟随。 */
   *:focus-visible {
-    outline: 2px solid oklch(var(--ring));
+    outline: 2px solid var(--color-ring, var(--brand-blue));
     outline-offset: 2px;
   }
 
@@ -213,20 +239,24 @@
       radial-gradient(circle at top right, var(--page-wash-2), transparent 26%),
       linear-gradient(180deg, var(--page-wash-3), transparent 26%);
     color: var(--color-foreground);
-    font-family:
-      Inter,
-      system-ui,
-      -apple-system,
-      BlinkMacSystemFont,
-      'Segoe UI',
-      Roboto,
-      Helvetica,
-      Arial,
-      sans-serif;
+    /* 真值在 tailwind.css @theme --font-sans（拉丁段 + 显式 CJK 段） */
+    font-family: var(--font-sans);
+    font-optical-sizing: auto;
+    /* 中文字族普遍只有 Regular/Bold 两档，font-semibold(600) 若被合成假粗会明显发糊 */
+    font-synthesis-weight: none;
+    /* 灰度抗锯齿会把字抽细：深底上是对的（消彩边），浅底上会让 12–14px 中文发虚。
+       原来挂在 `*` 上无差别生效，是浅色主题「字面糊」的第二个根因。 */
+    -webkit-font-smoothing: auto;
+    -moz-osx-font-smoothing: auto;
     overscroll-behavior-y: none;
-    transition:
-      background-color var(--duration-slow) var(--ease-out-quart),
-      color var(--duration-slow) var(--ease-out-quart);
+    /* 主题切换的过渡改由 html.theme-switching 短窗口统一驱动（见文件末尾）：
+       body 单独挂 420ms 过渡时，不可过渡的 background-image（page-wash 渐变）会先跳、
+       纯色再慢慢变，反而制造出「半亮半暗」的撕裂。 */
+  }
+
+  .dark body {
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
   }
 
   /*
@@ -241,29 +271,248 @@
 }
 
 @layer components {
+  /* ============================================================
+   * 弹层动效通道（reka-ui 的 data-state 驱动）
+   *
+   * 项目没有装 tailwindcss-animate / tw-animate-css，也没有 @plugin 注册，
+   * 所以 `data-[state=open]:animate-in` `zoom-in-95` `fade-out-0` `slide-in-from-*`
+   * 这一串 utility 一个字节的 CSS 都不生成 —— 全站每一个 Dialog / DropdownMenu
+   * 都是瞬间 pop 出现、瞬间消失。这里用真实 keyframes 补齐。
+   *
+   * 两个必须遵守的实现约束：
+   * 1) enter / exit 的 @keyframes 名字必须不同。reka-ui 的 usePresence 通过比较
+   *    animationName 是否变化来判断「是否有退场动画」，同名会被判定为无动画、
+   *    直接卸载，退场就被截断了。
+   * 2) 出场必须比入场快（fast 140ms vs normal 240ms）。关闭要「利落」。
+   *
+   * Tailwind v4 的 -translate-x-1/2 写的是独立的 `translate` 属性而不是 `transform`，
+   * 所以 Dialog 居中不会被这里的 transform 关键帧冲掉，无需把 -50% 烘进关键帧。
+   * ============================================================ */
+
+  @keyframes overlay-in {
+    from {
+      opacity: 0;
+    }
+
+    to {
+      opacity: 1;
+    }
+  }
+
+  @keyframes overlay-out {
+    from {
+      opacity: 1;
+    }
+
+    to {
+      opacity: 0;
+    }
+  }
+
+  @keyframes surface-in {
+    from {
+      opacity: 0;
+      transform: translate3d(0, 8px, 0) scale(0.97);
+    }
+
+    to {
+      opacity: 1;
+      transform: translate3d(0, 0, 0) scale(1);
+    }
+  }
+
+  @keyframes surface-out {
+    from {
+      opacity: 1;
+      transform: translate3d(0, 0, 0) scale(1);
+    }
+
+    to {
+      opacity: 0;
+      transform: translate3d(0, 4px, 0) scale(0.985);
+    }
+  }
+
+  @keyframes pop-in {
+    from {
+      opacity: 0;
+      transform: translate3d(var(--pop-x, 0), var(--pop-y, -6px), 0) scale(0.97);
+    }
+
+    to {
+      opacity: 1;
+      transform: translate3d(0, 0, 0) scale(1);
+    }
+  }
+
+  @keyframes pop-out {
+    from {
+      opacity: 1;
+      transform: scale(1);
+    }
+
+    to {
+      opacity: 0;
+      transform: scale(0.985);
+    }
+  }
+
+  @keyframes motion-spin {
+    to {
+      transform: rotate(360deg);
+    }
+  }
+
+  /* 遮罩：纯 opacity，不做位移也不做模糊（全屏 backdrop-filter 太贵） */
+  .motion-overlay {
+    &[data-state='open'] {
+      animation: overlay-in var(--duration-normal) var(--ease-out-quart) both;
+    }
+
+    &[data-state='closed'] {
+      animation: overlay-out var(--duration-fast) var(--ease-out-quart) both;
+    }
+  }
+
+  /* 居中弹层（Dialog / AlertDialog）：opacity + 轻微 scale + 4~8px 位移 */
+  .motion-surface {
+    transform-origin: center;
+
+    &[data-state='open'] {
+      animation: surface-in var(--duration-normal) var(--ease-out-expo) both;
+    }
+
+    &[data-state='closed'] {
+      animation: surface-out var(--duration-fast) var(--ease-out-quart) both;
+    }
+  }
+
+  /* 贴着触发器的浮层（DropdownMenu / Popover / Select / Tooltip）：
+     位移方向跟随 data-side，缩放原点跟随 reka-ui 算出来的 transform-origin，
+     视觉上是「从按钮长出来」而不是凭空出现。 */
+  .motion-pop {
+    --pop-x: 0;
+    --pop-y: -6px;
+
+    transform-origin: var(
+      --reka-dropdown-menu-content-transform-origin,
+      var(--reka-popper-transform-origin, center)
+    );
+
+    &[data-side='top'] {
+      --pop-y: 6px;
+    }
+
+    &[data-side='left'] {
+      --pop-x: 6px;
+      --pop-y: 0;
+    }
+
+    &[data-side='right'] {
+      --pop-x: -6px;
+      --pop-y: 0;
+    }
+
+    &[data-state='open'] {
+      animation: pop-in var(--duration-fast) var(--ease-out-expo) both;
+    }
+
+    &[data-state='closed'] {
+      animation: pop-out var(--duration-fast) var(--ease-out-quart) both;
+    }
+  }
+
+  /* ============================================================
+   * 内容区路由转场
+   * .route-* 挂在各 layout 内层 RouterView：导航栏/侧栏不动，只换内容区。
+   * 离场 140ms、入场 240ms；入场的 8px 上浮用于提供新内容到来的方向感。
+   *
+   * 注意：位移的前提是内容脚下的空间稳定。MainLayout 的顶部 chrome 会随路由换形态，
+   * 若让它跟着 route.path 立即切换，离场期间会凭空少掉约 300px，卡片就会「飞上去」——
+   * 那不是这里的曲线问题。解法见 MainLayout.vue 的 chromePath 注释。
+   * ============================================================ */
+  .route-enter-active {
+    transition:
+      opacity var(--duration-normal) linear,
+      transform var(--duration-normal) var(--ease-out-expo);
+  }
+
+  .route-leave-active {
+    transition: opacity var(--duration-fast) linear;
+  }
+
+  .route-enter-from {
+    opacity: 0;
+    transform: translate3d(0, 8px, 0);
+  }
+
+  .route-leave-to {
+    opacity: 0;
+  }
+
+  /* ============================================================
+   * 骨架屏
+   * 原实现用 foreground 8% 叠色做扫光 —— 浅色主题下 foreground 是深色，
+   * 扫过去的是一道「暗影」，极性是反的。改成随主题走的真高光。
+   * 错峰：消费已有约定的 --skeleton-index（SkeletonGroup.vue / VideoCardSkeleton.vue
+   * 已经在往下传这个变量，之前全局侧一直没接），一屏骨架是一道光斜着掠过。
+   * ============================================================ */
   .skeleton-shimmer {
     position: relative;
     overflow: hidden;
-    background-color: var(--color-muted);
+    background-color: var(--skeleton-base);
 
     &::after {
       content: '';
       position: absolute;
       inset: 0;
-      transform: translateX(-100%);
+      transform: translate3d(-100%, 0, 0);
       background-image: linear-gradient(
         90deg,
-        transparent,
-        color-mix(in srgb, var(--color-foreground) 8%, transparent),
-        transparent
+        transparent 0%,
+        var(--skeleton-sheen) 50%,
+        transparent 100%
       );
-      animation: shimmer 1.5s infinite ease-out;
+      animation: skeleton-sheen var(--duration-shimmer) linear infinite;
+      animation-delay: calc(var(--skeleton-index, 0) * var(--skeleton-step));
     }
   }
 
-  @keyframes shimmer {
-    100% {
-      transform: translateX(100%);
+  /* 无 SkeletonGroup 时的兜底错峰：直接给容器加 .skeleton-stagger，
+     子项按 nth-child 拿到相位（9 项以后封顶，避免长列表末尾等太久）。 */
+  .skeleton-stagger > * {
+    &:nth-child(2) {
+      --skeleton-index: 1;
+    }
+
+    &:nth-child(3) {
+      --skeleton-index: 2;
+    }
+
+    &:nth-child(4) {
+      --skeleton-index: 3;
+    }
+
+    &:nth-child(5) {
+      --skeleton-index: 4;
+    }
+
+    &:nth-child(6) {
+      --skeleton-index: 5;
+    }
+
+    &:nth-child(7) {
+      --skeleton-index: 6;
+    }
+
+    &:nth-child(n + 8) {
+      --skeleton-index: 7;
+    }
+  }
+
+  @keyframes skeleton-sheen {
+    to {
+      transform: translate3d(100%, 0, 0);
     }
   }
 
@@ -271,20 +520,131 @@
     .skeleton-shimmer::after {
       animation: none;
       transform: none;
-      opacity: 0.35;
+      opacity: 0.4;
     }
   }
 
-  .hover-lift {
+  /* 骨架 ↔ 内容的统一交接：骨架先淡出（fast），内容再淡入并轻微上移（normal）。
+     曾经只活在 InfiniteScroll 的 scoped 样式里（.is-swap-*），于是同一屏上
+     「走 InfiniteScroll 的列表」淡入、「自己写 v-if 的区块」硬切，一页两种语言。
+     提到全局后，首页 hero 精选位与下方无限列表共用这一条，一次点击只看到一次交接。
+     用在会重排的区块上（列表 / 网格）；固定画幅的媒体位请用「骨架垫在上层淡出」
+     的 veil 手法（见 AppImage / Carousel），避免 out-in 空档期高度塌陷。 */
+  .skeleton-swap-enter-active {
+    transition:
+      opacity var(--duration-normal) var(--ease-out-quart),
+      transform var(--duration-normal) var(--ease-out-quart);
+  }
+
+  .skeleton-swap-leave-active {
+    transition: opacity var(--duration-fast) linear;
+  }
+
+  .skeleton-swap-enter-from {
+    opacity: 0;
+    transform: translate3d(0, 6px, 0);
+  }
+
+  .skeleton-swap-leave-to {
+    opacity: 0;
+  }
+
+  /* ============================================================
+   * 交互原语
+   * ============================================================ */
+
+  /* 焦点环：凡是写了 outline-none 的元素，必须挂这个类把焦点指示补回来 */
+  .focus-ring:focus-visible {
+    outline: 2px solid var(--color-ring, var(--brand-blue));
+    outline-offset: 2px;
+  }
+
+  /* 两条通用过渡，用来替换业务层的 `transition: all` / `transition-colors`（默认 150ms ease，非 token）。
+     刻意不含 box-shadow：大 blur 阴影逐帧重绘是掉帧主因，需要阴影变化时改用伪元素 + opacity。 */
+  .t-tint {
+    transition:
+      background-color var(--duration-fast) var(--ease-out-quart),
+      border-color var(--duration-fast) var(--ease-out-quart),
+      color var(--duration-fast) linear;
+  }
+
+  .t-motion {
     transition:
       transform var(--duration-normal) var(--ease-out-expo),
-      box-shadow var(--duration-normal) var(--ease-out-expo),
       opacity var(--duration-fast) linear;
+  }
 
-    &:hover {
-      transform: translateY(-4px) scale(1.01);
-      box-shadow: var(--shadow-overlay);
+  /* 按钮：全站唯一的按压反馈。按下缩到 97%，是「点到了」的即时确认，
+     移动端没有 hover 补偿时尤其关键。刻意不做 hover 位移 ——
+     所有按钮一起抬起会把主按钮的层级信号稀释掉。 */
+  .ui-button {
+    transition:
+      color var(--duration-fast) var(--ease-out-quart),
+      background-color var(--duration-fast) var(--ease-out-quart),
+      border-color var(--duration-fast) var(--ease-out-quart),
+      opacity var(--duration-fast) linear,
+      transform var(--duration-fast) var(--ease-out-quint);
+
+    &:focus-visible {
+      outline: 2px solid var(--color-ring, var(--brand-blue));
+      outline-offset: 2px;
     }
+
+    &:active:not(:disabled, [data-disabled]) {
+      transform: scale(0.97);
+    }
+
+    &:disabled {
+      transform: none;
+    }
+  }
+
+  /* 卡片抬起。三处修正：
+     1) 去掉 scale(1.01) —— 1% 缩放看不出运动，只看得出封面图和文字被重采样发虚；
+     2) 包进 (hover: hover) —— 触屏上 :hover 点完会粘住，卡片长期停在抬起态；
+     3) 过渡里去掉 opacity（没有任何 opacity 变化，白挂一条）。
+     box-shadow 仍在过渡列表里：宿主普遍带 overflow-hidden，改成伪元素阴影 + opacity
+     会被裁掉，需要 VideoCard 侧把 overflow-hidden 下移到封面容器后再换。 */
+  /* 抬起效果：位移走 transform，阴影走 ::after 的 opacity。
+     原来把 box-shadow 放进 transition 列表 —— 大 blur 阴影逐帧重绘，
+     是视频卡网格悬停掉帧的主因。阴影层预先铺好、只切透明度，全程留在合成层。 */
+  .hover-lift {
+    position: relative;
+    transition: transform var(--duration-normal) var(--ease-out-expo);
+
+    &::after {
+      content: '';
+      position: absolute;
+      inset: 0;
+      z-index: -1;
+      border-radius: inherit;
+      box-shadow: var(--shadow-overlay);
+      opacity: 0;
+      transition: opacity var(--duration-normal) var(--ease-out-expo);
+      pointer-events: none;
+    }
+  }
+
+  @media (hover: hover) and (pointer: fine) {
+    .hover-lift:hover {
+      transform: translate3d(0, -4px, 0);
+    }
+
+    .hover-lift:hover::after {
+      opacity: 1;
+    }
+  }
+
+  /* 弹层遮罩底色：替代各处硬编码的 bg-black/80 */
+  .overlay-scrim {
+    background-color: var(--scrim-overlay);
+  }
+
+  /* 数字等宽：播放量 / 弹幕数 / 时长 / 时间戳这类会跳变的数字必须挂上，
+     否则比例数字下宽度跳变会让整行左右抖动。 */
+  .tabular {
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: 'tnum' 1;
   }
 
   .glass-panel {
@@ -381,8 +741,10 @@
     );
   }
 
+  /* 非 <Button> 的可点元素（图标、卡片内的小控件）用这个补按压反馈。
+     语义与 .ui-button 的 :active 一致，时长改用 token（原来是裸 100ms）。 */
   .active-scale {
-    transition: transform 100ms var(--ease-out-quint);
+    transition: transform var(--duration-fast) var(--ease-out-quint);
 
     &:active {
       transform: scale(0.97);
@@ -436,15 +798,66 @@
   }
 }
 
-/* Global accessibility guard: respect the user's reduced-motion preference.
-   Un-layered so it overrides component/utility transitions and animations. */
+/* ------------------------------------------------------------------
+ * 主题切换窗口
+ *
+ * 只有 body 背景在过渡时，卡片 / 文字 / 边框全部硬跳，420ms 内整页处于
+ * 「半亮半暗」的撕裂状态 —— 比干脆瞬切还差。这里改成：切换瞬间由 App.vue
+ * 给 <html> 挂 .theme-switching，~360ms 后摘掉，只在这个窗口内让全站颜色一起走。
+ * 不做常驻 `*` 过渡：那会让每一次 hover / 滚动都拖尾。
+ * 播放器整体排除，避免打断弹幕的 inline transition。
+ * 未包在 @layer 里：普通声明下未分层样式优先于所有 layer。
+ * ------------------------------------------------------------------ */
+html.theme-switching :not(:where(#{$motion-exempt})),
+html.theme-switching :not(:where(#{$motion-exempt}))::before,
+html.theme-switching :not(:where(#{$motion-exempt}))::after {
+  transition-property:
+    color, background-color, border-color, outline-color, box-shadow, fill, stroke !important;
+  transition-duration: var(--duration-normal) !important;
+  transition-timing-function: var(--ease-out-quart) !important;
+}
+
+/* ------------------------------------------------------------------
+ * 可访问性：prefers-reduced-motion
+ *
+ * 原实现是无差别 blanket guard。它有两个真实伤害：
+ * 1) 样式表的 !important 优先级高于内联非 !important，会把
+ *    artplayer-plugin-danmuku 的 inline `transition: transform Xs linear` 覆盖掉 ——
+ *    开了系统「减少动态效果」的用户，全站弹幕会瞬间闪到终点并消失，
+ *    等于用无障碍偏好把这个站的核心内容删了。
+ * 2) animation-iteration-count: 1 把所有 Loader2 的 animate-spin 冻成静止图标，
+ *    减动效用户在上传 / 发送 / 加载时完全没有「正在进行」的反馈。
+ *
+ * 改成分层：装饰性动效照砍，内容性 / 状态性动效豁免或降速。
+ * :not(:where(...)) 让豁免列表的特异度保持为 0，不会意外抬高这条 guard 的权重。
+ * ------------------------------------------------------------------ */
 @media (prefers-reduced-motion: reduce) {
-  *,
-  *::before,
-  *::after {
+  *:not(:where(#{$motion-exempt})),
+  *:not(:where(#{$motion-exempt}))::before,
+  *:not(:where(#{$motion-exempt}))::after {
+    animation-delay: 0ms !important;
     animation-duration: 0.001ms !important;
     animation-iteration-count: 1 !important;
+    transition-delay: 0ms !important;
     transition-duration: 0.001ms !important;
     scroll-behavior: auto !important;
+  }
+
+  /* 状态反馈保留，但放慢到不眩晕的速度：转圈是「正在进行」的唯一提示，不是装饰 */
+  .animate-spin,
+  .motion-spin {
+    animation: motion-spin 1.8s linear infinite !important;
+  }
+
+  /* 位移类 hover 直接取消：全局 guard 只压时长，位移仍会瞬移，对前庭敏感用户不友好 */
+  .hover-lift:hover {
+    transform: none !important;
+  }
+
+  /* 主题切换窗口特异度(0,1,1)高于上面的通配 guard，必须显式压掉 */
+  html.theme-switching :not(:where(#{$motion-exempt})),
+  html.theme-switching :not(:where(#{$motion-exempt}))::before,
+  html.theme-switching :not(:where(#{$motion-exempt}))::after {
+    transition-duration: 0.001ms !important;
   }
 }

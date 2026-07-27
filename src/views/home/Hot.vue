@@ -3,6 +3,7 @@ import { ref, onMounted } from 'vue'
 import { getHotVideos, type FeedItem } from '@/api/video'
 import VideoCard from '@/components/video/VideoCard.vue'
 import VideoCardSkeleton from '@/components/common/VideoCardSkeleton.vue'
+import SkeletonGroup from '@/components/common/SkeletonGroup.vue'
 import InfiniteScroll from '@/components/common/InfiniteScroll.vue'
 import TrendingNav from '@/components/navigation/TrendingNav.vue'
 
@@ -45,29 +46,33 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="mx-auto mt-6 pb-8 max-w-[1400px] px-4 sm:px-6 lg:px-8">
+  <div class="mx-auto mt-6 w-full max-w-reading px-4 pb-8 sm:px-6 lg:px-8">
     <TrendingNav />
 
-    <!-- Page Header (Optional, but image 1 also has some subtle text "各个领域中新奇好玩的优质内容都在这里~") -->
-    <div class="mb-4 flex items-center justify-between">
-      <p class="text-sm text-muted-foreground mt-4">各个领域中新奇好玩的优质内容都在这里~</p>
+    <div class="mb-4 mt-4 flex items-center justify-between">
+      <p class="text-sm leading-cjk text-muted-foreground">各个领域中新奇好玩的优质内容都在这里</p>
     </div>
 
     <!-- Video Grid -->
-    <InfiniteScroll :loading="loading" :finished="finished" @load-more="handleLoadMore">
-      <!-- Skeleton Loading -->
-      <div
-        v-if="initialLoading"
-        class="grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5"
-      >
-        <VideoCardSkeleton v-for="i in 10" :key="i" />
-      </div>
+    <InfiniteScroll
+      :loading="loading"
+      :finished="finished"
+      :initial-loading="initialLoading"
+      @load-more="handleLoadMore"
+    >
+      <template #skeleton>
+        <SkeletonGroup
+          :count="10"
+          class="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5"
+        >
+          <template #default="{ index }">
+            <VideoCardSkeleton :seed="index" />
+          </template>
+        </SkeletonGroup>
+      </template>
 
       <!-- Video Cards -->
-      <div
-        v-else
-        class="grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5"
-      >
+      <div class="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
         <VideoCard v-for="video in videos" :key="video.id" :video="video" />
       </div>
     </InfiniteScroll>

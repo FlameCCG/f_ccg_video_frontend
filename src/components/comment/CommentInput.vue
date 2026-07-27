@@ -241,7 +241,7 @@ onMounted(() => {
         >
           <img :src="pic" class="h-full w-full object-cover" />
           <button
-            class="absolute right-1 top-1 rounded-full bg-black/50 p-0.5 text-white opacity-0 transition-opacity group-hover:opacity-100"
+            class="media-chip focus-ring absolute right-1 top-1 rounded-full p-0.5 opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
             @click="removePicture(idx)"
           >
             <X class="h-3 w-3" />

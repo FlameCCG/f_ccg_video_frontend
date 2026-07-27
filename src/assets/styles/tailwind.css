@@ -5,6 +5,40 @@
 @import 'tailwindcss';
 
 @theme {
+  /* 字体栈：拉丁段在前、CJK 段显式列出。
+   * 站点 lang="zh-CN" 且文案 100% 中文，原栈（Inter/Segoe/Roboto/Helvetica/Arial）
+   * 一个 CJK 字形都没有 —— Windows 会一路兜底到宋体，这是整站「廉价字面」的直接来源。
+   * 不引外部 CDN 字体（网络不确定）：Inter 只在用户本地装了才命中，未命中即跳过，
+   * 真正兜底的是 Segoe UI Variable / system-ui + PingFang SC / HarmonyOS / 雅黑 UI。
+   * font-sans utility 与 body 由此同源（Tailwind preflight 的 --default-font-family 也吃它）。 */
+  --font-sans:
+    'Inter', 'Segoe UI Variable Text', 'Segoe UI', system-ui, -apple-system, 'BlinkMacSystemFont',
+    'Helvetica Neue', 'Arial', 'PingFang SC', 'HarmonyOS Sans SC', 'Microsoft YaHei UI',
+    'Microsoft YaHei', 'Source Han Sans SC', 'Noto Sans CJK SC', 'Noto Sans SC', 'Hiragino Sans GB',
+    sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji';
+
+  /* 排版阶梯补档：全站 205 处任意像素字号里 11px / 13px 是 Tailwind 默认阶梯没有的两档，
+   * 补进 @theme 才能用 text-2xs / text-sm-plus 收编，而不是继续写 text-[13px]。
+   * 行高用 Tailwind v4 的 `text-2xs/4`（11px/16px）、`text-sm-plus/5`（13px/20px）语法配对，
+   * 不写 --text-*--line-height 子 token（stylelint 的 custom-property-pattern 不接受双横线后缀）。 */
+  --text-2xs: 0.6875rem;
+  --text-sm-plus: 0.8125rem;
+
+  /* CJK 排版：中文正文需要比 leading-relaxed 更松的行高；
+   * tracking-cjk 用来在中文标题上抵消继承来的 tracking-tight（中文没有字距收紧一说）。 */
+  --leading-cjk: 1.75;
+  --tracking-cjk: 0;
+
+  /* 模糊两档：glass = 面板/浮层（Navbar、Dialog），scrim = 媒体上的小胶囊。
+   * 全站现有 8 种 backdrop-blur 档位由此收敛；glass 复用 main.scss 已有的 --glass-blur。 */
+  --blur-glass: var(--glass-blur);
+  --blur-scrim: 8px;
+
+  /* 版心三档：Navbar 与内容页必须落在同一档，否则左右边缘差 ~200px。 */
+  --container-page: 1800px;
+  --container-reading: 1400px;
+  --container-focus: 1140px;
+
   --color-brand-blue: var(--brand-blue);
   --color-brand-pink: var(--brand-pink);
   --color-brand-coral: var(--brand-pink);

@@ -97,13 +97,13 @@ const handlePointerUp = () => {
     <Transition name="viewer">
       <div
         v-if="modelValue"
-        class="fixed inset-0 z-[100100] flex items-center justify-center overflow-hidden bg-background/95 backdrop-blur-2xl transition-all"
+        class="fixed inset-0 z-[100100] flex items-center justify-center overflow-hidden bg-background/95 backdrop-blur-2xl"
         @click="close"
         @wheel.prevent="handleWheel"
       >
         <!-- 右上角关闭：主题 token，随 .dark 变量变化 -->
         <button
-          class="absolute top-6 right-6 z-20 flex h-12 w-12 items-center justify-center rounded-full bg-card/95 text-muted-foreground shadow-lg ring-1 ring-border backdrop-blur-md transition-all duration-300 hover:scale-110 hover:bg-muted hover:text-foreground active:scale-95"
+          class="absolute top-6 right-6 z-20 flex h-12 w-12 items-center justify-center rounded-full bg-card/95 text-muted-foreground shadow-lg ring-1 ring-border backdrop-blur-md t-tint ui-button hover:scale-110 hover:bg-muted hover:text-foreground active:scale-95"
           title="关闭 (Esc)"
           @click.stop="close"
         >
@@ -116,14 +116,14 @@ const handlePointerUp = () => {
           @click.stop
         >
           <button
-            class="group relative flex h-10 w-10 items-center justify-center rounded-full text-muted-foreground transition-all duration-200 hover:bg-muted hover:text-foreground active:scale-90"
+            class="group relative flex h-10 w-10 items-center justify-center rounded-full text-muted-foreground t-tint ui-button hover:bg-muted hover:text-foreground active:scale-90"
             title="放大 (滚轮上)"
             @click="handleZoomIn"
           >
             <ZoomIn class="h-5 w-5" />
           </button>
           <button
-            class="group relative flex h-10 w-10 items-center justify-center rounded-full text-muted-foreground transition-all duration-200 hover:bg-muted hover:text-foreground active:scale-90"
+            class="group relative flex h-10 w-10 items-center justify-center rounded-full text-muted-foreground t-tint ui-button hover:bg-muted hover:text-foreground active:scale-90"
             title="缩小 (滚轮下)"
             @click="handleZoomOut"
           >
@@ -133,7 +133,7 @@ const handlePointerUp = () => {
           <div class="mx-1 h-5 w-px bg-border"></div>
 
           <button
-            class="group relative flex h-10 w-10 items-center justify-center rounded-full text-muted-foreground transition-all duration-200 hover:bg-muted hover:text-foreground active:scale-90"
+            class="group relative flex h-10 w-10 items-center justify-center rounded-full text-muted-foreground t-tint ui-button hover:bg-muted hover:text-foreground active:scale-90"
             title="旋转"
             @click="handleRotate"
           >
@@ -141,7 +141,7 @@ const handlePointerUp = () => {
           </button>
 
           <button
-            class="group relative flex h-10 w-10 items-center justify-center rounded-full text-muted-foreground transition-all duration-200 hover:bg-muted hover:text-foreground active:scale-90"
+            class="group relative flex h-10 w-10 items-center justify-center rounded-full text-muted-foreground t-tint ui-button hover:bg-muted hover:text-foreground active:scale-90"
             title="重置"
             @click="resetImage"
           >

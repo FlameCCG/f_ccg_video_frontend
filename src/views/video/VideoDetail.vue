@@ -18,6 +18,8 @@ import VideoRecommend from '@/components/video/VideoRecommend.vue'
 import PartList from '@/components/video/PartList.vue'
 import DanmuList from '@/components/player/DanmuList.vue'
 import CommentSection from '@/components/comment/CommentSection.vue'
+import EmptyState from '@/components/common/EmptyState.vue'
+import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog'
 import { useDanmuWebSocket } from '@/composables/useDanmuWebSocket'
 import { formatCount } from '@/utils/format'
@@ -26,6 +28,7 @@ import {
   Eye,
   MessageSquare,
   Clock,
+  Loader2,
   ThumbsUp,
   TriangleAlert,
   Copyright,
@@ -531,169 +534,302 @@ onBeforeUnmount(() => {
 
 <template>
   <div class="mx-auto mt-4 pb-10 max-w-[1400px] px-4 sm:px-5 lg:px-6">
-    <!-- Loading -->
-    <div v-if="isLoading" class="flex min-h-[500px] items-center justify-center">
+    <Transition name="vd-swap" mode="out-in">
+      <!-- Loading：贴合真实布局的详情页骨架（标题 / 统计 / 播放器 / 操作条 / 简介 / 右栏） -->
       <div
-        class="h-10 w-10 animate-spin rounded-full border-[3px] border-primary/20 border-t-primary"
-      ></div>
-    </div>
-
-    <!-- Error -->
-    <div
-      v-else-if="error"
-      class="rounded-lg border border-destructive/20 bg-destructive/5 p-6 text-center text-destructive"
-    >
-      {{ error }}
-    </div>
-
-    <!-- Video Detail Content (Bilibili Layout) -->
-    <div v-else-if="video">
-      <!-- Title (above player, bilibili style) -->
-      <h1 class="text-xl font-bold leading-snug text-foreground">
-        {{ video.title }}
-      </h1>
-
-      <!-- Stats Row (below title, above player) -->
-      <div
-        class="mt-2 mb-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-[13px] text-muted-foreground/80"
+        v-if="isLoading"
+        key="loading"
+        class="vd-skeleton"
+        aria-busy="true"
+        aria-label="视频加载中"
       >
-        <span class="flex items-center gap-1">
-          <Eye :size="14" />
-          {{ formatCount(video.views) }}
-        </span>
-        <span class="text-muted-foreground/80/40">·</span>
-        <span class="flex items-center gap-1">
-          <MessageSquare :size="14" />
-          {{ formatCount(video.danmuCount) }}弹幕
-        </span>
-        <span class="text-muted-foreground/80/40">·</span>
-        <span class="flex items-center gap-1">
-          <Clock :size="14" />
-          {{ formatDate(video.createdAt) }}
-        </span>
-        <span v-if="video.isOriginal" class="flex items-center gap-1 text-muted-foreground/80/60">
+        <div class="skeleton-shimmer h-7 w-3/5 rounded-md"></div>
+
+        <div class="mt-3 mb-3 flex flex-wrap items-center gap-3">
+          <div
+            v-for="i in 3"
+            :key="i"
+            class="skeleton-shimmer h-4 rounded-full"
+            :class="i === 3 ? 'w-28' : 'w-20'"
+            :style="{ '--skeleton-index': i * 0.2 }"
+          ></div>
+        </div>
+
+        <div class="flex items-start gap-5">
+          <!-- 左栏 -->
+          <div class="min-w-0 flex-1">
+            <!-- 播放器位：aspect-video 与 VideoPlayer 完全一致，ready 后不会二次跳高 -->
+            <div class="skeleton-shimmer aspect-video w-full rounded-lg"></div>
+
+            <!-- 弹幕输入条 -->
+            <div
+              class="skeleton-shimmer mt-3 h-10 w-full rounded-lg"
+              :style="{ '--skeleton-index': 0.6 }"
+            ></div>
+
+            <!-- 操作条 -->
+            <div class="mt-3 flex gap-3 border-b border-border pb-3">
+              <div
+                v-for="i in 5"
+                :key="i"
+                class="skeleton-shimmer h-9 w-16 rounded-full"
+                :style="{ '--skeleton-index': 0.8 + i * 0.1 }"
+              ></div>
+            </div>
+
+            <!-- 简介 + 标签 -->
+            <div class="mt-4 space-y-2.5 border-b border-border pb-4">
+              <div
+                class="skeleton-shimmer h-4 w-full rounded"
+                :style="{ '--skeleton-index': 1.4 }"
+              ></div>
+              <div
+                class="skeleton-shimmer h-4 w-4/5 rounded"
+                :style="{ '--skeleton-index': 1.5 }"
+              ></div>
+              <div class="flex gap-2 pt-2">
+                <div
+                  v-for="i in 3"
+                  :key="i"
+                  class="skeleton-shimmer h-7 rounded-full"
+                  :class="['w-16', 'w-20', 'w-14'][i - 1]"
+                  :style="{ '--skeleton-index': 1.6 + i * 0.1 }"
+                ></div>
+              </div>
+            </div>
+
+            <!-- 评论区 -->
+            <div class="mt-6 space-y-6">
+              <div
+                class="skeleton-shimmer h-5 w-24 rounded"
+                :style="{ '--skeleton-index': 2 }"
+              ></div>
+              <div
+                v-for="i in 2"
+                :key="i"
+                class="flex gap-3"
+                :style="{ '--skeleton-index': 2 + i }"
+              >
+                <div class="skeleton-shimmer h-10 w-10 shrink-0 rounded-full"></div>
+                <div class="min-w-0 flex-1 space-y-2.5 pt-1">
+                  <div class="skeleton-shimmer h-3.5 w-24 rounded"></div>
+                  <div class="skeleton-shimmer h-4 w-full rounded"></div>
+                  <div class="skeleton-shimmer h-4 w-2/3 rounded"></div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 右栏 -->
+          <div class="hidden w-[350px] shrink-0 space-y-4 lg:block">
+            <!-- UP 主卡 -->
+            <div
+              class="flex items-center gap-3 rounded-xl border border-border/50 p-4"
+              :style="{ '--skeleton-index': 0.4 }"
+            >
+              <div class="skeleton-shimmer h-12 w-12 shrink-0 rounded-full"></div>
+              <div class="flex-1 space-y-2">
+                <div class="skeleton-shimmer h-4 w-24 rounded"></div>
+                <div class="skeleton-shimmer h-3 w-32 rounded"></div>
+              </div>
+              <div class="skeleton-shimmer h-8 w-16 shrink-0 rounded-full"></div>
+            </div>
+
+            <!-- 弹幕列表面板 -->
+            <div
+              class="space-y-3 rounded-xl border border-border/50 p-4"
+              :style="{ '--skeleton-index': 0.8 }"
+            >
+              <div class="skeleton-shimmer h-4 w-20 rounded"></div>
+              <div
+                v-for="i in 5"
+                :key="i"
+                class="skeleton-shimmer h-3 rounded"
+                :class="['w-full', 'w-4/5', 'w-2/3', 'w-3/4', 'w-1/2'][i - 1]"
+              ></div>
+            </div>
+
+            <!-- 推荐列 -->
+            <div class="space-y-4 pt-1" :style="{ '--skeleton-index': 1.4 }">
+              <div class="skeleton-shimmer h-4 w-24 rounded"></div>
+              <div v-for="i in 3" :key="i" class="flex gap-3">
+                <div class="skeleton-shimmer h-[72px] w-[128px] shrink-0 rounded-lg"></div>
+                <div class="flex-1 space-y-2.5 py-1">
+                  <div class="skeleton-shimmer h-3.5 w-full rounded"></div>
+                  <div class="skeleton-shimmer h-3 w-3/4 rounded"></div>
+                  <div class="skeleton-shimmer h-2.5 w-1/2 rounded"></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Error -->
+      <div v-else-if="error" key="error" class="min-h-[400px]">
+        <EmptyState size="lg" icon="alert" title="这个视频没能打开" :description="error">
+          <Button variant="outline" size="sm" @click="startVideoLoad(videoId)">重新加载</Button>
+          <Button variant="ghost" size="sm" as-child>
+            <router-link to="/hot">看看热门视频</router-link>
+          </Button>
+        </EmptyState>
+      </div>
+
+      <!-- Video Detail Content (Bilibili Layout) -->
+      <div v-else-if="video" key="content">
+        <!-- Title (above player, bilibili style) -->
+        <h1 class="text-xl font-bold leading-snug tracking-cjk text-foreground">
+          {{ video.title }}
+        </h1>
+
+        <!-- Stats Row (below title, above player) -->
+        <div
+          class="mt-2 mb-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm-plus text-muted-foreground/80"
+        >
+          <span class="flex items-center gap-1">
+            <Eye :size="14" />
+            <span class="tabular">{{ formatCount(video.views) }}</span>
+          </span>
           <span class="text-muted-foreground/80/40">·</span>
-          <Copyright :size="12" />
-          未经作者授权，禁止转载
-        </span>
-      </div>
-
-      <div
-        v-if="isPreviewMode"
-        class="status-surface-warning mb-4 flex items-start gap-3 rounded-2xl border px-4 py-3 text-sm"
-      >
-        <TriangleAlert :size="18" class="mt-0.5 shrink-0" />
-        <p class="leading-6">
-          {{ previewNotice }}
-        </p>
-      </div>
-
-      <!-- Two Column Layout -->
-      <div class="flex items-start gap-5">
-        <!-- Left Column: Player + DanmuInput + Actions + Description -->
-        <div class="min-w-0 flex-1">
-          <!-- Video Player -->
-          <VideoPlayer
-            :key="playerInstanceKey"
-            ref="playerRef"
-            :part-id="currentPartId"
-            :enable-danmu="!isPreviewMode"
-            class="overflow-hidden rounded-lg bg-black"
-            @danmu-hover="handleDanmuHover"
-            @danmu-leave="handleDanmuLeave"
-            @danmu-hold-end="handleDanmuHoldEnd"
-          />
-
-          <!-- Danmu Input Bar (directly below player, bilibili style) -->
-          <DanmuInput
-            v-if="!isPreviewMode"
-            :key="playerInstanceKey"
-            :video-id="video.id"
-            :part-id="currentPartId"
-            :current-time="currentPlayerTime"
-            :get-current-time="getPlayerCurrentTime"
-            @sent="handleDanmuSent"
-          />
-
-          <!-- Interaction Buttons (like bilibili: 点赞 投 收藏 分享) -->
-          <div v-if="!isPreviewMode" class="mt-3 border-b border-border pb-3">
-            <VideoActions />
-          </div>
-
-          <!-- Description & Tags -->
-          <div class="mt-4 border-b border-border pb-4">
-            <!-- Description -->
-            <div v-if="video.description">
-              <p
-                class="whitespace-pre-wrap text-[15px] leading-relaxed text-foreground"
-                :class="{ 'line-clamp-3': !descExpanded }"
-              >
-                {{ video.description }}
-              </p>
-              <button
-                v-if="video.description.length > 120"
-                class="mt-1 flex items-center gap-0.5 text-sm text-muted-foreground hover:text-primary transition-colors cursor-pointer active-scale"
-                @click="descExpanded = !descExpanded"
-              >
-                {{ descExpanded ? '收起' : '展开更多' }}
-              </button>
-            </div>
-
-            <div v-if="video.tags?.length" class="mt-4 flex flex-wrap items-center gap-2">
-              <span
-                v-for="tag in video.tags"
-                :key="tag.id"
-                class="cursor-pointer active-scale rounded-full bg-secondary px-3 py-1.5 text-[13px] text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
-              >
-                {{ tag.name }}
-              </span>
-            </div>
-          </div>
-
-          <!-- Comment Section -->
-          <CommentSection
-            v-if="video.id && !isPreviewMode"
-            :video-id="video.id"
-            :author-id="video.author?.id"
-          />
+          <span class="flex items-center gap-1">
+            <MessageSquare :size="14" />
+            <span class="tabular">{{ formatCount(video.danmuCount) }}</span> 弹幕
+          </span>
+          <span class="text-muted-foreground/80/40">·</span>
+          <span class="flex items-center gap-1">
+            <Clock :size="14" />
+            <span class="tabular">{{ formatDate(video.createdAt) }}</span>
+          </span>
+          <span v-if="video.isOriginal" class="flex items-center gap-1 text-muted-foreground/80/60">
+            <span class="text-muted-foreground/80/40">·</span>
+            <Copyright :size="12" />
+            未经作者授权，禁止转载
+          </span>
         </div>
 
-        <!-- Right Column: Author + DanmuList + PartList + Recommend -->
-        <div class="hidden w-[350px] shrink-0 space-y-4 lg:block">
-          <!-- Author Card (top of right column, bilibili style) -->
-          <AuthorCard v-if="video.author" :author="video.author" />
+        <div
+          v-if="isPreviewMode"
+          class="status-surface-warning mb-4 flex items-start gap-3 rounded-2xl border px-4 py-3 text-sm"
+        >
+          <TriangleAlert :size="18" class="mt-0.5 shrink-0" />
+          <p class="leading-6">
+            {{ previewNotice }}
+          </p>
+        </div>
 
-          <!-- Danmu List Panel (bilibili style) -->
-          <DanmuList
-            v-if="!isPreviewMode"
-            :key="playerInstanceKey"
-            ref="danmuListRef"
-            :video-id="video.id"
-            :part-id="currentPartId"
-            @seek="handleSeek"
-          />
+        <!-- Two Column Layout -->
+        <div class="flex items-start gap-5">
+          <!-- Left Column: Player + DanmuInput + Actions + Description -->
+          <div class="min-w-0 flex-1">
+            <!-- Video Player -->
+            <VideoPlayer
+              :key="playerInstanceKey"
+              ref="playerRef"
+              :part-id="currentPartId"
+              :enable-danmu="!isPreviewMode"
+              class="overflow-hidden rounded-lg bg-black"
+              @danmu-hover="handleDanmuHover"
+              @danmu-leave="handleDanmuLeave"
+              @danmu-hold-end="handleDanmuHoldEnd"
+            />
 
-          <!-- Part List -->
-          <PartList
-            v-if="video.parts && video.parts.length > 1"
-            :parts="video.parts"
-            :current-part-id="currentPartId"
-            @select="handlePartSelect"
-          />
+            <!-- Danmu Input Bar (directly below player, bilibili style) -->
+            <DanmuInput
+              v-if="!isPreviewMode"
+              :key="playerInstanceKey"
+              :video-id="video.id"
+              :part-id="currentPartId"
+              :current-time="currentPlayerTime"
+              :get-current-time="getPlayerCurrentTime"
+              @sent="handleDanmuSent"
+            />
 
-          <!-- Recommendations -->
-          <VideoRecommend v-if="!isPreviewMode" :video-id="video.id" />
+            <!-- Interaction Buttons (like bilibili: 点赞 投 收藏 分享) -->
+            <div v-if="!isPreviewMode" class="mt-3 border-b border-border pb-3">
+              <VideoActions />
+            </div>
+
+            <!-- Description & Tags -->
+            <div class="mt-4 border-b border-border pb-4">
+              <!-- Description -->
+              <div v-if="video.description">
+                <p
+                  class="whitespace-pre-wrap text-[15px] leading-relaxed text-foreground"
+                  :class="{ 'line-clamp-3': !descExpanded }"
+                >
+                  {{ video.description }}
+                </p>
+                <button
+                  v-if="video.description.length > 120"
+                  class="mt-1 flex items-center gap-0.5 text-sm text-muted-foreground hover:text-primary t-tint cursor-pointer active-scale"
+                  @click="descExpanded = !descExpanded"
+                >
+                  {{ descExpanded ? '收起' : '展开更多' }}
+                </button>
+              </div>
+
+              <div v-if="video.tags?.length" class="mt-4 flex flex-wrap items-center gap-2">
+                <span
+                  v-for="tag in video.tags"
+                  :key="tag.id"
+                  class="cursor-pointer active-scale rounded-full bg-secondary px-3 py-1.5 text-[13px] text-muted-foreground t-tint hover:bg-accent hover:text-accent-foreground"
+                >
+                  {{ tag.name }}
+                </span>
+              </div>
+            </div>
+
+            <!-- Comment Section -->
+            <CommentSection
+              v-if="video.id && !isPreviewMode"
+              :video-id="video.id"
+              :author-id="video.author?.id"
+            />
+          </div>
+
+          <!-- Right Column: Author + DanmuList + PartList + Recommend -->
+          <div class="hidden w-[350px] shrink-0 space-y-4 lg:block">
+            <!-- Author Card (top of right column, bilibili style) -->
+            <AuthorCard v-if="video.author" :author="video.author" />
+
+            <!-- Danmu List Panel (bilibili style) -->
+            <DanmuList
+              v-if="!isPreviewMode"
+              :key="playerInstanceKey"
+              ref="danmuListRef"
+              :video-id="video.id"
+              :part-id="currentPartId"
+              @seek="handleSeek"
+            />
+
+            <!-- Part List -->
+            <PartList
+              v-if="video.parts && video.parts.length > 1"
+              :parts="video.parts"
+              :current-part-id="currentPartId"
+              @select="handlePartSelect"
+            />
+
+            <!-- Recommendations -->
+            <VideoRecommend v-if="!isPreviewMode" :video-id="video.id" />
+          </div>
         </div>
       </div>
-    </div>
 
-    <!-- Not Found -->
-    <div v-else class="flex min-h-[400px] items-center justify-center">
-      <div class="text-center">
-        <div class="text-5xl">🎬</div>
-        <p class="mt-3 text-muted-foreground/80">视频不存在或已删除</p>
+      <!-- Not Found -->
+      <div v-else key="not-found" class="min-h-[400px]">
+        <EmptyState
+          size="lg"
+          icon="video"
+          title="视频不存在或已被删除"
+          description="链接可能已经失效，或者作者把稿件设为了私密"
+        >
+          <Button variant="outline" size="sm" as-child>
+            <router-link to="/hot">看看热门视频</router-link>
+          </Button>
+        </EmptyState>
       </div>
-    </div>
+    </Transition>
 
     <!-- Danmu Hover Tooltip (bilibili style: floating icon bar above danmu) -->
     <Teleport to="body">
@@ -750,7 +886,7 @@ onBeforeUnmount(() => {
                   v-for="reason in REPORT_REASONS"
                   :key="reason"
                   type="button"
-                  class="rounded-full border px-3 py-1 text-xs transition-colors"
+                  class="ui-button rounded-full border px-3 py-1 text-xs"
                   :class="
                     reportReason === reason
                       ? 'border-primary bg-primary/10 text-primary'
@@ -769,8 +905,8 @@ onBeforeUnmount(() => {
                 v-model="reportDetail"
                 rows="4"
                 maxlength="200"
-                class="w-full resize-none rounded-xl border border-border bg-muted px-3 py-2 text-sm text-foreground outline-none transition-colors focus:border-primary focus:bg-card"
-                placeholder="选填，补充举报说明"
+                class="t-tint w-full resize-none rounded-xl border border-border bg-muted px-3 py-2 text-sm text-foreground focus:border-primary focus:bg-card"
+                placeholder="选填，例如：连续刷屏同一句话"
               />
             </div>
           </div>
@@ -778,17 +914,18 @@ onBeforeUnmount(() => {
           <div class="flex items-center justify-end gap-3 border-t border-border/50 px-5 py-4">
             <button
               type="button"
-              class="rounded-full border border-border px-4 py-2 text-sm text-muted-foreground transition-colors hover:border-muted-foreground hover:text-foreground"
+              class="ui-button rounded-full border border-border px-4 py-2 text-sm text-muted-foreground hover:border-muted-foreground hover:text-foreground"
               @click="reportDialogOpen = false"
             >
               取消
             </button>
             <button
               type="submit"
-              class="rounded-full bg-accent px-4 py-2 text-sm font-medium text-accent-foreground transition-colors hover:bg-accent/80 disabled:cursor-not-allowed disabled:opacity-60"
+              class="ui-button rounded-full bg-accent px-4 py-2 text-sm font-medium text-accent-foreground hover:bg-accent/80 disabled:cursor-not-allowed disabled:opacity-60"
               :disabled="submittingReport"
             >
-              {{ submittingReport ? '提交中...' : '提交举报' }}
+              <Loader2 v-if="submittingReport" class="mr-2 inline h-4 w-4 animate-spin" />
+              {{ submittingReport ? '提交中…' : '提交举报' }}
             </button>
           </div>
         </form>
@@ -798,6 +935,21 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped lang="scss">
+/* loading → content 交叉淡出：骨架先淡出，内容再淡入，只动 opacity。
+   骨架与真实布局同宽同比例（播放器都是 aspect-video），切换时不产生二次跳高。 */
+.vd-swap-leave-active {
+  transition: opacity var(--duration-fast) linear;
+}
+
+.vd-swap-enter-active {
+  transition: opacity var(--duration-normal) var(--ease-out-quart);
+}
+
+.vd-swap-enter-from,
+.vd-swap-leave-to {
+  opacity: 0;
+}
+
 /* Danmu hover card */
 .danmu-hover-card {
   position: fixed;
@@ -861,7 +1013,10 @@ onBeforeUnmount(() => {
   background: transparent;
   border: none;
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition:
+    color var(--duration-fast) linear,
+    background-color var(--duration-fast) var(--ease-out-quart),
+    transform var(--duration-fast) var(--ease-out-quart);
   font-size: 14px;
   font-weight: 500;
 
@@ -892,7 +1047,7 @@ onBeforeUnmount(() => {
 
 .danmu-tooltip-enter-active,
 .danmu-tooltip-leave-active {
-  transition: opacity 0.15s ease;
+  transition: opacity var(--duration-fast) var(--ease-out-quart);
 }
 
 .danmu-tooltip-enter-from,

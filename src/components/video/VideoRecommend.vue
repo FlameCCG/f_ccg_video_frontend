@@ -3,6 +3,9 @@ import { ref, onMounted, watch } from 'vue'
 import { getVideoRecommend, type FeedItem } from '@/api/video'
 import { useRouter } from 'vue-router'
 import { formatCount, formatDuration } from '@/utils/format'
+import AppImage from '@/components/common/AppImage.vue'
+import EmptyState from '@/components/common/EmptyState.vue'
+import SkeletonGroup from '@/components/common/SkeletonGroup.vue'
 
 const props = defineProps<{
   videoId: number
@@ -36,72 +39,75 @@ watch(() => props.videoId, fetchRecommend)
 
 <template>
   <div class="recommend-container">
-    <h3 class="mb-4 text-[15px] font-bold text-foreground tracking-tight">接下来播放</h3>
+    <h3 class="mb-4 text-[15px] font-bold text-foreground tracking-cjk">接下来播放</h3>
 
-    <!-- Loading Skeleton -->
-    <div v-if="loading" class="space-y-4">
-      <div v-for="i in 6" :key="i" class="flex gap-3">
-        <div class="skeleton-box h-[72px] w-[128px] shrink-0 rounded-lg"></div>
-        <div class="flex-1 space-y-2.5 py-1">
-          <div class="skeleton-box h-3.5 w-full rounded"></div>
-          <div class="skeleton-box h-3 w-3/4 rounded"></div>
-          <div class="skeleton-box h-2.5 w-1/2 rounded"></div>
-        </div>
-      </div>
-    </div>
-
-    <!-- Recommend List -->
-    <div v-else class="space-y-3">
-      <div
-        v-for="(item, index) in list"
-        :key="item.id"
-        class="video-card group flex cursor-pointer gap-3 rounded-xl p-2 transition-all duration-300"
-        :style="{ '--i': index }"
-        @click="goToVideo(item.id)"
-      >
-        <!-- Thumbnail -->
-        <div class="cover-wrapper h-[72px] w-[128px] shrink-0 rounded-lg">
-          <img :src="item.cover" :alt="item.title" class="cover-img" loading="lazy" />
-          <div class="vignette"></div>
-          <span class="duration-badge">
-            {{ formatDuration(item.duration) }}
-          </span>
-          <div class="watch-progress"></div>
-        </div>
-        <!-- Info -->
-        <div class="min-w-0 flex-1 py-0.5 flex flex-col justify-between">
-          <div>
-            <h4
-              class="line-clamp-2 text-[14px] font-semibold leading-snug text-foreground/90 transition-colors group-hover:text-primary"
-            >
-              {{ item.title }}
-            </h4>
-            <p
-              class="mt-1.5 truncate text-[12px] font-medium text-muted-foreground/80 transition-colors group-hover:text-muted-foreground"
-            >
-              {{ item.author.username }}
-            </p>
-          </div>
-          <div
-            class="mt-1 flex items-center gap-2.5 text-[11px] font-medium text-muted-foreground/60"
-          >
-            <span class="transition-colors group-hover:text-muted-foreground/80"
-              >{{ formatCount(item.views) }}播放</span
-            >
-            <span class="transition-colors group-hover:text-muted-foreground/80"
-              >{{ formatCount(item.danmuCount) }}弹幕</span
-            >
+    <Transition name="rec-swap" mode="out-in">
+      <!-- Loading Skeleton：结构与真实条目一致（128×72 封面 + 三行文字） -->
+      <SkeletonGroup v-if="loading" :count="6" class="space-y-4">
+        <div class="rec-sk-row flex gap-3">
+          <div class="skeleton-shimmer h-[72px] w-[128px] shrink-0 rounded-lg"></div>
+          <div class="flex-1 space-y-2.5 py-1">
+            <div class="rec-sk-a skeleton-shimmer h-3.5 w-full rounded"></div>
+            <div class="rec-sk-b skeleton-shimmer h-3 w-3/4 rounded"></div>
+            <div class="rec-sk-c skeleton-shimmer h-2.5 w-1/2 rounded"></div>
           </div>
         </div>
+      </SkeletonGroup>
+
+      <!-- Recommend List -->
+      <div v-else-if="list.length > 0" class="space-y-3">
+        <div
+          v-for="(item, index) in list"
+          :key="item.id"
+          class="video-card group flex cursor-pointer gap-3 rounded-xl p-2"
+          :style="{ '--i': index }"
+          @click="goToVideo(item.id)"
+        >
+          <!-- Thumbnail -->
+          <div class="cover-wrapper h-[72px] w-[128px] shrink-0 overflow-hidden rounded-lg">
+            <AppImage :src="item.cover" :alt="item.title" aspect="auto" img-class="rec-cover-img" />
+            <div class="vignette"></div>
+            <span class="duration-badge media-chip tabular">
+              {{ formatDuration(item.duration) }}
+            </span>
+            <div class="watch-progress"></div>
+          </div>
+          <!-- Info -->
+          <div class="min-w-0 flex-1 py-0.5 flex flex-col justify-between">
+            <div>
+              <h4
+                class="line-clamp-2 text-[14px] font-semibold leading-snug text-foreground/90 t-tint group-hover:text-primary"
+              >
+                {{ item.title }}
+              </h4>
+              <p
+                class="mt-1.5 truncate text-[12px] font-medium text-muted-foreground/80 t-tint group-hover:text-muted-foreground"
+              >
+                {{ item.author.username }}
+              </p>
+            </div>
+            <div
+              class="mt-1 flex items-center gap-2.5 text-2xs font-medium text-muted-foreground/60"
+            >
+              <span class="t-tint group-hover:text-muted-foreground/80">
+                <span class="tabular">{{ formatCount(item.views) }}</span> 播放
+              </span>
+              <span class="t-tint group-hover:text-muted-foreground/80">
+                <span class="tabular">{{ formatCount(item.danmuCount) }}</span> 弹幕
+              </span>
+            </div>
+          </div>
+        </div>
       </div>
 
-      <div
-        v-if="!loading && list.length === 0"
-        class="py-12 text-center text-[14px] font-medium text-muted-foreground/60"
-      >
-        暂无推荐视频
-      </div>
-    </div>
+      <EmptyState
+        v-else
+        size="sm"
+        icon="playlist"
+        title="还没有找到相关视频"
+        description="这个视频比较小众，换个分区逛逛也许有惊喜"
+      />
+    </Transition>
   </div>
 </template>
 
@@ -110,35 +116,58 @@ watch(() => props.videoId, fetchRecommend)
   padding-bottom: 12px;
 }
 
-.skeleton-box {
-  --shimmer-color-base: oklch(var(--muted));
-  --shimmer-color-peak: oklch(var(--muted) / 0.5);
+/* 骨架内部二级错峰：--skeleton-phase 必须定义在「父级」上再供子级 calc，
+   同一元素上既读又写 --skeleton-index 会构成 CSS 循环，整条声明静默失效。 */
+.rec-sk-row {
+  --skeleton-phase: var(--skeleton-index, 0);
+}
 
-  background: linear-gradient(
-    110deg,
-    var(--shimmer-color-base) 30%,
-    var(--shimmer-color-peak) 50%,
-    var(--shimmer-color-base) 70%
-  );
-  background-size: 250% 100%;
-  animation: shimmer-card 1.8s cubic-bezier(0.37, 0, 0.63, 1) infinite;
+.rec-sk-a {
+  --skeleton-index: calc(var(--skeleton-phase) + 0.3);
+}
+
+.rec-sk-b {
+  --skeleton-index: calc(var(--skeleton-phase) + 0.45);
+}
+
+.rec-sk-c {
+  --skeleton-index: calc(var(--skeleton-phase) + 0.6);
+}
+
+/* 骨架 ↔ 列表交叉淡出，避免整栏「啪」的一下换掉 */
+.rec-swap-leave-active {
+  transition: opacity var(--duration-fast) linear;
+}
+
+.rec-swap-enter-active {
+  transition: opacity var(--duration-normal) var(--ease-out-quart);
+}
+
+.rec-swap-enter-from,
+.rec-swap-leave-to {
+  opacity: 0;
 }
 
 .video-card {
   background: transparent;
   border: 1px solid transparent;
-  animation: stagger-in 0.5s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  transition:
+    background-color var(--duration-fast) var(--ease-out-quart),
+    border-color var(--duration-fast) var(--ease-out-quart),
+    transform var(--duration-normal) var(--ease-out-expo);
+
+  /* 入场只动 opacity + translate（独立属性），把 transform 完整让给 hover / active。
+     原实现用 `animation: stagger-in … forwards` animate transform，
+     动画的 fill 值在层叠里压过普通声明，:hover / :active 的位移永远不生效。 */
+  animation: rec-card-in var(--duration-slow) var(--ease-out-expo) both;
   animation-delay: calc(var(--i, 0) * 40ms);
-  opacity: 0;
-  transform: translateY(8px);
 
   &:hover {
-    background: oklch(var(--muted) / 0.4);
-    border-color: oklch(var(--border) / 0.5);
-    transform: translateX(4px);
-    box-shadow: -4px 4px 12px rgb(0 0 0 / 0.02);
+    background: color-mix(in oklch, var(--color-muted) 40%, transparent);
+    border-color: color-mix(in oklch, var(--color-border) 50%, transparent);
+    transform: translate3d(4px, 0, 0);
 
-    .cover-img {
+    :deep(.rec-cover-img) {
       transform: scale(1.08);
     }
 
@@ -147,7 +176,7 @@ watch(() => props.videoId, fetchRecommend)
     }
 
     .duration-badge {
-      transform: translateY(-2px);
+      transform: translate3d(0, -2px, 0);
     }
 
     .watch-progress {
@@ -156,83 +185,70 @@ watch(() => props.videoId, fetchRecommend)
   }
 
   &:active {
-    transform: translateX(2px) scale(0.99);
-    transition-duration: 0.1s;
+    transform: translate3d(2px, 0, 0) scale(0.99);
   }
-}
-
-:global(.dark) .video-card:hover {
-  box-shadow: -4px 4px 12px rgb(0 0 0 / 0.1);
 }
 
 .cover-wrapper {
   position: relative;
-  overflow: hidden;
-  box-shadow: 0 2px 8px rgb(0 0 0 / 0.08);
+  box-shadow: var(--shadow-surface);
   transform: translateZ(0);
 }
 
-.cover-img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  transition: transform 0.5s cubic-bezier(0.16, 1, 0.3, 1);
-  will-change: transform;
+:deep(.rec-cover-img) {
+  transition: transform var(--duration-slow) var(--ease-out-expo);
 }
 
 .vignette {
   position: absolute;
   inset: 0;
-  background: radial-gradient(ellipse at center, transparent 40%, rgb(0 0 0 / 0.15) 100%);
+  z-index: 2;
+  background: radial-gradient(
+    ellipse at center,
+    transparent 40%,
+    color-mix(in oklch, var(--media-overlay) 60%, transparent) 100%
+  );
   pointer-events: none;
   opacity: 0;
-  transition: opacity 0.3s ease;
+  transition: opacity var(--duration-normal) var(--ease-out-quart);
 }
 
 .duration-badge {
   position: absolute;
   bottom: 4px;
   right: 4px;
+  z-index: 3;
   padding: 2px 6px;
   font-size: 10px;
   font-weight: 700;
-  font-variant-numeric: tabular-nums;
-  color: white;
-  background: rgb(0 0 0 / 0.65);
-  backdrop-filter: blur(4px);
   border-radius: 4px;
   letter-spacing: 0.02em;
-  transform: translateY(0);
-  transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  transition: transform var(--duration-normal) var(--ease-out-expo);
 }
 
 .watch-progress {
   position: absolute;
   bottom: 0;
   left: 0;
+  z-index: 3;
   height: 3px;
   width: 100%;
   background: linear-gradient(90deg, var(--color-primary), var(--color-accent));
   transform-origin: left;
   transform: scaleX(0);
-  transition: transform 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+  transition: transform var(--duration-slow) var(--ease-out-expo);
   border-radius: 0 2px 0 0;
 }
 
-@keyframes shimmer-card {
-  0% {
-    background-position: 250% 0;
+@keyframes rec-card-in {
+  from {
+    opacity: 0;
+    translate: 0 8px;
   }
 
-  100% {
-    background-position: -250% 0;
-  }
-}
-
-@keyframes stagger-in {
   to {
     opacity: 1;
-    transform: translateY(0);
+    translate: none;
   }
 }
 </style>

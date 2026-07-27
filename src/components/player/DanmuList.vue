@@ -568,7 +568,11 @@ watch(
   border: none;
   background: transparent;
   cursor: pointer;
-  transition: all 0.12s ease;
+  transition:
+    color var(--duration-fast) var(--ease-out-quart),
+    background-color var(--duration-fast) var(--ease-out-quart),
+    border-color var(--duration-fast) var(--ease-out-quart),
+    transform var(--duration-fast) var(--ease-out-quint);
 
   &:hover:not(:disabled) {
     background-color: var(--color-secondary);

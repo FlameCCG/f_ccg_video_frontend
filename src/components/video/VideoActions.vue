@@ -72,7 +72,7 @@ const handleLike = async () => {
   }
   setTimeout(() => {
     likeAnimating.value = false
-  }, 600)
+  }, 260)
 }
 
 const confirmCoins = async () => {
@@ -294,13 +294,6 @@ onUnmounted(() => {
         <stop offset="0%" stop-color="oklch(var(--primary))" />
         <stop offset="100%" stop-color="oklch(var(--foreground))" />
       </linearGradient>
-      <filter id="glow-filter" x="-30%" y="-30%" width="160%" height="160%">
-        <feGaussianBlur stdDeviation="1.8" result="blur" />
-        <feMerge>
-          <feMergeNode in="blur" />
-          <feMergeNode in="SourceGraphic" />
-        </feMerge>
-      </filter>
     </defs>
   </svg>
 
@@ -346,8 +339,6 @@ onUnmounted(() => {
               :stroke-dasharray="circumference"
               :stroke-dashoffset="dashOffset"
               stroke-linecap="round"
-              filter="url(#glow-filter)"
-              class="transition-all duration-75 ease-out"
             />
           </svg>
 
@@ -355,7 +346,6 @@ onUnmounted(() => {
             class="action-icon relative z-0"
             :class="{
               'fill-current': isLiked || tripleAnimating,
-              'scale-110': isCharging && !isLiked,
               'charging-shake': isCharging && !isLiked,
             }"
             :size="20"
@@ -385,7 +375,9 @@ onUnmounted(() => {
             />
           </div>
         </div>
-        <span class="action-text">{{ formatCount(likes, { hideZero: true }) || '点赞' }}</span>
+        <span class="action-text tabular">{{
+          formatCount(likes, { hideZero: true }) || '点赞'
+        }}</span>
       </button>
     </div>
 
@@ -424,8 +416,6 @@ onUnmounted(() => {
               :stroke-dasharray="circumference"
               :stroke-dashoffset="dashOffset"
               stroke-linecap="round"
-              filter="url(#glow-filter)"
-              class="transition-all duration-75 ease-out"
             />
           </svg>
 
@@ -433,7 +423,6 @@ onUnmounted(() => {
             class="action-icon relative z-0"
             :class="{
               'fill-current': isCoined,
-              'scale-110': isCharging && !isCoined,
               'charging-shake': isCharging && !isCoined,
             }"
             :size="20"
@@ -463,7 +452,9 @@ onUnmounted(() => {
             />
           </div>
         </div>
-        <span class="action-text">{{ formatCount(coinCount, { hideZero: true }) || '投币' }}</span>
+        <span class="action-text tabular">{{
+          formatCount(coinCount, { hideZero: true }) || '投币'
+        }}</span>
       </button>
     </div>
 
@@ -502,8 +493,6 @@ onUnmounted(() => {
               :stroke-dasharray="circumference"
               :stroke-dashoffset="dashOffset"
               stroke-linecap="round"
-              filter="url(#glow-filter)"
-              class="transition-all duration-75 ease-out"
             />
           </svg>
 
@@ -511,7 +500,6 @@ onUnmounted(() => {
             class="action-icon relative z-0"
             :class="{
               'fill-current': isFavorited,
-              'scale-110': isCharging && !isFavorited,
               'charging-shake': isCharging && !isFavorited,
             }"
             :size="20"
@@ -541,11 +529,11 @@ onUnmounted(() => {
             />
           </div>
         </div>
-        <span class="action-text">{{
+        <span class="action-text tabular">{{
           formatCount(favoriteCount, { hideZero: true }) || '收藏'
         }}</span>
         <ChevronDown
-          class="ml-0.5 h-3 w-3 text-muted-foreground transition-transform relative z-0"
+          class="relative z-0 ml-0.5 h-3 w-3 text-muted-foreground transition-transform duration-[var(--duration-fast)] ease-[var(--ease-out-quart)]"
           :class="{ 'rotate-180': showFolderPicker }"
         />
       </button>
@@ -571,10 +559,9 @@ onUnmounted(() => {
       <DialogHeader class="coin-dialog-header">
         <DialogTitle class="coin-dialog-title">
           给UP主投上
-          <span
-            class="coin-count-highlight text-primary font-bold text-2xl mx-1 transition-all duration-300"
-            >{{ selectedCoins }}</span
-          >
+          <span class="coin-count-highlight tabular mx-1 text-2xl font-bold text-primary">{{
+            selectedCoins
+          }}</span>
           枚硬币
         </DialogTitle>
       </DialogHeader>
@@ -634,12 +621,12 @@ onUnmounted(() => {
   gap: 6px;
   padding: 8px 16px;
   border-radius: 9999px;
+  /* 显式属性表 + token。box-shadow 不再进过渡列表 —— 换成 ::before 的 opacity。 */
   transition:
-    color 0.25s cubic-bezier(0.16, 1, 0.3, 1),
-    background-color 0.25s cubic-bezier(0.16, 1, 0.3, 1),
-    border-color 0.25s cubic-bezier(0.16, 1, 0.3, 1),
-    transform 0.3s cubic-bezier(0.25, 1, 0.5, 1),
-    box-shadow 0.3s cubic-bezier(0.25, 1, 0.5, 1);
+    color var(--duration-normal) var(--ease-out-expo),
+    background-color var(--duration-normal) var(--ease-out-expo),
+    border-color var(--duration-normal) var(--ease-out-expo),
+    transform var(--duration-normal) var(--ease-out-quart);
   color: oklch(var(--muted-foreground) / 0.9);
   cursor: pointer;
   border: 1px solid transparent;
@@ -649,13 +636,26 @@ onUnmounted(() => {
   overflow: visible;
   user-select: none;
 
+  /* 阴影层：一次绘制，之后只做合成层 opacity 插值 */
+  &::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    box-shadow: var(--shadow-raised);
+    opacity: 0;
+    pointer-events: none;
+    z-index: 0;
+    transition: opacity var(--duration-normal) var(--ease-out-quart);
+  }
+
   &::after {
     content: '';
     position: absolute;
     inset: 0;
     background: currentcolor;
     opacity: 0;
-    transition: opacity 0.25s ease;
+    transition: opacity var(--duration-normal) var(--ease-out-quart);
     pointer-events: none;
     z-index: 0;
     border-radius: inherit;
@@ -666,62 +666,69 @@ onUnmounted(() => {
     z-index: 1;
   }
 
-  &:hover {
-    color: oklch(var(--foreground));
-    transform: translateY(-3px) scale(1.02);
-    box-shadow: 0 6px 20px rgb(0 0 0 / 0.06);
-    border-color: oklch(var(--border) / 0.6);
-
-    &::after {
-      opacity: 0.04;
-    }
-
-    .action-icon {
-      transform: scale(1.15) rotate(-4deg);
-    }
-  }
-
   &:active {
     transform: translateY(-1px) scale(0.97);
-    transition-duration: 0.08s;
+    transition-duration: 80ms;
   }
 
   &.is-active {
     color: var(--color-primary);
     background: oklch(var(--primary) / 0.08);
     border-color: oklch(var(--primary) / 0.2);
-
-    &:hover {
-      color: var(--color-primary);
-      background: oklch(var(--primary) / 0.12);
-      border-color: oklch(var(--primary) / 0.35);
-      transform: translateY(-3px) scale(1.02);
-      box-shadow: 0 6px 20px oklch(var(--primary) / 0.18);
-    }
   }
 
+  /* 点赞确认：单向压缩 → 释放。
+     原来是 0.6s cubic-bezier(0.34,1.56,0.64,1) 的橡皮筋 + scale(1.5) rotate(-10deg)，
+     既违反 AGENTS.MD 的禁弹跳约束，也会在「一秒点两次」时互相打断。
+     记忆点交给已有的 shockwave 环扩散，图标本身只做一次干净的确认。 */
   &.is-animating .action-icon {
-    animation: like-bounce 0.6s cubic-bezier(0.34, 1.56, 0.64, 1);
+    animation: like-press var(--duration-normal) var(--ease-out-expo);
   }
 }
 
-:global(.dark) .action-btn:hover {
-  box-shadow: 0 6px 20px rgb(0 0 0 / 0.35);
+@media (hover: hover) and (pointer: fine) {
+  .action-btn:hover {
+    color: oklch(var(--foreground));
+    transform: translateY(-3px);
+    border-color: oklch(var(--border) / 0.6);
+  }
+
+  .action-btn:hover::before {
+    opacity: 1;
+  }
+
+  .action-btn:hover::after {
+    opacity: 0.04;
+  }
+
+  .action-btn:hover .action-icon {
+    /* 去掉 rotate：hover 进出都走这条曲线时，鼠标扫过按钮区会看到图标「抖一下」 */
+    transform: scale(1.08);
+  }
+
+  .action-btn.is-active:hover {
+    color: var(--color-primary);
+    background: oklch(var(--primary) / 0.12);
+    border-color: oklch(var(--primary) / 0.35);
+  }
 }
 
 .action-icon {
-  transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
-  will-change: transform;
+  transition: transform var(--duration-fast) var(--ease-out-quart);
 }
 
 .action-text {
-  font-size: 13px;
+  font-size: var(--text-sm-plus, 0.8125rem);
   font-weight: 600;
   letter-spacing: 0.01em;
+  font-variant-numeric: tabular-nums;
 }
 
+/* 蓄力：原来是 charge-shake 0.1s infinite alternate —— 1.5 秒长按期间以 10Hz 抖动图标，
+   属于会诱发不适的高频抖动。换成「稳住 + 提亮」的蓄力语言，进度感由外圈进度环承担。 */
 .charging-shake {
-  animation: charge-shake 0.1s infinite alternate;
+  transform: scale(1.06);
+  filter: brightness(1.18);
 }
 
 .shockwave-glow {
@@ -735,7 +742,7 @@ onUnmounted(() => {
     oklch(var(--primary) / 0.15) 50%,
     transparent 75%
   );
-  animation: glow-wave 0.5s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  animation: glow-wave var(--duration-slow) var(--ease-out-expo) forwards;
   pointer-events: none;
   z-index: 38;
 }
@@ -750,17 +757,17 @@ onUnmounted(() => {
 
   &.ring-1 {
     border: 1px solid oklch(var(--primary) / 0.7);
-    animation: sonic-wave-1 0.48s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+    animation: sonic-wave-1 var(--duration-slow) var(--ease-out-expo) forwards;
   }
 
   &.ring-2 {
     border: 1px dashed oklch(var(--foreground) / 0.4);
-    animation: sonic-wave-2 0.52s cubic-bezier(0.16, 1, 0.3, 1) 0.05s forwards;
+    animation: sonic-wave-2 var(--duration-slow) var(--ease-out-expo) 40ms forwards;
   }
 
   &.ring-3 {
     border: 1.5px solid oklch(var(--primary) / 0.3);
-    animation: sonic-wave-3 0.56s cubic-bezier(0.16, 1, 0.3, 1) 0.1s forwards;
+    animation: sonic-wave-3 var(--duration-slow) var(--ease-out-expo) 80ms forwards;
   }
 }
 
@@ -773,7 +780,7 @@ onUnmounted(() => {
   border-radius: 50%;
   pointer-events: none;
   will-change: transform, opacity;
-  animation: dust-push 0.5s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  animation: dust-push var(--duration-slow) var(--ease-out-expo) forwards;
 }
 
 .coin-dialog-content {
@@ -816,8 +823,22 @@ onUnmounted(() => {
   position: relative;
   background: oklch(var(--muted) / 0.15);
   border: 2px dashed oklch(var(--border));
-  transition: all 0.3s cubic-bezier(0.25, 1, 0.5, 1);
+  transition:
+    background-color var(--duration-normal) var(--ease-out-quart),
+    border-color var(--duration-normal) var(--ease-out-quart),
+    transform var(--duration-normal) var(--ease-out-quart);
   user-select: none;
+
+  &::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    box-shadow: var(--shadow-raised);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity var(--duration-normal) var(--ease-out-quart);
+  }
 
   &-container {
     display: flex;
@@ -830,7 +851,10 @@ onUnmounted(() => {
     border-color: oklch(var(--foreground) / 0.4);
     background: oklch(var(--muted) / 0.3);
     transform: translateY(-4px);
-    box-shadow: 0 8px 24px oklch(0% 0 0deg / 0.04);
+
+    &::before {
+      opacity: 1;
+    }
   }
 
   &.is-selected {
@@ -838,25 +862,23 @@ onUnmounted(() => {
     border-color: oklch(var(--foreground));
     background: oklch(var(--foreground) / 0.03);
     transform: translateY(-4px);
-    box-shadow: 0 10px 28px oklch(0% 0 0deg / 0.06);
+
+    &::before {
+      opacity: 1;
+    }
   }
 
   &-label {
-    font-size: 13px;
+    font-size: var(--text-sm-plus, 0.8125rem);
     font-weight: 600;
     color: oklch(var(--muted-foreground));
-    transition: color 0.2s ease;
+    transition: color var(--duration-fast) linear;
     margin-bottom: 4px;
   }
 }
 
-:global(.dark) .coin-card:hover {
-  box-shadow: 0 8px 24px oklch(0% 0 0deg / 0.25);
-}
-
 :global(.dark) .coin-card.is-selected {
   background: oklch(var(--foreground) / 0.06);
-  box-shadow: 0 10px 28px oklch(0% 0 0deg / 0.35);
 }
 
 .coin-card:hover .coin-card-label,
@@ -911,7 +933,9 @@ onUnmounted(() => {
   outline: none;
   cursor: pointer;
   position: relative;
-  transition: all 0.2s ease;
+  transition:
+    background-color var(--duration-fast) var(--ease-out-quart),
+    border-color var(--duration-fast) var(--ease-out-quart);
   background: transparent;
 
   &-label {
@@ -920,10 +944,10 @@ onUnmounted(() => {
     gap: 8px;
     cursor: pointer;
     user-select: none;
-    font-size: 13px;
+    font-size: var(--text-sm-plus, 0.8125rem);
     font-weight: 500;
     color: oklch(var(--muted-foreground));
-    transition: color 0.2s ease;
+    transition: color var(--duration-fast) linear;
 
     &:hover {
       color: oklch(var(--foreground));
@@ -969,52 +993,50 @@ onUnmounted(() => {
   font-size: 14px;
   border: none;
   cursor: pointer;
-  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  position: relative;
+  transition:
+    opacity var(--duration-fast) linear,
+    transform var(--duration-fast) var(--ease-out-quart);
 
-  &:hover {
-    opacity: 0.9;
-    transform: translateY(-2px);
-    box-shadow: 0 6px 20px oklch(0% 0 0deg / 0.12);
+  &::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    box-shadow: var(--shadow-raised);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity var(--duration-fast) var(--ease-out-quart);
   }
 
   &:active {
-    transform: translateY(0);
+    transform: scale(0.97);
+    transition-duration: 80ms;
   }
 }
 
-:global(.dark) .coin-submit-btn:hover {
-  box-shadow: 0 6px 20px oklch(0% 0 0deg / 0.4);
+@media (hover: hover) and (pointer: fine) {
+  .coin-submit-btn:hover {
+    opacity: 0.9;
+    transform: translateY(-2px);
+  }
+
+  .coin-submit-btn:hover::before {
+    opacity: 1;
+  }
 }
 
-@keyframes like-bounce {
+@keyframes like-press {
   0% {
     transform: scale(1);
   }
 
-  30% {
-    transform: scale(1.5) rotate(-10deg);
-  }
-
-  50% {
-    transform: scale(0.8) rotate(5deg);
-  }
-
-  70% {
-    transform: scale(1.2) rotate(-2deg);
+  22% {
+    transform: scale(0.86);
   }
 
   100% {
-    transform: scale(1) rotate(0deg);
-  }
-}
-
-@keyframes charge-shake {
-  0% {
-    transform: scale(1.1) translate(0.5px, 0.5px) rotate(0.5deg);
-  }
-
-  100% {
-    transform: scale(1.1) translate(-0.5px, -0.5px) rotate(-0.5deg);
+    transform: scale(1);
   }
 }
 
@@ -1101,6 +1123,22 @@ onUnmounted(() => {
   .coin-sprite.is-playing {
     animation: none;
     background-position: 0 0;
+  }
+
+  /* 组件级兜底：不要只依赖全局 guard（它只压时长，粒子仍会闪一帧） */
+  .action-btn.is-animating .action-icon,
+  .shockwave-glow,
+  .shockwave-ring,
+  .shockwave-dust {
+    animation: none;
+  }
+
+  .action-btn:hover {
+    transform: none;
+  }
+
+  .charging-shake {
+    transform: none;
   }
 }
 </style>

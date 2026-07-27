@@ -1,0 +1,35 @@
+// 验证码局部 token 层
+
+// 滑块 / 点选 / 图形三个验证码共用。挂在验证码根节点上（class="cap-scope"），
+// 后代只认 --cap-*，改一处三处同时生效。
+
+// 颜色只用项目 token；引 @theme 变量一律带 fallback ——
+// Tailwind v4 会摇掉没有任何 utility 用到的 @theme 变量。
+
+/* 局部 token 层。挂在验证码根节点上，后代只认 --cap-*。 */
+.cap-scope {
+  --cap-radius: var(--radius-lg, 0.75rem);
+  --cap-surface: var(--color-card, var(--bg-surface-1));
+  --cap-sunken: var(--color-muted, var(--bg-surface-2));
+  --cap-border: var(--color-border, var(--border-color));
+  --cap-text: var(--color-foreground, var(--text-1));
+  --cap-text-muted: var(--color-muted-foreground, var(--text-2));
+  --cap-primary: var(--color-primary, var(--brand-blue));
+  --cap-on-signal: var(--signal-foreground);
+  --cap-success: var(--status-success);
+  --cap-success-border: var(--status-success-border);
+  --cap-danger: var(--status-danger);
+  --cap-danger-border: var(--status-danger-border);
+  --cap-fast: var(--duration-fast, 140ms);
+  --cap-normal: var(--duration-normal, 240ms);
+  --cap-slow: var(--duration-slow, 420ms);
+
+  /* 循环型时长，与 main.scss 的 --duration-shimmer 同类：
+     只给「正在进行中」的无限循环用（扫描光带 / 序号点呼吸 / 转圈），
+     不属于交互三档，绝不能用在 transition 上。 */
+  --cap-loop: 1150ms;
+  --cap-spin: 900ms;
+  --cap-out: var(--ease-out-quart, cubic-bezier(0.25, 1, 0.5, 1));
+  --cap-expo: var(--ease-out-expo, cubic-bezier(0.16, 1, 0.3, 1));
+  --cap-quint: var(--ease-out-quint, cubic-bezier(0.22, 1, 0.36, 1));
+}

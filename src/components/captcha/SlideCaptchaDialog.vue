@@ -1,12 +1,16 @@
 <script setup lang="ts">
 /**
  * 滑块验证码弹层
- * 内部复用管理端同款 SlideCaptcha：释放后 emit confirm，由父组件校验后调用 success/fail
+ *
+ * 只做三件事：拉起 SlideCaptcha、把 confirm 抛给父组件、等父组件给结论。
+ * 关窗时机不再用魔法数字（原来 480ms，正好把成功动画拦腰砍断），
+ * 改成等 SlideCaptcha 的 settled（判定动画 animationend），减动效下走兜底 timer。
  */
 import { ref, watch } from 'vue'
 import { ShieldCheck } from 'lucide-vue-next'
-import { Dialog, DialogContent } from '@/components/ui/dialog'
+import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog'
 import SlideCaptcha from '@/components/captcha/SlideCaptcha.vue'
+import { useSettleSignal } from './useCaptchaState'
 
 export interface SlideCaptchaResult {
   token: string
@@ -34,27 +38,28 @@ const emit = defineEmits<{
 }>()
 
 const captchaRef = ref<CaptchaExposed | null>(null)
-const SUCCESS_CLOSE_DELAY = 480
-let successCloseTimer: ReturnType<typeof setTimeout> | undefined
 
-function clearSuccessTimer(): void {
-  if (successCloseTimer) clearTimeout(successCloseTimer)
-  successCloseTimer = undefined
-}
+const settle = useSettleSignal(() => {
+  emit('update:open', false)
+})
 
 function handleConfirm(result: SlideCaptchaResult): void {
   emit('confirm', result)
 }
 
+function handleSettled(): void {
+  settle.fire()
+}
+
 function handleCancel(): void {
-  clearSuccessTimer()
+  settle.disarm()
   emit('cancel')
   emit('update:open', false)
 }
 
 function handleOpenChange(value: boolean): void {
   if (!value) {
-    clearSuccessTimer()
+    settle.disarm()
     emit('cancel')
   }
   emit('update:open', value)
@@ -63,7 +68,7 @@ function handleOpenChange(value: boolean): void {
 watch(
   () => props.open,
   (open) => {
-    if (!open) clearSuccessTimer()
+    if (!open) settle.disarm()
   }
 )
 
@@ -71,13 +76,11 @@ defineExpose({
   success: (result?: SlideCaptchaResult) => {
     captchaRef.value?.success()
     if (result) emit('success', result)
-    clearSuccessTimer()
-    successCloseTimer = setTimeout(() => {
-      emit('update:open', false)
-    }, SUCCESS_CLOSE_DELAY)
+    // 判定动画播完（或兜底超时）再关窗
+    settle.arm()
   },
   fail: () => {
-    clearSuccessTimer()
+    settle.disarm()
     captchaRef.value?.fail()
   },
   refresh: () => {
@@ -92,22 +95,33 @@ defineExpose({
 <template>
   <Dialog :open="open" @update:open="handleOpenChange">
     <DialogContent
-      class="max-w-[340px] gap-0 overflow-hidden rounded-[24px] border border-border/20 bg-background/95 p-0 shadow-[var(--shadow-cinematic)] backdrop-blur-[var(--glass-blur)] sm:max-w-[380px]"
+      class="max-w-[min(100vw-1.5rem,340px)] gap-0 overflow-hidden rounded-2xl border-border/60 bg-background p-0 shadow-cinematic sm:max-w-[368px]"
       :hide-close="false"
       @escape-key-down="handleCancel"
       @pointer-down-outside="(e: Event) => e.preventDefault()"
     >
-      <div class="px-6 pb-5 pt-6">
-        <div class="mb-3 flex items-center gap-2">
-          <ShieldCheck class="h-5 w-5 text-primary" />
-          <h2 class="text-lg font-bold tracking-tight text-foreground">安全验证</h2>
-        </div>
-        <p class="mb-4 text-sm font-medium text-muted-foreground">请拖动滑块完成拼图验证</p>
+      <div class="cap-shell">
+        <DialogTitle class="cap-shell__title">
+          <ShieldCheck class="cap-shell__title-icon" aria-hidden="true" />
+          安全验证
+        </DialogTitle>
+        <DialogDescription class="cap-shell__subtitle">
+          把右边缺了一块的图补上，就能继续
+        </DialogDescription>
 
-        <div class="flex justify-center">
-          <SlideCaptcha ref="captchaRef" :visible="open" @confirm="handleConfirm" />
+        <div class="cap-shell__stage">
+          <SlideCaptcha
+            ref="captchaRef"
+            :visible="open"
+            @confirm="handleConfirm"
+            @settled="handleSettled"
+          />
         </div>
       </div>
     </DialogContent>
   </Dialog>
 </template>
+
+<style scoped lang="scss">
+@use './captcha-shell';
+</style>

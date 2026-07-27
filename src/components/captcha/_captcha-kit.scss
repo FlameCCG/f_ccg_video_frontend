@@ -1,0 +1,325 @@
+// 验证码共享视觉语言（滑块 / 点选）
+
+// 两个验证码此前是两套东西：滑块是 BEM + scoped scss + 局部 token，点选是 Tailwind
+// 内联 + bg-green-500 + animate-ping + mix-blend-difference 自绘准星。这里把
+// 「舞台 / 核验扫描 / 判定徽标 / 图上按钮 / 状态着色 / 入场 / 过渡 / keyframes」
+// 收成一组 .cap-* 类，两边只写各自的结构，视觉与节奏由此单点维护。
+
+// 用法：在 <style scoped lang="scss"> 顶部 `@use './captcha-kit';`，
+// 元素上与自己的 BEM 类并列写 `class="click-captcha__stage cap-stage"`。
+// 编译后随宿主组件作用域化（选择器带 scopeId、@keyframes 名被 Vue 重写），
+// 两个组件各持一份、互不干扰。组件自己的规则排在本文件之后，同特异度下能覆盖这里。
+
+// 约束自查：颜色只用项目 token（--status-* / --brand-blue / --signal-foreground /
+// --media-overlay / --shadow-*-value）；引 @theme 变量一律带 fallback（Tailwind v4
+// 会摇掉没有 utility 用到的 @theme 变量）；动效只动 transform / opacity / filter /
+// stroke-dashoffset；缓动与时长只用 --ease-out-* / --duration-*。
+
+@use './captcha-tokens';
+
+/* 舞台：验证码图片所在的那一框。
+   描边用 inset box-shadow 画，状态切换不动 border-width，也就不会撑动内部布局。 */
+.cap-stage {
+  position: relative;
+  overflow: hidden;
+  isolation: isolate;
+  background-color: var(--cap-sunken);
+  border-radius: var(--cap-radius);
+  box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--cap-border) 84%, transparent);
+  transition: box-shadow var(--cap-normal) var(--cap-out);
+}
+
+.cap-stage--active {
+  box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--cap-primary) 52%, transparent);
+}
+
+.cap-stage--verifying {
+  box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--cap-primary) 62%, transparent);
+}
+
+.cap-stage--success {
+  box-shadow: inset 0 0 0 2px var(--cap-success-border);
+}
+
+.cap-stage--fail {
+  box-shadow: inset 0 0 0 2px var(--cap-danger-border);
+}
+
+/* 核验遮罩：只压一点亮度，必须还能看清底图 ——
+   真正在动的是扫描光带。不做 backdrop-filter：2px 模糊读不出来，却要付一次全元素合成。 */
+.cap-veil {
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+  overflow: hidden;
+  pointer-events: none;
+  background-color: color-mix(in oklch, var(--cap-surface) 30%, transparent);
+}
+
+/* 扫描光带绑在 verifying 上：等后端的那一段才是需要「有事在发生」的时候，
+   判定动画是收尾，不该抢等待的戏。 */
+.cap-scan {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 38%;
+  pointer-events: none;
+  background-image: linear-gradient(
+    90deg,
+    transparent,
+    color-mix(in oklch, var(--cap-primary) 32%, transparent),
+    transparent
+  );
+  transform: translate3d(-120%, 0, 0);
+  animation: cap-scan var(--cap-loop) var(--cap-out) infinite;
+}
+
+/* 判定徽标：右下角 34px 小徽章。
+   刻意不是全屏遮罩 —— 滑块验证码的高潮点是「拼图坐进缺口」，不能被自己的成功态盖掉。 */
+.cap-badge {
+  position: absolute;
+  right: 0.5rem;
+  bottom: 0.5rem;
+  z-index: 6;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.125rem;
+  height: 2.125rem;
+  color: var(--cap-on-signal);
+  pointer-events: none;
+  background-color: var(--cap-success);
+  border-radius: 999px;
+  box-shadow:
+    0 0 0 4px color-mix(in oklch, var(--cap-success) 20%, transparent),
+    var(--shadow-raised-value);
+  animation: cap-badge-in var(--cap-normal) var(--cap-quint) both;
+}
+
+.cap-badge--fail {
+  background-color: var(--cap-danger);
+  box-shadow:
+    0 0 0 4px color-mix(in oklch, var(--cap-danger) 20%, transparent),
+    var(--shadow-raised-value);
+}
+
+/* 徽标里的对勾 / 叉。动画挂在 path 上（不是 svg 上）：
+   animationend 要能从 path 冒泡出来，它就是整段判定动画结束的信号。 */
+.cap-badge__mark {
+  width: 1.15rem;
+  height: 1.15rem;
+  overflow: visible;
+  fill: none;
+  stroke: currentcolor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 2.4;
+
+  path {
+    stroke-dasharray: 26;
+    stroke-dashoffset: 26;
+    animation: cap-draw var(--cap-normal) 90ms var(--cap-out) forwards;
+  }
+}
+
+/* 压在图片上的圆形按钮（换一张）。用 --media-overlay 这组「媒体之上」的 token：
+   不随主题翻转，压在任何底图上都读得出来。 */
+.cap-iconbtn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  color: var(--media-overlay-text);
+  cursor: pointer;
+  background-color: var(--media-overlay);
+  border: 1px solid color-mix(in oklch, var(--media-overlay-text) 14%, transparent);
+  border-radius: 999px;
+  box-shadow: var(--shadow-surface-value);
+  transition:
+    background-color var(--cap-fast) var(--cap-out),
+    opacity var(--cap-fast) linear,
+    transform var(--cap-fast) var(--cap-quint);
+
+  &:hover:not(:disabled) {
+    background-color: color-mix(in oklch, var(--media-overlay) 84%, var(--cap-text));
+  }
+
+  &:active:not(:disabled) {
+    transform: scale(0.92);
+  }
+
+  &:disabled {
+    cursor: not-allowed;
+    opacity: 0.45;
+  }
+}
+
+/* 状态文案着色。四个状态都在这里给全，宿主不要再写 color ——
+   同特异度下宿主的规则排在后面，会把状态色盖回灰色。 */
+.cap-ink--idle {
+  color: var(--cap-text-muted);
+}
+
+.cap-ink--verifying {
+  color: var(--cap-primary);
+}
+
+.cap-ink--success {
+  color: var(--cap-success);
+  font-weight: 600;
+}
+
+.cap-ink--fail {
+  color: var(--cap-danger);
+}
+
+/* 首次挂载的入场，只播一次 */
+.cap-rise {
+  animation: cap-rise var(--cap-slow) var(--cap-expo) both;
+}
+
+.cap-rise--late {
+  animation-delay: 60ms;
+}
+
+/* ── 结构切换的过渡 ───────────────────────────────────────────────── */
+
+/* 骨架 ↔ 内容 ↔ 错误（mode="out-in"）：
+   换图不再是「图片消失 → 转圈 → 图片弹出」的三段硬切 */
+.cap-media-enter-active {
+  transition:
+    opacity var(--cap-normal) var(--cap-out),
+    transform var(--cap-normal) var(--cap-out);
+}
+
+.cap-media-leave-active {
+  transition: opacity var(--cap-fast) linear;
+}
+
+.cap-media-enter-from {
+  opacity: 0;
+  transform: scale(1.012);
+}
+
+.cap-media-leave-to {
+  opacity: 0;
+}
+
+.cap-veil-enter-active {
+  transition: opacity var(--cap-fast) linear;
+}
+
+/* 成功时遮罩退场：给足 240ms，让「拼图坐进缺口」露出来 */
+.cap-veil-leave-active {
+  transition: opacity var(--cap-normal) var(--cap-out);
+}
+
+.cap-veil-enter-from,
+.cap-veil-leave-to {
+  opacity: 0;
+}
+
+/* 状态文案切换：上一句往上淡出，下一句从下淡入 */
+.cap-tip-enter-active,
+.cap-tip-leave-active {
+  transition:
+    opacity var(--cap-fast) var(--cap-out),
+    transform var(--cap-fast) var(--cap-out);
+}
+
+.cap-tip-enter-from {
+  opacity: 0;
+  transform: translate3d(0, 4px, 0);
+}
+
+.cap-tip-leave-to {
+  opacity: 0;
+  transform: translate3d(0, -4px, 0);
+}
+
+/* ── keyframes ───────────────────────────────────────────────────── */
+
+@keyframes cap-scan {
+  from {
+    transform: translate3d(-120%, 0, 0);
+  }
+
+  to {
+    transform: translate3d(320%, 0, 0);
+  }
+}
+
+@keyframes cap-badge-in {
+  from {
+    opacity: 0;
+    transform: scale(0.6);
+  }
+
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes cap-draw {
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+@keyframes cap-rise {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 10px, 0);
+  }
+
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+@keyframes cap-recoil {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0);
+  }
+
+  35% {
+    transform: translate3d(-3px, 0, 0);
+  }
+
+  70% {
+    transform: translate3d(2px, 0, 0);
+  }
+}
+
+@keyframes cap-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* 减动效：装饰性的照砍，判定结果本身（对勾画完的终态）保留 */
+@media (prefers-reduced-motion: reduce) {
+  .cap-scan {
+    opacity: 0.45;
+    animation: none;
+  }
+
+  .cap-rise,
+  .cap-badge {
+    animation: none;
+  }
+
+  .cap-badge__mark path {
+    stroke-dashoffset: 0;
+    animation: none;
+  }
+
+  .cap-media-enter-from,
+  .cap-tip-enter-from,
+  .cap-tip-leave-to {
+    transform: none;
+  }
+}

@@ -81,7 +81,7 @@ watch(() => props.author.id, fetchRelation)
         :src="author.avatar"
         :name="author.username"
         :alt="author.username"
-        container-class="relative h-12 w-12 ring-2 ring-border/50 transition-all duration-300 group-hover:ring-primary/50 group-hover:scale-105 shadow-sm z-10"
+        container-class="author-card__avatar relative z-10 h-12 w-12 shadow-surface ring-2 ring-border/50 group-hover:ring-primary/50"
         text-class="text-base font-bold"
       />
     </div>
@@ -90,14 +90,14 @@ watch(() => props.author.id, fetchRelation)
     <div class="min-w-0 flex-1">
       <div class="flex items-center gap-2">
         <span
-          class="cursor-pointer truncate text-[15px] font-bold text-foreground transition-colors hover:text-primary"
+          class="t-tint cursor-pointer truncate text-base font-bold text-foreground hover:text-primary"
           @click="goToUserPage"
         >
           {{ author.username }}
         </span>
         <!-- Level Badge -->
         <span
-          class="inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-black tracking-wider text-white shadow-sm"
+          class="inline-flex items-center rounded px-1.5 py-0.5 text-2xs font-black tracking-wider text-[var(--signal-foreground)] shadow-surface"
           :style="{ backgroundColor: levelColor(author.level) }"
         >
           Lv{{ author.level }}
@@ -105,7 +105,7 @@ watch(() => props.author.id, fetchRelation)
       </div>
       <p
         v-if="author.description"
-        class="mt-1 truncate text-[13px] text-muted-foreground/80 font-medium"
+        class="mt-1 truncate text-sm-plus font-medium text-muted-foreground/80"
       >
         {{ author.description }}
       </p>
@@ -133,23 +133,25 @@ watch(() => props.author.id, fetchRelation)
 </template>
 
 <style scoped lang="scss">
+/* 抬起只动 transform，阴影交给 ::after 的 opacity —— 原来是 transition: all 0.3s，
+   把两层大 blur 阴影一起逐帧插值。 */
 .author-card {
-  box-shadow: 0 2px 8px oklch(0% 0 0deg / 0.04);
+  position: relative;
   border: 1px solid oklch(var(--border) / 0.4);
-  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  box-shadow: var(--shadow-surface);
+  transition:
+    border-color var(--duration-normal) var(--ease-out-expo),
+    transform var(--duration-normal) var(--ease-out-expo);
 
-  &:hover {
-    box-shadow: 0 8px 24px oklch(0% 0 0deg / 0.08);
-    border-color: oklch(var(--border) / 0.8);
-    transform: translateY(-2px);
-  }
-}
-
-:global(.dark) .author-card {
-  box-shadow: 0 2px 8px oklch(0% 0 0deg / 0.25);
-
-  &:hover {
-    box-shadow: 0 8px 24px oklch(0% 0 0deg / 0.45);
+  &::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    box-shadow: var(--shadow-raised);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity var(--duration-normal) var(--ease-out-quart);
   }
 }
 
@@ -158,45 +160,47 @@ watch(() => props.author.id, fetchRelation)
   position: absolute;
   inset: 0;
   border-radius: 50%;
-  background: oklch(var(--primary) / 0.2);
+  background: color-mix(in oklch, var(--color-primary) 20%, transparent);
   transform: scale(1.1);
   opacity: 0;
   filter: blur(4px);
-  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  transition:
+    opacity var(--duration-normal) var(--ease-out-expo),
+    transform var(--duration-normal) var(--ease-out-expo);
   z-index: 0;
 }
 
-.avatar-wrapper:hover::before {
-  opacity: 1;
-  transform: scale(1.25);
+:deep(.author-card__avatar) {
+  transition:
+    transform var(--duration-normal) var(--ease-out-expo),
+    box-shadow var(--duration-normal) var(--ease-out-expo);
 }
 
 .follow-btn {
+  position: relative;
   display: inline-flex;
   align-items: center;
   gap: 6px;
   padding: 8px 20px;
   border-radius: 9999px;
-  font-size: 13px;
+  font-size: var(--text-sm-plus, 0.8125rem);
   font-weight: 700;
   cursor: pointer;
-  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+  transition:
+    background-color var(--duration-normal) var(--ease-out-expo),
+    border-color var(--duration-normal) var(--ease-out-expo),
+    color var(--duration-fast) linear,
+    opacity var(--duration-fast) linear,
+    transform var(--duration-fast) var(--ease-out-quint);
   border: 1px solid transparent;
-  background-color: oklch(var(--primary));
-  color: oklch(var(--primary-foreground));
-  box-shadow: 0 4px 12px oklch(var(--primary) / 0.3);
+  background-color: var(--color-primary);
+  color: var(--color-primary-foreground);
+  box-shadow: var(--shadow-raised);
   letter-spacing: 0.02em;
 
-  &:hover:not(:disabled) {
-    background-color: oklch(var(--primary) / 0.9);
-    transform: translateY(-2px);
-    box-shadow: 0 6px 16px oklch(var(--primary) / 0.4);
-  }
-
   &:active:not(:disabled) {
-    transform: translateY(0) scale(0.96);
-    box-shadow: 0 2px 8px oklch(var(--primary) / 0.3);
-    transition-duration: 0.1s;
+    transform: scale(0.96);
+    transition-duration: 80ms;
   }
 
   &:disabled {
@@ -208,27 +212,61 @@ watch(() => props.author.id, fetchRelation)
   &.is-followed {
     background: oklch(var(--muted));
     color: oklch(var(--muted-foreground));
-    border: 1px solid oklch(var(--border));
+    border-color: oklch(var(--border));
     box-shadow: none;
 
     &:hover:not(:disabled) {
-      background: oklch(var(--destructive) / 0.1);
-      color: oklch(var(--destructive));
-      border-color: oklch(var(--destructive) / 0.3);
+      background: color-mix(in oklch, var(--color-destructive) 10%, transparent);
+      color: var(--color-destructive);
+      border-color: color-mix(in oklch, var(--color-destructive) 30%, transparent);
     }
   }
 
   &.is-mutual {
-    background: oklch(var(--primary) / 0.1);
-    color: oklch(var(--primary));
-    border: 1px solid oklch(var(--primary) / 0.3);
+    background: color-mix(in oklch, var(--color-primary) 10%, transparent);
+    color: var(--color-primary);
+    border-color: color-mix(in oklch, var(--color-primary) 30%, transparent);
     box-shadow: none;
 
     &:hover:not(:disabled) {
-      background: oklch(var(--primary) / 0.15);
-      border-color: oklch(var(--primary) / 0.4);
-      box-shadow: 0 4px 12px oklch(var(--primary) / 0.2);
+      background: color-mix(in oklch, var(--color-primary) 16%, transparent);
+      border-color: color-mix(in oklch, var(--color-primary) 40%, transparent);
     }
+  }
+}
+
+/* 触屏上 :hover 会在点击后粘住，卡片长期停在抬起态 */
+@media (hover: hover) and (pointer: fine) {
+  .author-card:hover {
+    border-color: oklch(var(--border) / 0.8);
+    transform: translate3d(0, -2px, 0);
+  }
+
+  .author-card:hover::after {
+    opacity: 1;
+  }
+
+  .avatar-wrapper:hover::before {
+    opacity: 1;
+    transform: scale(1.25);
+  }
+
+  .avatar-wrapper:hover :deep(.author-card__avatar) {
+    /* 全站封面/头像统一 1.04 */
+    transform: scale(1.04);
+  }
+
+  .follow-btn:hover:not(:disabled) {
+    background-color: oklch(var(--primary) / 0.9);
+    transform: translate3d(0, -2px, 0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .author-card:hover,
+  .follow-btn:hover:not(:disabled),
+  .avatar-wrapper:hover :deep(.author-card__avatar) {
+    transform: none;
   }
 }
 </style>

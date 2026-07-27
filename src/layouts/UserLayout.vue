@@ -4,6 +4,10 @@ import { RouterView } from 'vue-router'
 
 <template>
   <div class="user-layout min-h-screen bg-secondary">
-    <RouterView />
+    <RouterView v-slot="{ Component, route }">
+      <Transition name="route" mode="out-in">
+        <component :is="Component" :key="route.path" />
+      </Transition>
+    </RouterView>
   </div>
 </template>

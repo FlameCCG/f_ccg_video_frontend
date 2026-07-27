@@ -211,7 +211,7 @@ const handleChatScroll = () => {
 // Maps message id → rendered HTML. Updated at display-rate, not chunk-rate.
 const renderedHtmlMap = reactive<Record<string, string>>({})
 const LOADING_CURSOR_HTML =
-  '<span class="inline-block animate-pulse w-2 h-4 bg-zinc-400 rounded-sm"></span>'
+  '<span class="inline-block animate-pulse w-2 h-4 bg-muted-foreground rounded-sm"></span>'
 
 const pendingRenderRaw: Record<string, string> = {}
 const pendingRenderStreaming: Record<string, boolean> = {}
@@ -497,19 +497,58 @@ watch(
   { immediate: true }
 )
 
-const b64EncodeFile = (file: File): Promise<string> => {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader()
-    reader.onload = () => {
-      if (typeof reader.result === 'string') {
-        resolve(reader.result)
-      } else {
-        reject(new Error('转换图片失败'))
-      }
-    }
-    reader.onerror = reject
-    reader.readAsDataURL(file)
-  })
+// —— 会话记忆 ——
+// 后端 /responses 是无状态代理，多轮上下文必须由前端把历史一起带上。
+// 图片只在「当前这一轮」以 data URI 发送（后端交给多模态向量模型做 RAG 检索）；
+// 历史里的图片折叠成占位符，避免每轮都把几百 KB 的 base64 重复上行。
+const HISTORY_MAX_MESSAGES = 12
+const HISTORY_MAX_CHARS_PER_MESSAGE = 1200
+
+type ResponsesContentPart = Record<string, unknown>
+type ResponsesMessage = { role: 'user' | 'assistant'; content: ResponsesContentPart[] }
+
+const truncateForHistory = (text: string) => {
+  const trimmed = text.trim()
+  if (trimmed.length <= HISTORY_MAX_CHARS_PER_MESSAGE) return trimmed
+  return `${trimmed.slice(0, HISTORY_MAX_CHARS_PER_MESSAGE)}...`
+}
+
+/** 把一条历史消息压成纯文本；无内容可带时返回空串。 */
+const historyMessageText = (message: ChatMessage): string => {
+  if (message.type === 'image_gen') {
+    const count = message.results?.filter((item) => item.url).length ?? 0
+    return count > 0 ? `（已为用户生成 ${count} 张图片）` : ''
+  }
+
+  if (message.type === 'video_gen') {
+    const count = message.results?.filter((item) => item.url).length ?? 0
+    return count > 0 ? '（已为用户生成视频）' : ''
+  }
+
+  const parts: string[] = []
+  if (message.content?.trim()) parts.push(truncateForHistory(message.content))
+  if (message.role === 'user' && message.images?.length) {
+    parts.push(`[用户上传了 ${message.images.length} 张图片]`)
+  }
+
+  return parts.join('\n')
+}
+
+/** 从历史消息构建 Responses 格式的多轮上下文。 */
+const buildHistoryMessages = (history: ChatMessage[]): ResponsesMessage[] => {
+  const result: ResponsesMessage[] = []
+
+  for (const message of history) {
+    // 仍在流式中的占位消息没有可用内容，带上去只会污染上下文
+    if (message.isLoading || message.error) continue
+
+    const text = historyMessageText(message)
+    if (!text) continue
+
+    result.push({ role: message.role, content: [{ type: 'input_text', text }] })
+  }
+
+  return result.slice(-HISTORY_MAX_MESSAGES)
 }
 
 const encodeImageForAI = async (file: File): Promise<string> => {
@@ -833,6 +872,9 @@ const sendRequest = async (payload: AiComposerSendPayload) => {
   const currentImages = payload.images
   isSending.value = true
 
+  // 先快照历史，再 push 本轮消息，避免把当前这一轮重复带进上下文
+  const historyMessages = buildHistoryMessages(messages.value)
+
   // push user message
   const userMsgId = Date.now().toString()
   messages.value.push({
@@ -858,16 +900,20 @@ const sendRequest = async (payload: AiComposerSendPayload) => {
       // Retrieve the reactive proxy from the array to ensure Vue tracks mutations
       const reactiveAsstMsg = messages.value[messages.value.length - 1]!
 
-      // Since it's heavy to encode history images, let's just encode the CURRENT one to b64
-      const latestInput: Record<string, unknown>[] = []
+      // 只有当前这一轮才带真实图片数据：后端用多模态向量模型把「文本+图片」融合成
+      // 同一个向量，去站内作品库做 RAG 召回，从而支持「以图搜视频」。
+      const latestInput: ResponsesContentPart[] = []
       if (userText) latestInput.push({ type: 'input_text', text: userText })
       for (const f of currentImages) {
-        const b64 = await b64EncodeFile(f.file)
+        // 先降采样再编码，避免整张原图的 base64 上行
+        const b64 = await encodeImageForAI(f.file)
         latestInput.push({ type: 'input_image', image_url: b64, detail: 'high' })
       }
 
-      // simplify history just for this prompt to avoid large payloads while testing
-      const finalInput = [{ role: 'user', content: latestInput }]
+      const finalInput: ResponsesMessage[] = [
+        ...historyMessages,
+        { role: 'user', content: latestInput },
+      ]
 
       const streamPayload: Record<string, unknown> = {
         model: payload.chat.model || undefined,
@@ -1111,7 +1157,7 @@ const handleComposerSend = (payload: AiComposerSendPayload) => {
             </h2>
           </div>
           <button
-            class="group w-10 h-10 flex items-center justify-center rounded-full bg-[var(--bg-surface-1)] hover:bg-[var(--bg-surface-2)] border border-transparent hover:border-[var(--border-color)] text-[var(--text-2)] hover:text-[var(--text-1)] transition-all duration-300"
+            class="group w-10 h-10 flex items-center justify-center rounded-full bg-[var(--bg-surface-1)] hover:bg-[var(--bg-surface-2)] border border-transparent hover:border-[var(--border-color)] text-[var(--text-2)] hover:text-[var(--text-1)] t-tint ui-button"
             @click="handleClose"
           >
             <X
@@ -1624,7 +1670,11 @@ const handleComposerSend = (payload: AiComposerSendPayload) => {
   text-decoration: underline;
   text-decoration-color: transparent;
   text-underline-offset: 4px;
-  transition: all 0.3s ease;
+  transition:
+    color var(--duration-fast) var(--ease-out-quart),
+    background-color var(--duration-fast) var(--ease-out-quart),
+    border-color var(--duration-fast) var(--ease-out-quart),
+    transform var(--duration-fast) var(--ease-out-quint);
 }
 
 :deep(.markdown-body a:hover) {

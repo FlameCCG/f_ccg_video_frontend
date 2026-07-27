@@ -9,11 +9,7 @@ import {
   type UserHomeBannerDefaultsResult,
 } from '@/api/user'
 import type { BannerItem } from '@/api/banner'
-import {
-  BannerArtSpec,
-  BannerDisplay,
-  formatProfileBannerUploadTip,
-} from '@/constants/banner'
+import { BannerArtSpec, BannerDisplay, formatProfileBannerUploadTip } from '@/constants/banner'
 import { getBannerPresetMediaStyle, normalizeBannerUrl } from '@/utils/user-banner-preview'
 
 /** 预设缩略图 / 自定义预览：贴近真实头图裁切（制图 9.6:1 + 页面定高） */

@@ -94,6 +94,7 @@ const canScrollRight = ref(false)
 const feedItemRefs = new Map<string, HTMLElement>()
 const highlightedFeedKey = ref<string | null>(null)
 let clearFeedHighlightTimer: ReturnType<typeof setTimeout> | null = null
+let restoreFeedScrollFrame: number | null = null
 
 const updateSwiperArrows = () => {
   const el = swiperRef.value
@@ -440,6 +441,9 @@ const handleDeleteDynamic = async (item: WorkFeedItem) => {
 }
 
 const handlePinDynamic = async (item: WorkFeedItem) => {
+  const viewportLeft = window.scrollX
+  const viewportTop = window.scrollY
+
   try {
     const isPinned = item.dynamic?.isPinned || item.video?.isPinned || false
     if (item.workType === 2 && item.dynamic) {
@@ -448,7 +452,17 @@ const handlePinDynamic = async (item: WorkFeedItem) => {
       await pinDynamic({ videoId: item.video.id, pinned: !isPinned })
     }
     toast.success(isPinned ? '已取消置顶' : '已置顶')
-    void fetchFeed(1)
+    await fetchFeed(1)
+    await nextTick()
+
+    // 置顶非首条内容会触发列表 FLIP 重排。固定操作前的视口，避免浏览器滚动锚定
+    // 跟随被移动的卡片跳到容器底部，使两侧 sticky 卡片离开可视区域。
+    window.scrollTo(viewportLeft, viewportTop)
+    if (restoreFeedScrollFrame !== null) window.cancelAnimationFrame(restoreFeedScrollFrame)
+    restoreFeedScrollFrame = window.requestAnimationFrame(() => {
+      window.scrollTo(viewportLeft, viewportTop)
+      restoreFeedScrollFrame = null
+    })
   } catch {
     toast.error('操作失败')
   }
@@ -501,6 +515,7 @@ onBeforeUnmount(() => {
   document.removeEventListener('click', closeEmojiOnOutsideClick)
   feedItemRefs.clear()
   if (clearFeedHighlightTimer) clearTimeout(clearFeedHighlightTimer)
+  if (restoreFeedScrollFrame !== null) window.cancelAnimationFrame(restoreFeedScrollFrame)
 })
 
 watch(
@@ -739,153 +754,156 @@ watch(
           </button>
         </div>
 
-        <!-- Feed -->
+        <!-- Feed：删除 / 置顶重排会改动这个列表，裸 v-for 下条目瞬间消失、下方瞬间上跳。
+             TransitionGroup 不带 tag，渲染成 fragment，条目仍是 .dyn-feed 的直接 flex 子项 -->
         <div class="dyn-feed">
-          <div
-            v-for="item in feedItems"
-            :key="getFeedItemKey(item)"
-            :ref="
-              (el) => {
-                setFeedItemRef(getFeedItemKey(item), el)
-              }
-            "
-            class="dyn-feed-item"
-            :class="{ 'dyn-feed-item-highlight': highlightedFeedKey === getFeedItemKey(item) }"
-          >
-            <div class="cursor-pointer" @click="goUser(item.author.id)">
-              <AppAvatar
-                :src="item.author.avatar"
-                :name="item.author.username"
-                container-class="dyn-feed-avatar"
-                text-class="text-sm font-semibold"
-              />
-            </div>
-            <div class="dyn-feed-body">
-              <div class="dyn-feed-header">
-                <span class="dyn-feed-author" @click="goUser(item.author.id)">
-                  {{ item.author.username }}
-                </span>
-                <span v-if="item.workType === 1" class="dyn-feed-badge">投稿了视频</span>
-                <span class="dyn-feed-time">{{ fmtTime(item.createdAt) }}</span>
-                <DropdownMenu v-if="isSelfDynamic(item)">
-                  <DropdownMenuTrigger as-child>
-                    <button class="dyn-feed-more">
-                      <MoreVertical :size="16" />
-                    </button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end">
-                    <DropdownMenuItem
-                      class="cursor-pointer text-[13px]"
-                      @select="handlePinDynamic(item)"
-                    >
-                      <Pin class="mr-2 h-4 w-4" />
-                      {{ item.dynamic?.isPinned || item.video?.isPinned ? '取消置顶' : '置顶' }}
-                    </DropdownMenuItem>
-                    <DropdownMenuItem
-                      v-if="item.workType === 2"
-                      class="cursor-pointer text-[13px] text-red-500"
-                      @select="handleDeleteDynamic(item)"
-                    >
-                      <Trash2 class="mr-2 h-4 w-4" />
-                      删除
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
-              </div>
-
-              <div v-if="item.dynamic?.isPinned || item.video?.isPinned" class="dyn-pinned-badge">
-                <Pin :size="10" /> 已置顶
-              </div>
-
-              <div v-if="item.workType === 2 && item.dynamic" class="dyn-feed-content">
-                <p class="dyn-feed-text">{{ item.dynamic.content }}</p>
-                <img
-                  v-if="item.dynamic.imageUrl"
-                  :src="item.dynamic.imageUrl"
-                  class="dyn-feed-image"
+          <TransitionGroup name="dfeed">
+            <div
+              v-for="item in feedItems"
+              :key="getFeedItemKey(item)"
+              :ref="
+                (el) => {
+                  setFeedItemRef(getFeedItemKey(item), el)
+                }
+              "
+              class="dyn-feed-item"
+              :class="{ 'dyn-feed-item-highlight': highlightedFeedKey === getFeedItemKey(item) }"
+            >
+              <div class="cursor-pointer" @click="goUser(item.author.id)">
+                <AppAvatar
+                  :src="item.author.avatar"
+                  :name="item.author.username"
+                  container-class="dyn-feed-avatar"
+                  text-class="text-sm font-semibold"
                 />
               </div>
-
-              <div
-                v-if="item.workType === 1 && item.video"
-                class="dyn-video-card"
-                @click="goVideo(item.video!.id)"
-              >
-                <div class="dyn-video-cover">
-                  <img :src="item.video.cover" />
-                  <span class="dyn-video-dur">{{ fmtDuration(item.video.duration) }}</span>
+              <div class="dyn-feed-body">
+                <div class="dyn-feed-header">
+                  <span class="dyn-feed-author" @click="goUser(item.author.id)">
+                    {{ item.author.username }}
+                  </span>
+                  <span v-if="item.workType === 1" class="dyn-feed-badge">投稿了视频</span>
+                  <span class="dyn-feed-time">{{ fmtTime(item.createdAt) }}</span>
+                  <DropdownMenu v-if="isSelfDynamic(item)">
+                    <DropdownMenuTrigger as-child>
+                      <button class="dyn-feed-more">
+                        <MoreVertical :size="16" />
+                      </button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end">
+                      <DropdownMenuItem
+                        class="cursor-pointer text-sm-plus"
+                        @select="handlePinDynamic(item)"
+                      >
+                        <Pin class="mr-2 h-4 w-4" />
+                        {{ item.dynamic?.isPinned || item.video?.isPinned ? '取消置顶' : '置顶' }}
+                      </DropdownMenuItem>
+                      <DropdownMenuItem
+                        v-if="item.workType === 2"
+                        class="cursor-pointer text-sm-plus text-destructive"
+                        @select="handleDeleteDynamic(item)"
+                      >
+                        <Trash2 class="mr-2 h-4 w-4" />
+                        删除
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
                 </div>
-                <div class="dyn-video-info">
-                  <h4 class="dyn-video-title">{{ item.video.title }}</h4>
-                  <p v-if="item.video.description" class="dyn-video-desc">
-                    {{ item.video.description }}
-                  </p>
-                  <div class="dyn-video-stats">
-                    <span class="dyn-video-stat">
-                      <Play :size="12" /> {{ fmtCount(item.video.views) }}
-                    </span>
-                    <span class="dyn-video-stat">
-                      <MessageSquare :size="12" /> {{ fmtCount(item.video.danmuCount) }}
-                    </span>
+
+                <div v-if="item.dynamic?.isPinned || item.video?.isPinned" class="dyn-pinned-badge">
+                  <Pin :size="10" /> 已置顶
+                </div>
+
+                <div v-if="item.workType === 2 && item.dynamic" class="dyn-feed-content">
+                  <p class="dyn-feed-text">{{ item.dynamic.content }}</p>
+                  <img
+                    v-if="item.dynamic.imageUrl"
+                    :src="item.dynamic.imageUrl"
+                    class="dyn-feed-image"
+                  />
+                </div>
+
+                <div
+                  v-if="item.workType === 1 && item.video"
+                  class="dyn-video-card"
+                  @click="goVideo(item.video!.id)"
+                >
+                  <div class="dyn-video-cover">
+                    <img :src="item.video.cover" />
+                    <span class="dyn-video-dur">{{ fmtDuration(item.video.duration) }}</span>
+                  </div>
+                  <div class="dyn-video-info">
+                    <h4 class="dyn-video-title">{{ item.video.title }}</h4>
+                    <p v-if="item.video.description" class="dyn-video-desc">
+                      {{ item.video.description }}
+                    </p>
+                    <div class="dyn-video-stats">
+                      <span class="dyn-video-stat">
+                        <Play :size="12" /> {{ fmtCount(item.video.views) }}
+                      </span>
+                      <span class="dyn-video-stat">
+                        <MessageSquare :size="12" /> {{ fmtCount(item.video.danmuCount) }}
+                      </span>
+                    </div>
                   </div>
                 </div>
-              </div>
 
-              <div class="dyn-feed-actions">
-                <button class="dyn-action-btn">
-                  <Share2 :size="14" />
-                  <span>转发</span>
-                </button>
-                <button
-                  class="dyn-action-btn"
-                  :class="{ 'dyn-action-btn-active': isCommentExpanded(item) }"
-                  @click="toggleComments(item)"
-                >
-                  <MessageSquare :size="14" />
-                  <span v-if="item.workType === 1 && item.video?.commentCount">{{
-                    item.video.commentCount
-                  }}</span>
-                  <span v-else-if="item.workType === 2 && item.dynamic?.commentCount">{{
-                    item.dynamic.commentCount
-                  }}</span>
-                  <span v-else>评论</span>
-                </button>
-                <button
-                  class="dyn-action-btn"
-                  :class="{
-                    'text-primary':
-                      item.workType === 1 ? item.video?.isLiked : item.dynamic?.isLiked,
-                  }"
-                  @click="handleLike(item)"
-                >
-                  <ThumbsUp
-                    :size="14"
+                <div class="dyn-feed-actions">
+                  <button class="dyn-action-btn">
+                    <Share2 :size="14" />
+                    <span>转发</span>
+                  </button>
+                  <button
+                    class="dyn-action-btn"
+                    :class="{ 'dyn-action-btn-active': isCommentExpanded(item) }"
+                    @click="toggleComments(item)"
+                  >
+                    <MessageSquare :size="14" />
+                    <span v-if="item.workType === 1 && item.video?.commentCount">{{
+                      item.video.commentCount
+                    }}</span>
+                    <span v-else-if="item.workType === 2 && item.dynamic?.commentCount">{{
+                      item.dynamic.commentCount
+                    }}</span>
+                    <span v-else>评论</span>
+                  </button>
+                  <button
+                    class="dyn-action-btn"
                     :class="{
-                      'fill-current':
+                      'text-primary':
                         item.workType === 1 ? item.video?.isLiked : item.dynamic?.isLiked,
                     }"
-                  />
-                  <span v-if="item.workType === 1 && item.video?.likeCount">{{
-                    item.video.likeCount
-                  }}</span>
-                  <span v-else-if="item.workType === 2 && item.dynamic?.likeCount">{{
-                    item.dynamic.likeCount
-                  }}</span>
-                  <span v-else>点赞</span>
-                </button>
-              </div>
+                    @click="handleLike(item)"
+                  >
+                    <ThumbsUp
+                      :size="14"
+                      :class="{
+                        'fill-current':
+                          item.workType === 1 ? item.video?.isLiked : item.dynamic?.isLiked,
+                      }"
+                    />
+                    <span v-if="item.workType === 1 && item.video?.likeCount">{{
+                      item.video.likeCount
+                    }}</span>
+                    <span v-else-if="item.workType === 2 && item.dynamic?.likeCount">{{
+                      item.dynamic.likeCount
+                    }}</span>
+                    <span v-else>点赞</span>
+                  </button>
+                </div>
 
-              <div v-if="isCommentExpanded(item)" class="dyn-feed-comments">
-                <CommentSection
-                  :video-id="getVideoId(item)"
-                  :dynamic-id="getDynamicId(item)"
-                  :author-id="item.author.id"
-                  :initial-comment-id="savedCommentId"
-                  @comment-consumed="savedCommentId = undefined"
-                />
+                <div v-if="isCommentExpanded(item)" class="dyn-feed-comments">
+                  <CommentSection
+                    :video-id="getVideoId(item)"
+                    :dynamic-id="getDynamicId(item)"
+                    :author-id="item.author.id"
+                    :initial-comment-id="savedCommentId"
+                    @comment-consumed="savedCommentId = undefined"
+                  />
+                </div>
               </div>
             </div>
-          </div>
+          </TransitionGroup>
 
           <div v-if="feedItems.length === 0 && !feedLoading && feedInitLoaded" class="dyn-empty">
             <Eye :size="48" class="text-muted-foreground" />
@@ -973,9 +991,22 @@ watch(
 
 <style scoped lang="scss">
 .dyn-page {
-  max-width: 1180px;
+  /* 与 MainLayout 给 Navbar 的 --shell-max 同档，顶栏与内容左右边缘对齐 */
+  max-width: var(--container-focus, 1140px);
   margin: 0 auto;
-  padding: 20px 16px 60px;
+  padding: 1.5rem 1rem 3.75rem;
+}
+
+@media (width >= 640px) {
+  .dyn-page {
+    padding-inline: 1.5rem;
+  }
+}
+
+@media (width >= 1024px) {
+  .dyn-page {
+    padding-inline: 2rem;
+  }
 }
 
 .dyn-container {
@@ -1050,9 +1081,11 @@ watch(
   cursor: pointer;
 
   &-num {
-    font-size: 15px;
+    font-size: 0.9375rem;
     font-weight: 600;
     color: var(--color-foreground);
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: 'tnum' 1;
   }
 
   &-label {
@@ -1101,7 +1134,7 @@ watch(
     gap: 10px;
     padding: 7px 14px;
     cursor: pointer;
-    transition: background 0.12s;
+    transition: background-color var(--duration-fast) var(--ease-out-quart);
 
     &:hover {
       background-color: var(--color-secondary);
@@ -1188,8 +1221,7 @@ watch(
     font-size: 13px;
     color: var(--color-foreground);
     resize: none;
-    outline: none;
-    transition: border-color 0.2s;
+    transition: border-color var(--duration-fast) var(--ease-out-quart);
     line-height: 1.6;
 
     &:focus {
@@ -1219,8 +1251,8 @@ watch(
       width: 18px;
       height: 18px;
       border-radius: 50%;
-      background: rgb(0 0 0 / 0.6);
-      color: #fff;
+      background: var(--media-overlay);
+      color: var(--media-overlay-text);
       font-size: 12px;
       display: flex;
       align-items: center;
@@ -1259,8 +1291,8 @@ watch(
   color: var(--color-muted-foreground);
   cursor: pointer;
   transition:
-    color 0.12s,
-    background 0.12s;
+    color var(--duration-fast) linear,
+    background-color var(--duration-fast) var(--ease-out-quart);
   border: none;
   background: none;
 
@@ -1278,9 +1310,7 @@ watch(
   background-color: var(--color-card);
   border: 1px solid var(--color-border);
   border-radius: 8px;
-  box-shadow:
-    0 4px 12px rgb(0 0 0 / 0.08),
-    0 1px 3px rgb(0 0 0 / 0.04);
+  box-shadow: var(--shadow-overlay);
   padding: 10px;
   z-index: 100;
 }
@@ -1303,12 +1333,12 @@ watch(
   border: none;
   background: none;
   transition:
-    background 0.15s,
-    transform 0.15s;
+    background-color var(--duration-fast) var(--ease-out-quart),
+    transform var(--duration-fast) var(--ease-out-quint);
 
   &:hover {
     background: var(--color-secondary);
-    transform: scale(1.2);
+    transform: scale(1.12);
   }
 }
 
@@ -1321,12 +1351,19 @@ watch(
   padding: 5px 22px;
   border-radius: 6px;
   background-color: var(--color-primary);
-  color: #fff;
-  font-size: 13px;
+  color: var(--color-primary-foreground);
+  font-size: var(--text-sm-plus, 0.8125rem);
   font-weight: 500;
   border: none;
   cursor: pointer;
-  transition: background 0.15s;
+  transition:
+    background-color var(--duration-fast) var(--ease-out-quart),
+    opacity var(--duration-fast) linear,
+    transform var(--duration-fast) var(--ease-out-quint);
+
+  &:active:not(:disabled) {
+    transform: scale(0.97);
+  }
 
   &:hover:not(:disabled) {
     background-color: var(--color-primary);
@@ -1419,8 +1456,8 @@ watch(
     object-fit: cover;
     border: 2.5px solid transparent;
     transition:
-      border-color 0.18s,
-      transform 0.18s;
+      border-color var(--duration-fast) var(--ease-out-quart),
+      transform var(--duration-fast) var(--ease-out-quint);
     box-sizing: border-box;
 
     &-wrap {
@@ -1438,7 +1475,7 @@ watch(
     height: 8px;
     border-radius: 50%;
     background-color: var(--color-accent);
-    border: 1.5px solid #fff;
+    border: 1.5px solid var(--color-card);
   }
 
   &-name {
@@ -1461,19 +1498,19 @@ watch(
     border-radius: 50%;
     background-color: var(--color-card);
     border: 1px solid var(--color-border);
-    box-shadow: 0 2px 6px rgb(0 0 0 / 0.1);
+    box-shadow: var(--shadow-raised);
     display: flex;
     align-items: center;
     justify-content: center;
     color: var(--color-muted-foreground);
     cursor: pointer;
     transition:
-      background 0.15s,
-      color 0.15s;
+      background-color var(--duration-fast) var(--ease-out-quart),
+      color var(--duration-fast) linear;
 
     &:hover {
       background-color: var(--color-primary);
-      color: #fff;
+      color: var(--color-primary-foreground);
       border-color: var(--color-primary);
     }
 
@@ -1530,24 +1567,69 @@ watch(
   }
 }
 
+/* 列表增删 / 置顶重排：leave 绝对定位，兄弟节点才会播 -move 的 FLIP */
+.dfeed-move {
+  transition: transform var(--duration-slow) var(--ease-out-quart);
+}
+
+.dfeed-enter-active {
+  transition:
+    opacity var(--duration-normal) linear,
+    transform var(--duration-normal) var(--ease-out-expo);
+}
+
+.dfeed-leave-active {
+  position: absolute;
+  left: 0;
+  right: 0;
+  transition:
+    opacity var(--duration-fast) linear,
+    transform var(--duration-fast) var(--ease-out-quart);
+}
+
+.dfeed-enter-from {
+  opacity: 0;
+  transform: translate3d(0, -12px, 0);
+}
+
+.dfeed-leave-to {
+  opacity: 0;
+  transform: scale(0.97);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .dyn-feed-item:hover::after {
+    opacity: 1;
+  }
+}
+
 .dyn-feed {
+  position: relative;
   display: flex;
   flex-direction: column;
   gap: 10px;
+  /* 列表置顶重排由上面的视口恢复逻辑接管，禁止浏览器再次选择动态卡片作滚动锚点。 */
+  overflow-anchor: none;
 
   &-item {
+    position: relative;
     display: flex;
     gap: 12px;
     padding: 16px 18px;
     background-color: var(--color-card);
     border-radius: 8px;
     box-shadow: var(--shadow-surface);
-    transition:
-      box-shadow 0.18s,
-      background-color 0.18s;
+    transition: background-color var(--duration-normal) var(--ease-out-quart);
 
-    &:hover {
-      box-shadow: 0 2px 8px rgb(0 0 0 / 0.08);
+    &::after {
+      content: '';
+      position: absolute;
+      inset: 0;
+      border-radius: inherit;
+      box-shadow: var(--shadow-raised);
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity var(--duration-normal) var(--ease-out-quart);
     }
 
     &-highlight {
@@ -1712,11 +1794,14 @@ watch(
   position: absolute;
   bottom: 4px;
   right: 6px;
-  background: rgb(0 0 0 / 0.7);
-  color: #fff;
-  font-size: 11px;
+  background: var(--media-overlay);
+  border: 1px solid color-mix(in oklch, var(--media-overlay-text) 12%, transparent);
+  backdrop-filter: blur(var(--blur-scrim, 8px));
+  color: var(--media-overlay-text);
+  font-size: var(--text-2xs, 0.6875rem);
+  font-variant-numeric: tabular-nums;
   padding: 0 5px;
-  border-radius: 3px;
+  border-radius: var(--radius-sm, 0.375rem);
   line-height: 1.6;
 }
 
@@ -1765,8 +1850,10 @@ watch(
   display: inline-flex;
   align-items: center;
   gap: 3px;
-  font-size: 12px;
+  font-size: 0.75rem;
   color: var(--color-muted-foreground);
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: 'tnum' 1;
 }
 
 .dyn-action-btn {
@@ -1996,7 +2083,7 @@ watch(
 
   &-top {
     background-color: var(--color-primary);
-    color: #fff;
+    color: var(--color-primary-foreground);
   }
 }
 

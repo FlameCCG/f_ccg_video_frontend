@@ -64,7 +64,8 @@ export const useAuthStore = defineStore(
      */
     const handleLogin = async <P>(
       apiCall: (p: P) => Promise<JwtToken>,
-      params: P
+      params: P,
+      onError?: (message: string) => void
     ): Promise<boolean> => {
       isLoading.value = true
       try {
@@ -73,8 +74,10 @@ export const useAuthStore = defineStore(
         await fetchUserInfo()
         toast.success('登录成功')
         return true
-      } catch {
-        // Error toast is handled by request interceptor
+      } catch (error: unknown) {
+        // 默认路径：toast 由 request 拦截器负责。
+        // 传了 onError 的调用方是要自己承载失败文案的（见 login 的 silent 说明）。
+        onError?.(error instanceof Error ? error.message : '')
         return false
       } finally {
         isLoading.value = false
@@ -83,8 +86,20 @@ export const useAuthStore = defineStore(
 
     /**
      * 用户名密码登录
+     *
+     * silent + onError: 让调用方把失败原因显示在自己的 UI 里（点选验证码弹窗内联提示），
+     * 而不是弹窗说「已为你换一张」、toast 再说一遍「密码错误」。
+     * 两者要成对使用——只给 silent 不给 onError 会让失败彻底没有反馈。
      */
-    const login = (params: LoginPwdParams): Promise<boolean> => handleLogin(loginByPassword, params)
+    const login = (
+      params: LoginPwdParams,
+      options?: { silent?: boolean; onError?: (message: string) => void }
+    ): Promise<boolean> =>
+      handleLogin(
+        (p: LoginPwdParams) => loginByPassword(p, { silent: options?.silent }),
+        params,
+        options?.onError
+      )
 
     /**
      * QQ 登录

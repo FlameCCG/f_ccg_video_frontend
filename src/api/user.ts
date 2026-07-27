@@ -322,8 +322,12 @@ export interface CreateTagParams {
  * 接口说明: 使用用户名/邮箱和密码登录，需要先通过点击验证码
  * 重要说明: 是否需要提交 captchaToken/captchaDots，应根据 GET /common/site/config 返回的 data.site.login.textClickCaptcha 判断
  */
-export const loginByPassword = (params: LoginPwdParams): Promise<JwtToken> => {
-  return request.post('/common/user/login/pwd', params)
+export const loginByPassword = (
+  params: LoginPwdParams,
+  options?: { silent?: boolean }
+): Promise<JwtToken> => {
+  // silent: 点选验证码弹窗自己有失败态（换图 + 内联提示），再弹一个 toast 就是同一件事说两遍
+  return request.post('/common/user/login/pwd', params, { silent: options?.silent })
 }
 
 /**

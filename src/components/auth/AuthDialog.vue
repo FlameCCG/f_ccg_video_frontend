@@ -37,6 +37,19 @@ interface SlideCaptchaExposed {
   reset: () => void
 }
 
+/** 点选验证码与滑块同构：确定只是提交，成功/失败由这里按后端结果驱动 */
+interface ClickCaptchaExposed {
+  success: () => void
+  fail: (message?: string) => void
+  refresh: () => void
+  reset: () => void
+}
+
+interface ClickCaptchaSubmission {
+  token: string
+  dots: ClickCaptchaPoint[]
+}
+
 /** 仅滑块/图形验证码校验失败（不含发送频率等业务错误） */
 const isCaptchaBusinessError = (message: string): boolean => {
   const lower = message.toLowerCase()
@@ -103,6 +116,7 @@ const graphicsCaptchaValue = shallowRef<{ captchaID: string; captchaCode: string
   captchaCode: '',
 })
 const clickCaptchaOpen = shallowRef(false)
+const clickCaptchaDialogRef = shallowRef<ClickCaptchaExposed | null>(null)
 const slideCaptchaOpen = shallowRef(false)
 const slideCaptchaDialogRef = shallowRef<SlideCaptchaExposed | null>(null)
 
@@ -236,32 +250,63 @@ const buildEmailCaptchaPayload = (type: 1 | 2, email: string) => {
   return payload
 }
 
-const handleLoginClick = () => {
+const handleLoginClick = async () => {
   if (!isLoginFormValid.value) return
   if (siteStore.isLoginClickCaptchaEnabled) {
     clickCaptchaOpen.value = true
+    return
+  }
+  // 无验证码路径：没有弹窗承载失败态，仍走 request 层的 toast
+  if (await doLogin({ token: '', dots: [] })) finishLogin()
+}
+
+/**
+ * 点选验证码提交：先问后端，再让验证码演结果。
+ * 不能反过来 —— 原实现是验证码自己 setTimeout 后宣布成功、关窗，再去登录，
+ * 后端说验证码错了的时候用户已经看完成功动画了。
+ */
+const handleClickCaptchaConfirm = async (value: ClickCaptchaSubmission) => {
+  // silent + onError：失败原因显示在验证码弹窗内联提示里，不再叠一个 toast。
+  // 失败可能是验证码点错，也可能是密码错 —— 原因必须传进去，否则用户只看到「已换一张」。
+  let reason = ''
+  const success = await doLogin(value, {
+    silent: true,
+    onError: (message) => {
+      reason = message
+    },
+  })
+  if (success) {
+    clickCaptchaDialogRef.value?.success()
   } else {
-    void doLogin({ token: '', dots: [] })
+    clickCaptchaDialogRef.value?.fail(reason)
   }
 }
 
-const handleClickCaptchaVerified = (value: { token: string; dots: ClickCaptchaPoint[] }) => {
-  void doLogin(value)
+/** 验证码成功动画播完并自行关闭后，才收掉登录弹窗 */
+const handleClickCaptchaVerified = () => {
+  finishLogin()
 }
 
-const doLogin = async (captcha: { token: string; dots: ClickCaptchaPoint[] }) => {
+const finishLogin = () => {
+  emit('success')
+  emit('update:open', false)
+}
+
+const doLogin = async (
+  captcha: ClickCaptchaSubmission,
+  options?: { silent?: boolean; onError?: (message: string) => void }
+): Promise<boolean> => {
   isSubmitting.value = true
   try {
-    const success = await authStore.login({
-      username: loginUsername.value.trim(),
-      password: loginPassword.value,
-      captchaToken: captcha.token,
-      captchaDots: captcha.dots,
-    })
-    if (success) {
-      emit('success')
-      emit('update:open', false)
-    }
+    return await authStore.login(
+      {
+        username: loginUsername.value.trim(),
+        password: loginPassword.value,
+        captchaToken: captcha.token,
+        captchaDots: captcha.dots,
+      },
+      options
+    )
   } finally {
     isSubmitting.value = false
   }
@@ -574,8 +619,10 @@ onUnmounted(() => {
 
 <template>
   <Dialog :open="open" @update:open="setOpen">
+    <!-- 入退场由 DialogContent 自带的 .motion-surface（main.scss 真实 keyframes）驱动；
+         原先这里挂的 data-[state=*]:slide-in-from-* / slide-out-to-* 是死类，不生成任何 CSS。 -->
     <DialogContent
-      class="auth-dialog-content max-w-[min(100vw-1.5rem,400px)] gap-0 overflow-hidden p-0 duration-200 data-[state=closed]:slide-out-to-left-0 data-[state=closed]:slide-out-to-top-0 data-[state=open]:slide-in-from-left-0 data-[state=open]:slide-in-from-top-0 sm:max-w-[400px]"
+      class="auth-dialog-content max-w-[min(100vw-1.5rem,400px)] gap-0 overflow-hidden p-0 sm:max-w-[400px]"
     >
       <!-- 无障碍标题：视觉层级仍由下方自定义 header 承担 -->
       <DialogTitle class="sr-only">{{ modeTitle }}</DialogTitle>
@@ -1024,15 +1071,15 @@ onUnmounted(() => {
   </Dialog>
 
   <ClickCaptchaDialog
+    ref="clickCaptchaDialogRef"
     v-model:open="clickCaptchaOpen"
+    @confirm="handleClickCaptchaConfirm"
     @verified="handleClickCaptchaVerified"
-    @cancel="() => {}"
   />
   <SlideCaptchaDialog
     ref="slideCaptchaDialogRef"
     v-model:open="slideCaptchaOpen"
     @confirm="handleSlideCaptchaConfirm"
-    @cancel="() => {}"
   />
 </template>
 

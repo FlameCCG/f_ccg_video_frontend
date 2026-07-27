@@ -5,6 +5,10 @@ import { getPlayHistoryList, deletePlayHistory, type HistoryItem } from '@/api/v
 import { toast } from 'vue-sonner'
 import { Search, Trash2, Loader2, Clock, X, Play, CheckSquare, Square } from 'lucide-vue-next'
 import { formatDuration } from '@/utils/format'
+import AppImage from '@/components/common/AppImage.vue'
+import EmptyState from '@/components/common/EmptyState.vue'
+import SkeletonGroup from '@/components/common/SkeletonGroup.vue'
+import { Button } from '@/components/ui/button'
 
 const router = useRouter()
 
@@ -232,7 +236,7 @@ watch(searchKeyword, (val) => {
           <input
             v-model="searchKeyword"
             class="hist-search-input"
-            placeholder="搜索历史记录"
+            placeholder="搜索看过的视频或 UP 主"
             @keyup.enter="handleSearch"
           />
           <button v-if="searchActive" class="hist-search-clear" @click="clearSearch">
@@ -298,8 +302,13 @@ watch(searchKeyword, (val) => {
                     <Square v-else :size="18" />
                   </button>
                   <div class="hist-item-cover" @click.stop="handleVideoClick(item.videoId)">
-                    <img :src="item.cover" />
-                    <span class="hist-item-dur">{{ formatDuration(item.duration) }}</span>
+                    <AppImage
+                      :src="item.cover"
+                      :alt="item.title"
+                      aspect="auto"
+                      img-class="hist-cover-img"
+                    />
+                    <span class="hist-item-dur tabular">{{ formatDuration(item.duration) }}</span>
                     <div class="hist-item-progress-bar">
                       <div
                         class="hist-item-progress-fill"
@@ -307,7 +316,7 @@ watch(searchKeyword, (val) => {
                       ></div>
                     </div>
                     <div class="hist-item-play-overlay">
-                      <Play :size="28" fill="white" />
+                      <Play :size="28" fill="currentColor" />
                     </div>
                   </div>
                   <div class="hist-item-info">
@@ -340,20 +349,46 @@ watch(searchKeyword, (val) => {
           </div>
         </template>
 
-        <!-- Empty State -->
-        <div
-          v-if="historyItems.length === 0 && !historyLoading && historyInitLoaded"
-          class="hist-empty"
+        <!-- 首屏骨架：形状与真实卡片一致（16:10 封面 + 标题两行 + 作者 + 进度），切换零位移 -->
+        <SkeletonGroup
+          v-if="historyLoading && historyItems.length === 0"
+          :count="8"
+          class="hist-items"
         >
-          <Clock :size="48" class="text-muted-foreground" />
-          <p>暂无历史记录</p>
-        </div>
+          <div class="hist-sk-card">
+            <div class="hist-sk-cover skeleton-shimmer"></div>
+            <div class="hist-sk-info">
+              <div class="hist-sk-a skeleton-shimmer h-3.5 w-full rounded"></div>
+              <div class="hist-sk-b skeleton-shimmer h-3.5 w-3/5 rounded"></div>
+              <div class="hist-sk-c skeleton-shimmer h-3 w-20 rounded"></div>
+            </div>
+          </div>
+        </SkeletonGroup>
 
-        <!-- Loading -->
-        <div v-if="historyLoading && historyItems.length === 0" class="hist-loading">
-          <Loader2 :size="24" class="animate-spin text-primary" />
-          <span>加载中...</span>
-        </div>
+        <!-- Empty State -->
+        <EmptyState
+          v-else-if="historyItems.length === 0 && historyInitLoaded && searchActive"
+          size="lg"
+          icon="search"
+          announce
+          title=""
+          description="换一个关键词，或者清空搜索看看全部记录"
+        >
+          <template #title>历史记录里没有「{{ searchKeyword.trim().slice(0, 20) }}」</template>
+          <Button variant="outline" size="sm" @click="clearSearch">清空搜索</Button>
+        </EmptyState>
+
+        <EmptyState
+          v-else-if="historyItems.length === 0 && historyInitLoaded"
+          size="lg"
+          icon="history"
+          title="还没有观看记录"
+          description="看过的视频会按时间排在这里，方便你接着上次继续看"
+        >
+          <Button variant="outline" size="sm" as-child>
+            <router-link to="/hot">去看看热门视频</router-link>
+          </Button>
+        </EmptyState>
 
         <!-- Load More -->
         <div
@@ -361,7 +396,8 @@ watch(searchKeyword, (val) => {
           class="hist-loadmore"
         >
           <button class="hist-loadmore-btn" :disabled="historyLoading" @click="loadMore">
-            {{ historyLoading ? '加载中...' : '加载更多' }}
+            <Loader2 v-if="historyLoading" :size="14" class="animate-spin" />
+            {{ historyLoading ? '正在加载…' : '加载更多' }}
           </button>
         </div>
       </div>
@@ -427,7 +463,9 @@ watch(searchKeyword, (val) => {
     font-size: 13px;
     color: var(--color-foreground);
     outline: none;
-    transition: border-color 0.2s;
+    transition:
+      border-color var(--duration-fast) var(--ease-out-quart),
+      background-color var(--duration-fast) var(--ease-out-quart);
     background-color: var(--color-secondary);
 
     &:focus {
@@ -453,7 +491,7 @@ watch(searchKeyword, (val) => {
     border: none;
     cursor: pointer;
     color: var(--color-muted-foreground);
-    transition: background 0.12s;
+    transition: background-color var(--duration-fast) var(--ease-out-quart);
 
     &:hover {
       background-color: var(--color-muted);
@@ -470,8 +508,8 @@ watch(searchKeyword, (val) => {
   border: 1px solid var(--color-border);
   cursor: pointer;
   transition:
-    color 0.12s,
-    border-color 0.12s;
+    color var(--duration-fast) linear,
+    border-color var(--duration-fast) var(--ease-out-quart);
 
   &:hover {
     color: var(--color-primary);
@@ -490,12 +528,7 @@ watch(searchKeyword, (val) => {
   background-color: var(--color-card);
   border-radius: 12px;
   border: 1px solid var(--color-border);
-  box-shadow: var(--shadow-sm, 0 2px 8px rgb(0, 0, 0, 0.05));
-  transition: all 0.2s;
-}
-
-html.dark .hist-batch-bar {
-  box-shadow: 0 4px 12px rgb(0, 0, 0, 0.2);
+  box-shadow: var(--shadow-surface);
 }
 
 .hist-batch-count {
@@ -520,7 +553,12 @@ html.dark .hist-batch-bar {
   font-size: 14px;
   font-weight: 500;
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition:
+    color var(--duration-fast) linear,
+    background-color var(--duration-fast) var(--ease-out-quart),
+    border-color var(--duration-fast) var(--ease-out-quart),
+    opacity var(--duration-fast) linear,
+    transform var(--duration-fast) var(--ease-out-quart);
 }
 
 .hist-batch-select-all {
@@ -614,15 +652,15 @@ html.dark .hist-batch-bar {
   background-color: var(--color-card);
   overflow: hidden;
   transition:
-    box-shadow 0.18s,
-    transform 0.18s;
+    box-shadow var(--duration-normal) var(--ease-out-quart),
+    transform var(--duration-normal) var(--ease-out-expo);
   box-shadow: var(--shadow-surface);
 
   &:hover {
     box-shadow: var(--shadow-raised);
     transform: translateY(-2px);
 
-    .hist-item-cover img {
+    .hist-item-cover :deep(.hist-cover-img) {
       transform: scale(1.05);
     }
 
@@ -666,21 +704,14 @@ html.dark .hist-batch-bar {
     overflow: hidden;
     cursor: pointer;
     background-color: var(--color-secondary);
-
-    img {
-      width: 100%;
-      height: 100%;
-      object-fit: cover;
-      transition: transform 0.3s;
-    }
   }
 
   &-dur {
     position: absolute;
     bottom: 14px;
     right: 6px;
-    background: rgb(0 0 0 / 0.7);
-    color: var(--color-primary-foreground);
+    background: var(--media-overlay);
+    color: var(--media-overlay-text);
     font-size: 11px;
     padding: 1px 5px;
     border-radius: 3px;
@@ -694,17 +725,15 @@ html.dark .hist-batch-bar {
     left: 0;
     right: 0;
     height: 4px;
-    background: rgb(128, 128, 128, 0.4);
+    background: color-mix(in oklch, var(--media-overlay-text) 32%, transparent);
     z-index: 2;
     backdrop-filter: blur(2px);
   }
 
   &-progress-fill {
     height: 100%;
-    background: rgb(220, 40, 70);
+    background: var(--status-danger);
     border-radius: 0 2px 2px 0;
-    transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-    box-shadow: 0 0 4px rgb(220, 40, 70, 0.4);
   }
 
   &-play-overlay {
@@ -713,9 +742,10 @@ html.dark .hist-batch-bar {
     display: flex;
     align-items: center;
     justify-content: center;
-    background: rgb(0 0 0 / 0.25);
+    color: var(--media-overlay-text);
+    background: color-mix(in oklch, var(--media-overlay) 45%, transparent);
     opacity: 0;
-    transition: opacity 0.2s;
+    transition: opacity var(--duration-normal) var(--ease-out-quart);
     z-index: 1;
   }
 
@@ -738,7 +768,7 @@ html.dark .hist-batch-bar {
     overflow: hidden;
     line-height: 1.4;
     cursor: pointer;
-    transition: color 0.12s;
+    transition: color var(--duration-fast) linear;
   }
 
   &-meta {
@@ -751,7 +781,7 @@ html.dark .hist-batch-bar {
     font-size: 12px;
     color: var(--color-muted-foreground);
     cursor: pointer;
-    transition: color 0.12s;
+    transition: color var(--duration-fast) linear;
 
     &:hover {
       color: var(--color-primary);
@@ -772,8 +802,8 @@ html.dark .hist-batch-bar {
     width: 26px;
     height: 26px;
     border-radius: 50%;
-    background: rgb(0 0 0 / 0.5);
-    color: var(--color-primary-foreground);
+    background: color-mix(in oklch, var(--media-overlay) 78%, transparent);
+    color: var(--media-overlay-text);
     border: none;
     cursor: pointer;
     display: flex;
@@ -781,8 +811,8 @@ html.dark .hist-batch-bar {
     justify-content: center;
     opacity: 0;
     transition:
-      opacity 0.15s,
-      background 0.15s;
+      opacity var(--duration-fast) linear,
+      background-color var(--duration-fast) var(--ease-out-quart);
 
     &:hover {
       background-color: var(--color-accent);
@@ -795,14 +825,17 @@ html.dark .hist-batch-bar {
   top: 10px;
   left: 10px;
   z-index: 3;
-  background-color: rgb(0, 0, 0, 0.6);
+  background-color: var(--media-overlay);
   border-radius: 6px;
-  border: 1px solid rgb(255, 255, 255, 0.2);
+  border: 1px solid color-mix(in oklch, var(--media-overlay-text) 20%, transparent);
   cursor: pointer;
   padding: 4px;
-  color: rgb(255, 255, 255, 0.7);
+  color: var(--media-overlay-text);
   backdrop-filter: blur(4px);
-  transition: all 0.2s;
+  transition:
+    color var(--duration-fast) linear,
+    background-color var(--duration-fast) var(--ease-out-quart),
+    border-color var(--duration-fast) var(--ease-out-quart);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -820,8 +853,8 @@ html.dark .hist-batch-bar {
   }
 
   &:hover {
-    background-color: rgb(0, 0, 0, 0.8);
-    color: white;
+    background-color: color-mix(in oklch, var(--media-overlay) 100%, transparent);
+    color: var(--media-overlay-text);
   }
 }
 
@@ -832,29 +865,46 @@ html.dark .hist-batch-bar {
   cursor: pointer;
 }
 
-.hist-empty {
-  padding: 80px 0;
-  text-align: center;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 12px;
-
-  p {
-    font-size: 14px;
-    color: var(--color-muted-foreground);
-  }
+/* 封面显影动画在 AppImage 的包裹层上，<img> 自身的 transform 留给 hover 缩放 */
+.hist-item-cover :deep(.hist-cover-img) {
+  transition: transform var(--duration-slow) var(--ease-out-expo);
 }
 
-.hist-loading {
-  padding: 60px 0;
-  text-align: center;
+/* ---------- 首屏骨架：盒模型与 .hist-item 完全一致（复用 .hist-items 栅格） ---------- */
+.hist-sk-card {
   display: flex;
-  align-items: center;
-  justify-content: center;
+  flex-direction: column;
+  overflow: hidden;
+  background-color: var(--color-card);
+  border-radius: 8px;
+  box-shadow: var(--shadow-surface);
+}
+
+.hist-sk-cover {
+  aspect-ratio: 16 / 10;
+  width: 100%;
+}
+
+/* --skeleton-phase 必须落在父级：同一元素既读又写 --skeleton-index 是 CSS 循环 */
+.hist-sk-info {
+  --skeleton-phase: var(--skeleton-index, 0);
+
+  display: flex;
+  flex-direction: column;
   gap: 8px;
-  font-size: 13px;
-  color: var(--color-muted-foreground);
+  padding: 10px 10px 12px;
+}
+
+.hist-sk-a {
+  --skeleton-index: calc(var(--skeleton-phase) + 0.3);
+}
+
+.hist-sk-b {
+  --skeleton-index: calc(var(--skeleton-phase) + 0.45);
+}
+
+.hist-sk-c {
+  --skeleton-index: calc(var(--skeleton-phase) + 0.6);
 }
 
 .hist-loadmore {
@@ -862,6 +912,9 @@ html.dark .hist-batch-bar {
   padding: 16px 0;
 
   &-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
     padding: 8px 32px;
     border-radius: 20px;
     border: 1px solid var(--color-border);
@@ -870,8 +923,8 @@ html.dark .hist-batch-bar {
     font-size: 13px;
     cursor: pointer;
     transition:
-      color 0.12s,
-      border-color 0.12s;
+      color var(--duration-fast) linear,
+      border-color var(--duration-fast) var(--ease-out-quart);
 
     &:hover:not(:disabled) {
       color: var(--color-primary);

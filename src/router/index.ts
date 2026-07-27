@@ -1,4 +1,5 @@
 import { createRouter, createWebHistory, type RouteRecordRaw } from 'vue-router'
+import { useAuthStore } from '@/stores/auth'
 
 // Layout components
 const MainLayout = () => import('@/layouts/MainLayout.vue')
@@ -94,8 +95,35 @@ const routes: RouteRecordRaw[] = [
       {
         path: 'favorites',
         name: 'favorites',
-        component: () => import('@/views/favorites/Favorites.vue'),
-        meta: { requiresAuth: true },
+        /**
+         * 纯跳转位：收藏内容本身住在用户空间的收藏 Tab，这里只负责把入口解析过去。
+         *
+         * 原实现挂的是一个 Favorites.vue 中转组件，在 onMounted 里再 router.replace。
+         * 代价是一次点击播两段转场：先播 MainLayout 内层的 .route-* 把「正在打开你的
+         * 收藏夹…」的 spinner 淡进来，中转页转头又换掉整个 layout，再播 App.vue 的
+         * 顶层布局转场。用户看到的是「首页淡出 → 一闪而过的转圈 → 整页再淡一次」，
+         * 而点「消息」「创作中心」只淡一次 —— 首页点收藏手感不一样就是这么来的。
+         * 从用户空间里点收藏夹更糟：UserLayout → MainLayout → UserLayout 来回换两次壳，
+         * User.vue 整个重挂一遍，只为了切一个 Tab。
+         *
+         * 改成路由级 redirect（与本文件 /message → /message/chat、/creator → /creator/home
+         * 同源）：目标在导航确认前就解析完，中转组件永不挂载，全程只播一次转场。
+         *
+         * 注意 redirect 记录由匹配器在 beforeEach 之前就消化掉了，全局 requiresAuth
+         * 守卫看不到 /favorites，所以未登录兜底必须写在这里（行为与守卫一致：回首页）。
+         */
+        redirect: (to) => {
+          const auth = useAuthStore()
+          if (!auth.isLoggedIn || !auth.userId) return { name: 'home' }
+
+          const query: Record<string, string> = { tab: 'favorites' }
+          const folderId = Array.isArray(to.query.folderId)
+            ? to.query.folderId[0]
+            : to.query.folderId
+          if (folderId) query.folderId = folderId
+
+          return { path: `/user/${auth.userId}`, query }
+        },
       },
     ],
   },
@@ -240,11 +268,22 @@ const routes: RouteRecordRaw[] = [
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
   routes,
+  /**
+   * 置顶要等离场动画播完再做，否则用户看到的是「页面一边淡出、一边被拽回顶部」。
+   * .route-leave-active 是 140ms（var(--duration-fast)），这里留 150ms 余量。
+   * 返回上一页时 savedPosition 立即生效，不加延迟——恢复滚动位置越快越不突兀。
+   */
   scrollBehavior(_to, _from, savedPosition) {
     if (savedPosition) {
       return savedPosition
     }
-    return { top: 0 }
+    const reduced =
+      typeof window !== 'undefined' &&
+      window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
+    if (reduced) return { top: 0 }
+    return new Promise((resolve) => {
+      setTimeout(() => resolve({ top: 0 }), 150)
+    })
   },
 })
 

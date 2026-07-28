@@ -1,110 +1,170 @@
 <script setup lang="ts">
-/**
- * 封面卡。原来是塞在长表单中段的 240px 小框，操作只在 hover 出现（触屏换不了封面），
- * AI 入口是个没有可访问名的圆形图标按钮，自动截取的封面也没有任何标识 ——
- * 用户很容易带着一帧黑场就发布了。
- */
-import { Bot, ImageIcon, Loader2, Sparkles } from 'lucide-vue-next'
+import { Bot, ImageIcon, Loader2, Shuffle, SlidersHorizontal } from 'lucide-vue-next'
 import { Button } from '@/components/ui/button'
-import { dataAttrs } from './upload-shared'
+import { dataAttrs, type CoverCandidate } from './upload-shared'
 
 defineProps<{
   coverPreview: string
   coverSource: 'none' | 'auto' | 'manual'
+  coverCandidates: CoverCandidate[]
   title: string
   invalid: boolean
   aiBusy: boolean
-  tip: string
 }>()
 
 const emit = defineEmits<{
   open: []
   ai: []
+  select: [candidateId: string]
 }>()
 </script>
 
 <template>
-  <section
-    id="upload-field-cover"
-    class="rounded-2xl border border-border bg-card p-5 shadow-surface"
-  >
-    <div class="mb-3 flex items-center justify-between gap-2">
-      <h2 class="text-sm font-semibold tracking-tight">
-        视频封面 <span class="text-destructive">*</span>
-      </h2>
-      <span v-if="coverSource === 'auto'" class="status-surface-info cover-card__chip">
-        <Sparkles class="h-3 w-3" aria-hidden="true" />
-        自动截取
+  <section id="upload-field-cover" class="cover-field">
+    <div class="cover-field__label">
+      <span>封面 <span class="text-destructive">*</span></span>
+      <span
+        v-if="coverSource !== 'none'"
+        class="cover-field__source"
+        :class="coverSource === 'auto' ? 'status-surface-info' : 'surface-tint'"
+      >
+        {{ coverSource === 'auto' ? '推荐封面' : '自定义' }}
       </span>
     </div>
 
-    <button
-      type="button"
-      class="cover-card__preview"
-      v-bind="
-        dataAttrs({
-          'data-empty': coverPreview ? 'false' : 'true',
-          'data-invalid': invalid ? 'true' : 'false',
-        })
-      "
-      :aria-label="coverPreview ? '更换视频封面' : '设置视频封面'"
-      @click="emit('open')"
-    >
-      <img
-        v-if="coverPreview"
-        :src="coverPreview"
-        :alt="title ? `${title} 的封面` : '视频封面'"
-        class="cover-card__image"
-      />
-      <span v-else class="cover-card__empty">
-        <ImageIcon class="h-7 w-7" aria-hidden="true" />
-        <span class="text-sm font-medium">设置封面</span>
-        <span class="text-xs">上传图片，或从视频里截一帧</span>
-      </span>
-    </button>
+    <div class="cover-field__content">
+      <div class="cover-field__primary">
+        <button
+          type="button"
+          class="cover-field__preview"
+          v-bind="
+            dataAttrs({
+              'data-empty': coverPreview ? 'false' : 'true',
+              'data-invalid': invalid ? 'true' : 'false',
+            })
+          "
+          :aria-label="coverPreview ? '编辑视频封面' : '设置视频封面'"
+          @click="emit('open')"
+        >
+          <img
+            v-if="coverPreview"
+            :src="coverPreview"
+            :alt="title ? `${title} 的封面` : '视频封面'"
+            class="cover-field__image"
+            draggable="false"
+          />
+          <span v-else class="cover-field__empty">
+            <ImageIcon class="h-6 w-6" />
+            <span>设置封面</span>
+          </span>
+        </button>
 
-    <p v-if="coverSource === 'auto'" class="mt-2.5 text-xs text-muted-foreground">
-      这是从视频第一段自动截取的，建议确认一下再发布。
-    </p>
-    <p v-else-if="invalid" class="mt-2.5 text-xs text-destructive">发布前需要先设置封面</p>
+        <div class="cover-field__actions">
+          <p class="text-sm font-medium text-foreground">
+            {{ coverPreview ? '封面已就绪' : '选择一个清晰的主画面' }}
+          </p>
+          <div class="flex flex-wrap gap-2">
+            <Button variant="outline" size="sm" @click="emit('open')">
+              <SlidersHorizontal class="h-3.5 w-3.5" />
+              封面设置
+            </Button>
+            <Button variant="ghost" size="sm" :disabled="aiBusy" @click="emit('ai')">
+              <Loader2 v-if="aiBusy" class="h-3.5 w-3.5 animate-spin" />
+              <Bot v-else class="h-3.5 w-3.5" />
+              AI 生成
+            </Button>
+          </div>
+        </div>
+      </div>
 
-    <!-- 按钮跟着预览图的宽度走，不然两颗按钮会被拉到整个版心宽 -->
-    <div class="mt-3 flex max-w-[22rem] gap-2">
-      <Button variant="outline" size="sm" class="flex-1" @click="emit('open')">
-        <ImageIcon class="h-3.5 w-3.5" />
-        {{ coverPreview ? '更换封面' : '选择封面' }}
-      </Button>
-      <Button variant="outline" size="sm" class="flex-1" :disabled="aiBusy" @click="emit('ai')">
-        <Loader2 v-if="aiBusy" class="h-3.5 w-3.5 animate-spin" />
-        <Bot v-else class="h-3.5 w-3.5" />
-        AI 生成
-      </Button>
+      <p v-if="invalid" class="mt-2 text-xs text-destructive">发布前需要先设置封面</p>
+
+      <div class="cover-field__recommend">
+        <div class="cover-field__recommend-title">
+          <span class="inline-flex items-center gap-1.5 font-medium text-foreground">
+            <Shuffle class="h-3.5 w-3.5 text-primary" />
+            推荐封面
+          </span>
+          <span>点击即可使用</span>
+        </div>
+
+        <div v-if="coverCandidates.length > 0" class="cover-field__rail">
+          <button
+            v-for="(candidate, index) in coverCandidates"
+            :key="candidate.id"
+            type="button"
+            class="cover-field__candidate"
+            :class="{ 'is-active': candidate.preview === coverPreview }"
+            :aria-label="`使用第 ${index + 1} 张推荐封面`"
+            @click="emit('select', candidate.id)"
+          >
+            <img :src="candidate.preview" alt="" draggable="false" />
+          </button>
+        </div>
+        <div v-else class="cover-field__recommend-empty">
+          视频上传完成后，这里会自动生成推荐封面。
+        </div>
+      </div>
     </div>
-
-    <p class="mt-3 text-xs leading-5 text-muted-foreground">{{ tip }}</p>
   </section>
 </template>
 
 <style scoped lang="scss">
-.cover-card__chip {
-  display: inline-flex;
-  gap: 0.25rem;
-  align-items: center;
-  padding: 0.125rem 0.5rem;
-  border: 1px solid;
-  border-radius: 999px;
-  font-size: 0.6875rem;
-  font-weight: 500;
-  line-height: 1rem;
+.cover-field {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0.75rem;
+  padding: 1.5rem 0;
+  border-bottom: 1px solid var(--color-border);
 }
 
-/* 单栏版心（56rem）下若还让 16:9 占满整行，封面会变成一块 900×500 的巨幕，
-   比它在成品页里的任何一处都大得多，喧宾夺主。按真实封面的量级封顶。 */
-.cover-card__preview {
+@media (width >= 720px) {
+  .cover-field {
+    grid-template-columns: 7rem minmax(0, 1fr);
+    gap: 1.25rem;
+  }
+}
+
+.cover-field__label {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  align-self: start;
+  min-height: 2.25rem;
+  color: var(--color-foreground);
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+
+.cover-field__source {
+  padding: 0.0625rem 0.375rem;
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  font-size: 0.625rem;
+  font-weight: 500;
+}
+
+.cover-field__content {
+  min-width: 0;
+}
+
+.cover-field__primary {
+  display: grid;
+  grid-template-columns: minmax(0, 13rem);
+  gap: 1rem;
+}
+
+@media (width >= 640px) {
+  .cover-field__primary {
+    grid-template-columns: minmax(0, 13rem) minmax(0, 1fr);
+    align-items: center;
+  }
+}
+
+.cover-field__preview {
   display: block;
   position: relative;
   width: 100%;
-  max-width: 22rem;
   aspect-ratio: 16 / 9;
   overflow: hidden;
   border: 1px solid var(--color-border);
@@ -121,30 +181,116 @@ const emit = defineEmits<{
   &[data-invalid='true'] {
     border-color: var(--status-danger-border);
   }
+
+  &:focus-visible {
+    outline: 2px solid var(--color-ring);
+    outline-offset: 2px;
+  }
 }
 
 @media (hover: hover) and (pointer: fine) {
-  .cover-card__preview:hover {
+  .cover-field__preview:hover {
     border-color: color-mix(in oklch, var(--color-primary) 50%, var(--color-border));
   }
 }
 
-.cover-card__image {
+.cover-field__image {
   width: 100%;
   height: 100%;
   object-fit: cover;
 }
 
-.cover-card__empty {
+.cover-field__empty {
   display: flex;
   position: absolute;
   inset: 0;
   flex-direction: column;
-  gap: 0.25rem;
+  gap: 0.375rem;
   align-items: center;
   justify-content: center;
-  padding: 0 1rem;
   color: var(--color-muted-foreground);
+  font-size: 0.75rem;
+}
+
+.cover-field__actions {
+  display: flex;
+  flex-direction: column;
+  gap: 0.875rem;
+  align-items: flex-start;
+}
+
+.cover-field__recommend {
+  margin-top: 1rem;
+  padding: 0.875rem;
+  border-radius: var(--radius-lg);
+  background-color: color-mix(in oklch, var(--color-muted) 36%, transparent);
+}
+
+.cover-field__recommend-title {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.375rem 0.75rem;
+  align-items: center;
+  margin-bottom: 0.625rem;
+  color: var(--color-muted-foreground);
+  font-size: 0.75rem;
+}
+
+.cover-field__rail {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.5rem;
+}
+
+@media (width >= 560px) {
+  .cover-field__rail {
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+  }
+}
+
+.cover-field__candidate {
+  position: relative;
+  aspect-ratio: 16 / 9;
+  overflow: hidden;
+  border: 2px solid transparent;
+  border-radius: var(--radius-md);
+  background-color: var(--color-muted);
+  transition:
+    border-color var(--duration-fast) var(--ease-out-quart),
+    transform var(--duration-fast) var(--ease-out-quint);
+
+  img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+
+  &.is-active {
+    border-color: var(--color-primary);
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--color-ring);
+    outline-offset: 2px;
+  }
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .cover-field__candidate:hover {
+    border-color: color-mix(in oklch, var(--color-primary) 65%, var(--color-border));
+    transform: translateY(-2px);
+  }
+}
+
+.cover-field__recommend-empty {
+  display: flex;
+  min-height: 3.5rem;
+  align-items: center;
+  justify-content: center;
+  border: 1px dashed var(--color-border);
+  border-radius: var(--radius-md);
+  color: var(--color-muted-foreground);
+  font-size: 0.75rem;
   text-align: center;
 }
 </style>

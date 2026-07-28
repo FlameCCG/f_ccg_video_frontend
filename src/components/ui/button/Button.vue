@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { HTMLAttributes, ButtonHTMLAttributes } from 'vue'
 import type { ButtonVariants } from '.'
+import { Primitive } from 'reka-ui'
 import { cn } from '@/lib/utils'
 import { buttonVariants } from '.'
 
@@ -28,13 +29,16 @@ const handleClick = (event: MouseEvent) => {
 </script>
 
 <template>
-  <component
-    :is="asChild ? 'slot' : 'button'"
+  <Primitive
+    :as="asChild ? 'div' : 'button'"
+    :as-child="asChild"
     :class="cn(buttonVariants({ variant, size }), $props.class)"
-    :type="asChild ? undefined : type"
-    :disabled="disabled"
-    @click="handleClick"
+    v-bind="{
+      type: asChild ? undefined : type,
+      disabled,
+      onClick: handleClick,
+    }"
   >
     <slot />
-  </component>
+  </Primitive>
 </template>

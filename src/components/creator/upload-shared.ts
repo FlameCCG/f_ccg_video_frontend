@@ -66,6 +66,13 @@ export interface VideoWorkForm {
   publishTime: string
 }
 
+export interface CoverCandidate {
+  id: string
+  time: number
+  preview: string
+  file: File
+}
+
 export type WorkPublishState = 'idle' | 'publishing' | 'done' | 'failed'
 
 export interface VideoWork {
@@ -76,6 +83,7 @@ export interface VideoWork {
   coverPreview: string
   currentCoverUrl: string
   coverSource: 'none' | 'auto' | 'manual'
+  coverCandidates: CoverCandidate[]
   publishState: WorkPublishState
 }
 

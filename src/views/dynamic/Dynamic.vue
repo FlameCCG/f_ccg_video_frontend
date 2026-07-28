@@ -80,7 +80,7 @@ const followUsers = ref<FollowUserItem[]>([])
 const followUsersLoading = ref(false)
 const hotKeywords = ref<HotKeywordItem[]>([])
 
-// null = "全部动态" (self), otherwise = selected followed user
+// null = "全部动态"（本人 + 关注用户聚合流），否则为选中的具体作者
 const selectedUserId = ref<number | null>(null)
 
 const newContent = ref('')
@@ -194,13 +194,11 @@ const getRouteTargetFeedKey = (items: WorkFeedItem[]) => {
   return null
 }
 
-const effectiveUserId = computed(() => selectedUserId.value ?? authStore.userId!)
-
 const fetchFeed = async (page = 1) => {
   feedLoading.value = true
   try {
     const res = await getDynamicList({
-      userId: effectiveUserId.value,
+      userId: selectedUserId.value ?? undefined,
       type: tabTypeMap[activeTab.value],
       page,
       pageSize: 20,
@@ -1157,11 +1155,13 @@ watch(
     position: absolute;
     top: 0;
     right: -1px;
-    width: 7px;
-    height: 7px;
+    width: 8px;
+    height: 8px;
     border-radius: 50%;
-    background-color: var(--color-accent);
-    border: 1.5px solid var(--color-card);
+    background-color: var(--signal-unread-dynamic);
+    box-shadow:
+      0 0 0 2px var(--color-card),
+      0 3px 8px -3px color-mix(in oklch, var(--signal-unread-dynamic) 72%, transparent);
   }
 
   &-info {
@@ -1471,11 +1471,13 @@ watch(
     position: absolute;
     top: 1px;
     right: 1px;
-    width: 8px;
-    height: 8px;
+    width: 9px;
+    height: 9px;
     border-radius: 50%;
-    background-color: var(--color-accent);
-    border: 1.5px solid var(--color-card);
+    background-color: var(--signal-unread-dynamic);
+    box-shadow:
+      0 0 0 2px var(--color-card),
+      0 3px 8px -3px color-mix(in oklch, var(--signal-unread-dynamic) 72%, transparent);
   }
 
   &-name {

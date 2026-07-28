@@ -458,13 +458,13 @@ const navActions = [
                 <!-- Badge -->
                 <span
                   v-if="action.badge === 'message' && totalMessageUnread > 0"
-                  class="tabular absolute -right-1 -top-1 flex h-4 min-w-[16px] items-center justify-center rounded-full bg-destructive px-1 text-2xs text-destructive-foreground shadow-surface"
+                  class="signal-unread-message tabular absolute -right-1 -top-1 flex h-4 min-w-[16px] items-center justify-center rounded-full px-1 text-2xs font-semibold"
                 >
                   {{ totalMessageUnread > 99 ? '99+' : totalMessageUnread }}
                 </span>
                 <span
                   v-if="action.badge === 'dynamic' && dynamicUnreadCount > 0"
-                  class="tabular absolute -right-1 -top-1 flex h-4 min-w-[16px] items-center justify-center rounded-full bg-destructive px-1 text-2xs text-destructive-foreground shadow-surface"
+                  class="signal-unread-dynamic tabular absolute -right-1 -top-1 flex h-4 min-w-[16px] items-center justify-center rounded-full px-1 text-2xs font-semibold"
                 >
                   {{ dynamicUnreadCount > 99 ? '99+' : dynamicUnreadCount }}
                 </span>

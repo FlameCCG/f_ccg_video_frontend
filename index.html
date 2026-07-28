@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="zh-CN">
   <head>
     <meta charset="UTF-8" />
@@ -7,22 +7,19 @@
     <title>Bilibili Video Platform</title>
     <link rel="stylesheet" href="/iconfront.css" />
     <style>
-      /*
-       * Vue 挂载前的首屏占位。它只存在于初始导航解析期间，app.mount 后会被
-       * 完整应用替换；颜色是独立的启动 token，避免样式分包尚未执行时露出空背景。
-       */
+      /* Vue 接管页面前只保留克制的启动提示，不再伪造一整页内容骨架。 */
       :root {
         --boot-background: oklch(98.5% 0.004 240deg);
         --boot-surface: oklch(94.5% 0.009 240deg);
-        --boot-sheen: oklch(99% 0.003 240deg / 0.82);
         --boot-brand: oklch(62% 0.17 230deg);
+        --boot-text: oklch(42% 0.018 240deg);
       }
 
       html.dark {
         --boot-background: oklch(17% 0.01 250deg);
         --boot-surface: oklch(24% 0.012 250deg);
-        --boot-sheen: oklch(92% 0.01 250deg / 0.08);
         --boot-brand: oklch(70% 0.14 230deg);
+        --boot-text: oklch(78% 0.015 250deg);
       }
 
       html,
@@ -37,90 +34,71 @@
       }
 
       .app-boot {
+        display: grid;
         min-height: 100vh;
+        place-items: center;
         overflow: hidden;
         background: var(--boot-background);
       }
 
-      .app-boot__nav {
+      .app-boot__indicator {
         display: flex;
-        height: 64px;
+        width: min(180px, calc(100% - 48px));
+        flex-direction: column;
+        gap: 10px;
         align-items: center;
-        gap: 12px;
-        padding: 0 clamp(16px, 4vw, 64px);
-        border-bottom: 1px solid color-mix(in oklch, var(--boot-surface) 78%, transparent);
+        color: var(--boot-text);
+        font:
+          13px/1.4 system-ui,
+          sans-serif;
+        opacity: 0;
+        animation: app-boot-reveal 160ms ease-out 180ms forwards;
       }
 
-      .app-boot__brand {
-        width: 86px;
-        height: 24px;
-        border-radius: 8px;
-        background: var(--boot-brand);
-        opacity: 0.9;
-      }
-
-      .app-boot__nav-line {
-        width: 48px;
-        height: 12px;
+      .app-boot__track {
+        position: relative;
+        width: 100%;
+        height: 3px;
+        overflow: hidden;
         border-radius: 999px;
         background: var(--boot-surface);
       }
 
-      .app-boot__content {
-        width: min(1180px, calc(100% - 32px));
-        margin: 28px auto 0;
-      }
-
-      .app-boot__hero,
-      .app-boot__card {
-        position: relative;
-        overflow: hidden;
-        background: var(--boot-surface);
-      }
-
-      .app-boot__hero::after,
-      .app-boot__card::after {
+      .app-boot__track::after {
         position: absolute;
         inset: 0;
         content: '';
-        background: linear-gradient(90deg, transparent, var(--boot-sheen), transparent);
-        transform: translate3d(-100%, 0, 0);
-        animation: app-boot-sheen 1.6s linear infinite;
+        border-radius: inherit;
+        background: var(--boot-brand);
+        transform: translate3d(-72%, 0, 0) scaleX(0.28);
+        transform-origin: left center;
+        animation: app-boot-progress 1.1s ease-in-out infinite;
       }
 
-      .app-boot__hero {
-        height: clamp(150px, 22vw, 260px);
-        border-radius: 18px;
-      }
-
-      .app-boot__grid {
-        display: grid;
-        grid-template-columns: repeat(4, minmax(0, 1fr));
-        gap: 18px;
-        margin-top: 24px;
-      }
-
-      .app-boot__card {
-        aspect-ratio: 16 / 10;
-        border-radius: 12px;
-      }
-
-      @keyframes app-boot-sheen {
+      @keyframes app-boot-reveal {
         to {
-          transform: translate3d(100%, 0, 0);
+          opacity: 1;
         }
       }
 
-      @media (width <= 720px) {
-        .app-boot__grid {
-          grid-template-columns: repeat(2, minmax(0, 1fr));
-          gap: 12px;
+      @keyframes app-boot-progress {
+        50% {
+          transform: translate3d(72%, 0, 0) scaleX(0.52);
+        }
+
+        100% {
+          transform: translate3d(260%, 0, 0) scaleX(0.28);
         }
       }
 
       @media (prefers-reduced-motion: reduce) {
-        .app-boot__hero::after,
-        .app-boot__card::after {
+        .app-boot__indicator {
+          opacity: 1;
+          animation: none;
+        }
+
+        .app-boot__track::after {
+          transform: scaleX(0.42);
           animation: none;
         }
       }
@@ -150,20 +128,9 @@
   <body>
     <div id="app">
       <div class="app-boot" role="status" aria-label="页面加载中">
-        <div class="app-boot__nav" aria-hidden="true">
-          <span class="app-boot__brand"></span>
-          <span class="app-boot__nav-line"></span>
-          <span class="app-boot__nav-line"></span>
-          <span class="app-boot__nav-line"></span>
-        </div>
-        <div class="app-boot__content" aria-hidden="true">
-          <div class="app-boot__hero"></div>
-          <div class="app-boot__grid">
-            <span class="app-boot__card"></span>
-            <span class="app-boot__card"></span>
-            <span class="app-boot__card"></span>
-            <span class="app-boot__card"></span>
-          </div>
+        <div class="app-boot__indicator">
+          <span>正在打开页面</span>
+          <span class="app-boot__track" aria-hidden="true"></span>
         </div>
       </div>
     </div>

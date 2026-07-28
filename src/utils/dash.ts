@@ -523,8 +523,8 @@ export const setupDashQualityMenu = (
       console.error('[dash] getRepresentationsByType failed', error)
       return
     }
-    // 单档或拿不到列表时无需菜单（DASH 行 bitrate=0 时也可能只有一档）。
-    if (reps.length <= 1) return
+    // 零档说明清单尚未提供视频 representation；单档仍展示清晰度，避免用户误以为资源缺失。
+    if (reps.length === 0) return
 
     // 高画质在前，菜单自上而下更自然。
     const sorted = [...reps].sort(

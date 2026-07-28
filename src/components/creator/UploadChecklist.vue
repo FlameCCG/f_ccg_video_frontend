@@ -1,8 +1,5 @@
 <script setup lang="ts">
-/**
- * 发布前检查清单。原来的校验只有一闪而过的 toast（多作品时还得自己去 8 个字段里找），
- * 这里把「还差什么」常驻在侧栏，每项可点击跳到对应字段。
- */
+/** 发布前检查清单：放在连续表单末尾，每项可点击跳到对应字段。 */
 import { computed } from 'vue'
 import { Check, ChevronRight, Circle } from 'lucide-vue-next'
 import {
@@ -72,7 +69,7 @@ const otherPending = computed(() =>
 </script>
 
 <template>
-  <section class="rounded-2xl border border-border bg-card p-5 shadow-surface">
+  <section class="upload-checklist">
     <div class="mb-3 flex items-baseline justify-between gap-2">
       <h2 class="text-sm font-semibold tracking-tight">发布前检查</h2>
       <span
@@ -133,6 +130,11 @@ const otherPending = computed(() =>
 </template>
 
 <style scoped lang="scss">
+.upload-checklist {
+  padding: 1.5rem 0;
+  border-bottom: 1px solid var(--color-border);
+}
+
 .checklist__row {
   display: flex;
   gap: 0.5rem;

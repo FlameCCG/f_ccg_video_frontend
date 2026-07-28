@@ -1,5 +1,5 @@
 ﻿<script setup lang="ts">
-import { ref, onMounted, onBeforeUnmount, computed, watch } from 'vue'
+import { ref, onMounted, onBeforeUnmount, computed, nextTick, watch } from 'vue'
 import type { Component } from 'vue'
 import { useRouter } from 'vue-router'
 import {
@@ -27,30 +27,21 @@ import TagInput from '@/components/creator/TagInput.vue'
 import BatchOperationDialog from '@/components/creator/BatchOperationDialog.vue'
 import PartitionPicker from '@/components/creator/PartitionPicker.vue'
 import SegmentedChoice from '@/components/creator/SegmentedChoice.vue'
-import UploadChecklist from '@/components/creator/UploadChecklist.vue'
 import UploadCoverCard from '@/components/creator/UploadCoverCard.vue'
+import UploadCoverEditor from '@/components/creator/UploadCoverEditor.vue'
 import UploadDropOverlay from '@/components/creator/UploadDropOverlay.vue'
 import UploadPartRow from '@/components/creator/UploadPartRow.vue'
 import UploadWorkTabs from '@/components/creator/UploadWorkTabs.vue'
 import {
   dataAttrs,
-  hasBlockingIssue,
   isBusyPartStatus,
-  type ChecklistField,
+  type CoverCandidate,
   type SegmentedOption,
   type VideoPart,
   type VideoWork,
   type VideoWorkForm,
   type WorkIssues,
 } from '@/components/creator/upload-shared'
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-  DialogFooter,
-} from '@/components/ui/dialog'
 import AiChatDialog from '@/components/ai/AiChatDialog.vue'
 import {
   uploadChunk,
@@ -143,6 +134,7 @@ const createWork = (initialParts: VideoPart[] = []): VideoWork => ({
   coverPreview: '',
   currentCoverUrl: '',
   coverSource: 'none',
+  coverCandidates: [],
   publishState: 'idle',
 })
 
@@ -248,17 +240,8 @@ const publishBlockReason = computed(() => {
 
   const busyCount = allParts.value.filter((part) => isBusyPartStatus(part.status)).length
   if (busyCount > 0) return `${busyCount} 个文件传输中，完成后即可发布`
-
-  const pendingWorks = workIssues.value.filter(hasBlockingIssue).length
-  if (pendingWorks > 0) {
-    return works.value.length > 1 ? `${pendingWorks} 个作品还有必填项没填` : '还有必填项没填完'
-  }
   return ''
 })
-
-const activePartitionName = computed(
-  () => partitions.value.find((item) => item.id === activeWork.value?.form.partitionId)?.name ?? ''
-)
 
 const headSummary = computed(() => {
   if (works.value.length === 0) return '支持多文件、分P 与秒传'
@@ -290,14 +273,16 @@ const updateActiveForm = <K extends keyof VideoWorkForm>(key: K, value: VideoWor
   activeWork.value.form[key] = value
 }
 
-const FIELD_ANCHORS: Record<ChecklistField, string> = {
+type PublishField = 'parts' | 'title' | 'partition' | 'cover'
+
+const FIELD_ANCHORS: Record<PublishField, string> = {
   parts: 'upload-field-parts',
   title: 'upload-field-title',
   partition: 'upload-field-partition',
   cover: 'upload-field-cover',
 }
 
-const focusField = (field: ChecklistField) => {
+const focusField = (field: PublishField) => {
   const target = document.getElementById(FIELD_ANCHORS[field])
   if (!target) return
 
@@ -312,15 +297,17 @@ const focusField = (field: ChecklistField) => {
   focusable?.focus({ preventScroll: true })
 }
 
+const focusWorkField = async (workIndex: number, field: PublishField) => {
+  activeWorkIndex.value = workIndex
+  await nextTick()
+  focusField(field)
+}
+
 // Cover Setting State
 const showCoverSetting = ref(false)
 const showAICoverDialog = ref(false)
 const applyingAICover = ref(false)
-const frameVideoRef = ref<HTMLVideoElement | null>(null)
 const previewVideoUrl = ref('')
-const previewVideoError = ref(false)
-const tempCoverPreview = ref('')
-const tempCoverFile = ref<File | null>(null)
 const autoCoverPartTokens = new Map<string, string>()
 const UPLOAD_STATUS_TIMEOUT = 6000
 const UPLOAD_CHUNK_TIMEOUT = 60000
@@ -329,15 +316,6 @@ const scheduleBoundaryBase = ref(Date.now())
 
 let localPreviewObjectUrl = ''
 let scheduleBoundaryTimer: ReturnType<typeof setInterval> | undefined
-const canCaptureCover = computed(() =>
-  Boolean(activeParts.value[0] && previewVideoUrl.value && !previewVideoError.value)
-)
-const coverDialogTip = computed(() => {
-  if (!activeParts.value[0]) return '请先上传视频后再设置封面'
-  if (canCaptureCover.value) return '支持拖动视频进度条截取当前帧，也支持直接上传自定义封面'
-  if (previewVideoUrl.value) return '当前视频浏览器无法预览，仅支持本地上传自定义封面'
-  return '当前视频预览源尚未就绪，请先上传自定义封面'
-})
 const aiCoverInitialPrompt = computed(() => {
   return activeWork.value?.form.title || activeParts.value[0]?.title || ''
 })
@@ -551,17 +529,10 @@ const revokeLocalPreviewObjectUrl = () => {
 
 const syncPreviewVideoUrl = () => {
   const firstPart = activeParts.value[0]
-  previewVideoError.value = false
 
   if (!firstPart) {
     revokeLocalPreviewObjectUrl()
     previewVideoUrl.value = ''
-    return
-  }
-
-  if (firstPart.status === 'success' && firstPart.filePath) {
-    revokeLocalPreviewObjectUrl()
-    previewVideoUrl.value = firstPart.filePath
     return
   }
 
@@ -572,98 +543,115 @@ const syncPreviewVideoUrl = () => {
 
 const openCoverSetting = () => {
   if (!activeWork.value) return
-  tempCoverPreview.value = activeWork.value.coverPreview
-  tempCoverFile.value = activeWork.value.coverFile
   showCoverSetting.value = true
 }
 
-const onTempCoverChange = (e: Event) => {
-  const target = e.target as HTMLInputElement
-  const file = target.files?.[0]
-  if (file) {
-    tempCoverFile.value = file
-    tempCoverPreview.value = URL.createObjectURL(file)
-  }
-  target.value = ''
-}
-
-const captureFrame = () => {
-  if (!frameVideoRef.value || previewVideoError.value) {
-    toast({ title: '当前视频无法直接预览，请上传自定义封面', variant: 'destructive' })
-    return
-  }
-  const video = frameVideoRef.value
-  if (!video.videoWidth || !video.videoHeight) {
-    toast({ title: '视频尚未就绪，请稍后重试', variant: 'destructive' })
-    return
-  }
-  const canvas = document.createElement('canvas')
-  canvas.width = video.videoWidth
-  canvas.height = video.videoHeight
-  const ctx = canvas.getContext('2d')
-  ctx?.drawImage(video, 0, 0, canvas.width, canvas.height)
-
-  const dataUrl = canvas.toDataURL('image/jpeg')
-  tempCoverPreview.value = dataUrl
-
-  void fetch(dataUrl)
-    .then((res) => res.blob())
-    .then((blob) => {
-      tempCoverFile.value = new File([blob], 'cover.jpg', { type: 'image/jpeg' })
-      toast({ title: '已截取当前帧' })
-    })
-}
-
-const onPreviewVideoError = () => {
-  previewVideoError.value = true
-}
-
-const clearAutoCover = (work?: VideoWork) => {
-  if (!work || work.coverSource !== 'auto') return
-  work.coverFile = null
-  work.coverPreview = ''
-  work.currentCoverUrl = ''
-  work.coverSource = 'none'
+const clearVideoCoverSuggestions = (work?: VideoWork) => {
+  if (!work) return
+  work.coverCandidates = []
   autoCoverPartTokens.delete(work.id)
+
+  if (work.coverSource === 'auto') {
+    work.coverFile = null
+    work.coverPreview = ''
+    work.currentCoverUrl = ''
+    work.coverSource = 'none'
+  }
 }
 
 const captureCoverFromVideoElement = async (video: HTMLVideoElement, fileName: string) => {
   const canvas = document.createElement('canvas')
-  canvas.width = video.videoWidth
-  canvas.height = video.videoHeight
+  canvas.width = 1280
+  canvas.height = 720
   const ctx = canvas.getContext('2d')
   if (!ctx) {
     throw new Error('无法初始化封面画布')
   }
 
-  ctx.drawImage(video, 0, 0, canvas.width, canvas.height)
+  const targetRatio = canvas.width / canvas.height
+  const sourceRatio = video.videoWidth / video.videoHeight
+  let sourceX = 0
+  let sourceY = 0
+  let sourceWidth = video.videoWidth
+  let sourceHeight = video.videoHeight
+
+  if (sourceRatio > targetRatio) {
+    sourceWidth = video.videoHeight * targetRatio
+    sourceX = (video.videoWidth - sourceWidth) / 2
+  } else if (sourceRatio < targetRatio) {
+    sourceHeight = video.videoWidth / targetRatio
+    sourceY = (video.videoHeight - sourceHeight) / 2
+  }
+
+  ctx.drawImage(
+    video,
+    sourceX,
+    sourceY,
+    sourceWidth,
+    sourceHeight,
+    0,
+    0,
+    canvas.width,
+    canvas.height
+  )
 
   const blob = await new Promise<Blob | null>((resolve) => {
-    canvas.toBlob(resolve, 'image/jpeg', 0.92)
+    canvas.toBlob(resolve, 'image/jpeg', 0.88)
   })
   if (!blob) {
     throw new Error('封面生成失败')
   }
 
   return {
-    preview: canvas.toDataURL('image/jpeg', 0.92),
+    preview: canvas.toDataURL('image/jpeg', 0.88),
     file: new File([blob], fileName, { type: 'image/jpeg' }),
   }
 }
 
-const autoRecommendCoverForPart = async (part: VideoPart) => {
+const seekCoverVideo = (video: HTMLVideoElement, time: number) =>
+  new Promise<void>((resolve, reject) => {
+    const timeoutId = window.setTimeout(() => {
+      cleanup()
+      reject(new Error('封面定位超时'))
+    }, 5000)
+
+    const cleanup = () => {
+      clearTimeout(timeoutId)
+      video.onseeked = null
+      video.onerror = null
+    }
+
+    video.onseeked = () => {
+      cleanup()
+      resolve()
+    }
+    video.onerror = () => {
+      cleanup()
+      reject(new Error('封面定位失败'))
+    }
+    video.currentTime = time
+  })
+
+const createRandomCoverTimes = (duration: number, count = 5) => {
+  const safeDuration = Math.max(duration - 0.08, 0.08)
+  return Array.from({ length: count }, (_, index) => {
+    const segmentStart = (safeDuration * index) / count
+    const segmentLength = safeDuration / count
+    const jitter = 0.28 + Math.random() * 0.44
+    return Math.min(Math.max(segmentStart + segmentLength * jitter, 0.04), safeDuration)
+  })
+}
+
+const getCoverCandidateToken = (part: VideoPart) =>
+  `${part.id}:${part.hash || part.file.name}:${part.file.size}:${part.file.lastModified}`
+
+const generateCoverCandidatesForPart = async (part: VideoPart) => {
   const work = works.value.find((candidate) => candidate.parts.some((item) => item.id === part.id))
-  if (!work || work.parts[0]?.id !== part.id || work.coverSource === 'manual') {
-    return
-  }
+  if (!work || work.parts[0]?.id !== part.id) return
   if (part.status !== 'success') return
 
-  const token = `${part.id}:${part.hash || part.file.name}:${part.file.size}:${part.file.lastModified}`
-  if (
-    work.coverSource === 'auto' &&
-    work.coverPreview &&
-    autoCoverPartTokens.get(work.id) === token
-  ) {
+  const token = getCoverCandidateToken(part)
+  if (work.coverCandidates.length > 0 && autoCoverPartTokens.get(work.id) === token) {
     return
   }
 
@@ -701,62 +689,50 @@ const autoRecommendCoverForPart = async (part: VideoPart) => {
     })
 
     const duration = Number(video.duration)
-    if (Number.isFinite(duration) && duration > 0.6) {
-      const targetTime = Math.min(Math.max(duration * 0.18, 0.4), Math.max(duration - 0.1, 0.4), 3)
-      if (targetTime > 0.05) {
-        await new Promise<void>((resolve, reject) => {
-          const timeoutId = window.setTimeout(() => {
-            cleanup()
-            resolve()
-          }, 6000)
-
-          const cleanup = () => {
-            clearTimeout(timeoutId)
-            video.onseeked = null
-            video.onerror = null
-          }
-
-          video.onseeked = () => {
-            cleanup()
-            resolve()
-          }
-          video.onerror = () => {
-            cleanup()
-            reject(new Error('封面定位失败'))
-          }
-
-          video.currentTime = targetTime
-        })
-      }
+    if (!Number.isFinite(duration) || duration <= 0) {
+      throw new Error('无法读取视频时长')
     }
 
-    const cover = await captureCoverFromVideoElement(video, `auto-cover-${part.id}.jpg`)
+    const candidates: CoverCandidate[] = []
+    const sampleTimes = createRandomCoverTimes(duration)
+    for (const [index, sampleTime] of sampleTimes.entries()) {
+      await seekCoverVideo(video, sampleTime)
+      const cover = await captureCoverFromVideoElement(
+        video,
+        `video-frame-${part.id}-${index + 1}.jpg`
+      )
+      candidates.push({
+        id: `${token}:${index}`,
+        time: sampleTime,
+        preview: cover.preview,
+        file: cover.file,
+      })
+    }
+
     const latestWork = works.value.find((candidate) => candidate.id === work.id)
-    if (!latestWork || latestWork.parts[0]?.id !== part.id || latestWork.coverSource === 'manual') {
+    const latestFirstPart = latestWork?.parts[0]
+    if (
+      !latestWork ||
+      !latestFirstPart ||
+      latestFirstPart.id !== part.id ||
+      getCoverCandidateToken(latestFirstPart) !== token
+    ) {
       return
     }
 
-    latestWork.coverFile = cover.file
-    latestWork.coverPreview = cover.preview
-    latestWork.currentCoverUrl = ''
-    latestWork.coverSource = 'auto'
+    latestWork.coverCandidates = candidates
+    if (latestWork.coverSource !== 'manual' && candidates[0]) {
+      latestWork.coverFile = candidates[0].file
+      latestWork.coverPreview = candidates[0].preview
+      latestWork.currentCoverUrl = ''
+      latestWork.coverSource = 'auto'
+    }
     autoCoverPartTokens.set(latestWork.id, token)
   } catch (error) {
-    console.warn('Auto cover recommendation skipped', error)
+    console.warn('Video frame recommendations skipped', error)
   } finally {
     URL.revokeObjectURL(objectUrl)
   }
-}
-
-const confirmCoverSetting = () => {
-  if (activeWork.value) {
-    activeWork.value.coverPreview = tempCoverPreview.value
-    activeWork.value.coverFile = tempCoverFile.value
-    activeWork.value.currentCoverUrl = tempCoverFile.value ? '' : activeWork.value.currentCoverUrl
-    activeWork.value.coverSource = tempCoverFile.value ? 'manual' : activeWork.value.coverSource
-    autoCoverPartTokens.delete(activeWork.value.id)
-  }
-  showCoverSetting.value = false
 }
 
 const applyLocalCoverFile = (coverFile: File, coverPreview: string) => {
@@ -766,6 +742,21 @@ const applyLocalCoverFile = (coverFile: File, coverPreview: string) => {
   activeWork.value.currentCoverUrl = ''
   activeWork.value.coverSource = 'manual'
   autoCoverPartTokens.delete(activeWork.value.id)
+}
+
+const handleCoverEditorConfirm = (payload: { file: File; preview: string }) => {
+  applyLocalCoverFile(payload.file, payload.preview)
+}
+
+const applyRecommendedCover = (candidateId: string) => {
+  if (!activeWork.value) return
+  const candidate = activeWork.value.coverCandidates.find((item) => item.id === candidateId)
+  if (!candidate) return
+
+  activeWork.value.coverFile = candidate.file
+  activeWork.value.coverPreview = candidate.preview
+  activeWork.value.currentCoverUrl = ''
+  activeWork.value.coverSource = 'auto'
 }
 
 const handleAICoverPick = (payload: { file: File; sourceUrl: string; prompt: string }) => {
@@ -927,20 +918,20 @@ const calculateFullSHA256 = (
 
 // Drag and Drop
 const onDragOver = (e: DragEvent) => {
-  if (!hasDraggedFiles(e.dataTransfer)) return
+  if (!hasDraggedVideoFiles(e.dataTransfer)) return
   e.preventDefault()
   e.stopPropagation()
   if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy'
   isDragging.value = true
 }
 const onDragEnter = (e: DragEvent) => {
-  if (!hasDraggedFiles(e.dataTransfer)) return
+  if (!hasDraggedVideoFiles(e.dataTransfer)) return
   e.preventDefault()
   e.stopPropagation()
   isDragging.value = true
 }
 const onDragLeave = (e: DragEvent) => {
-  if (!hasDraggedFiles(e.dataTransfer)) return
+  if (!hasDraggedVideoFiles(e.dataTransfer)) return
   e.preventDefault()
   e.stopPropagation()
   const nextTarget = e.relatedTarget as Node | null
@@ -948,7 +939,7 @@ const onDragLeave = (e: DragEvent) => {
   isDragging.value = false
 }
 const onDrop = (e: DragEvent) => {
-  if (!hasDraggedFiles(e.dataTransfer)) return
+  if (!hasDraggedVideoFiles(e.dataTransfer)) return
   e.preventDefault()
   e.stopPropagation()
   isDragging.value = false
@@ -1002,12 +993,12 @@ const openVideoPicker = (target: 'initial' | 'append') => {
 }
 
 const handleWindowDragOver = (e: DragEvent) => {
-  if (!hasDraggedFiles(e.dataTransfer)) return
+  if (!hasDraggedVideoFiles(e.dataTransfer)) return
   e.preventDefault()
 }
 
 const handleWindowDrop = (e: DragEvent) => {
-  if (!hasDraggedFiles(e.dataTransfer)) return
+  if (!hasDraggedVideoFiles(e.dataTransfer)) return
   e.preventDefault()
 
   const target = e.target as Node | null
@@ -1034,9 +1025,19 @@ const queuePositions = computed(() => {
   return positions
 })
 
-const hasDraggedFiles = (dataTransfer: DataTransfer | null | undefined) => {
+const hasDraggedVideoFiles = (dataTransfer: DataTransfer | null | undefined) => {
   if (!dataTransfer) return false
-  return Array.from(dataTransfer.types ?? []).includes('Files')
+  if (!Array.from(dataTransfer.types ?? []).includes('Files')) return false
+
+  const fileItems = Array.from(dataTransfer.items ?? []).filter((item) => item.kind === 'file')
+  if (fileItems.length === 0) {
+    // 部分浏览器在文件真正落下前不会暴露 DataTransferItem，保留外部文件拖入能力。
+    return true
+  }
+
+  const knownTypes = fileItems.map((item) => item.type).filter(Boolean)
+  if (knownTypes.length === 0) return true
+  return knownTypes.some((type) => type.startsWith('video/'))
 }
 
 const getFilesFromDataTransfer = (dataTransfer: DataTransfer | null | undefined) => {
@@ -1288,7 +1289,7 @@ const uploadPart = async (part: VideoPart, isResume = false) => {
       part.uploadedBytes = part.file.size
       part.instant = true
       part.status = 'success'
-      void autoRecommendCoverForPart(part)
+      void generateCoverCandidatesForPart(part)
       return
     }
 
@@ -1373,7 +1374,7 @@ const uploadPart = async (part: VideoPart, isResume = false) => {
       )
       part.filePath = res.filePath
       part.status = 'success'
-      void autoRecommendCoverForPart(part)
+      void generateCoverCandidatesForPart(part)
     } finally {
       releaseCompleteLock()
     }
@@ -1399,11 +1400,10 @@ const removePart = (index: number) => {
   }
   activeWork.value.parts.splice(index, 1)
   if (removedFirst) {
-    previewVideoError.value = false
-    clearAutoCover(work)
+    clearVideoCoverSuggestions(work)
     const nextFirst = work.parts[0]
     if (nextFirst?.status === 'success') {
-      void autoRecommendCoverForPart(nextFirst)
+      void generateCoverCandidatesForPart(nextFirst)
     }
   }
   processUploadQueue()
@@ -1433,7 +1433,6 @@ const removeWork = (index: number) => {
   if (activeWorkIndex.value >= works.value.length) {
     activeWorkIndex.value = Math.max(0, works.value.length - 1)
   }
-  previewVideoError.value = false
 }
 
 /** 每个文件各自成为一个独立作品（「添加作品」按钮与拖拽落点共用） */
@@ -1526,7 +1525,7 @@ const onReplaceFileChange = (e: Event) => {
   part.sourceFileName = nextSourceName
 
   if (replaceTargetPartIndex.value === 0) {
-    clearAutoCover(activeWork.value)
+    clearVideoCoverSuggestions(activeWork.value)
   }
 
   part.file = file
@@ -1593,32 +1592,27 @@ const handlePublish = async () => {
     const wLabel = works.value.length > 1 ? `作品${i + 1}：` : ''
     if (work.parts.length === 0) {
       toast({ title: `${wLabel}请至少上传一个视频`, variant: 'destructive' })
-      activeWorkIndex.value = i
-      focusField('parts')
+      await focusWorkField(i, 'parts')
       return
     }
     if (work.parts.some((p) => p.status !== 'success')) {
       toast({ title: `${wLabel}请等待所有视频上传完成`, variant: 'destructive' })
-      activeWorkIndex.value = i
-      focusField('parts')
+      await focusWorkField(i, 'parts')
       return
     }
     if (!work.form.title) {
       toast({ title: `${wLabel}请填写标题`, variant: 'destructive' })
-      activeWorkIndex.value = i
-      focusField('title')
+      await focusWorkField(i, 'title')
       return
     }
     if (!work.form.partitionId) {
       toast({ title: `${wLabel}请选择分区`, variant: 'destructive' })
-      activeWorkIndex.value = i
-      focusField('partition')
+      await focusWorkField(i, 'partition')
       return
     }
     if (!work.coverFile && !work.coverPreview) {
       toast({ title: `${wLabel}请上传封面`, variant: 'destructive' })
-      activeWorkIndex.value = i
-      focusField('cover')
+      await focusWorkField(i, 'cover')
       return
     }
     const longNamePart = work.parts.find((p) => isSourceFileNameTooLong(p.sourceFileName))
@@ -1751,15 +1745,14 @@ const handlePublish = async () => {
       @change="onReplaceFileChange"
     />
 
-    <header class="mb-5 flex flex-wrap items-end justify-between gap-3">
+    <header
+      class="upload-page__header"
+      v-bind="dataAttrs({ 'data-empty': works.length === 0 ? 'true' : 'false' })"
+    >
       <div class="min-w-0">
         <h1 class="text-xl font-semibold tracking-tight">投稿</h1>
         <p class="mt-1 text-sm text-muted-foreground">{{ headSummary }}</p>
       </div>
-      <Button v-if="works.length > 1" variant="outline" size="sm" @click="showBatchDialog = true">
-        <Layers class="h-3.5 w-3.5" />
-        批量设置
-      </Button>
     </header>
 
     <div
@@ -1836,265 +1829,247 @@ const handlePublish = async () => {
       </ul>
     </section>
 
-    <!-- Step 2: 填写与发布（单栏顺序流，理由见样式区 .upload-layout 注释） -->
+    <!-- Step 2: 文件轨道 + 连续信息流 -->
     <div v-else class="upload-layout">
-      <div class="min-w-0 space-y-5">
-        <section id="upload-field-parts" class="upload-section">
-          <div class="upload-section__head">
-            <h2 class="upload-section__title">视频文件</h2>
+      <section id="upload-field-parts" class="upload-file-stage">
+        <div class="upload-file-stage__head">
+          <div>
+            <h2 class="upload-file-stage__title">视频文件</h2>
+            <p class="mt-1 text-xs text-muted-foreground">
+              一个作品可以包含多个分P，也可以继续添加独立作品。
+            </p>
+          </div>
+          <div class="flex items-center gap-3">
             <span class="tabular text-xs text-muted-foreground">
               {{ activeParts.length }} / {{ storageConfig.maxUploadNum }} 个分P
             </span>
-          </div>
-
-          <UploadWorkTabs
-            :works="works"
-            :active-index="activeWorkIndex"
-            :issues="workIssues"
-            :strict="hasTriedPublish"
-            @select="activeWorkIndex = $event"
-            @remove="removeWork"
-            @add="addWorkFileInputRef?.click()"
-          />
-
-          <template v-if="activeWork">
-            <div
-              :id="`upload-work-panel-${activeWork.id}`"
-              class="mt-3 space-y-2"
-              role="tabpanel"
-              :aria-labelledby="`upload-work-tab-${activeWork.id}`"
+            <Button
+              v-if="works.length > 1"
+              variant="outline"
+              size="sm"
+              @click="showBatchDialog = true"
             >
-              <UploadPartRow
-                v-for="(part, index) in activeParts"
-                :key="part.id"
-                :part="part"
-                :index="index"
-                :show-label="showPartLabels"
-                :queue-position="queuePositions.get(part.id) ?? 0"
-                :chunk-size="chunkSizeBytes"
-                @update:title="part.title = $event"
-                @replace="openReplacePicker(index)"
-                @pause="pausePart(part)"
-                @resume="resumePart(part)"
-                @remove="removePart(index)"
-              />
-            </div>
+              <Layers class="h-3.5 w-3.5" />
+              批量设置
+            </Button>
+          </div>
+        </div>
 
-            <div class="mt-3 flex flex-wrap items-center justify-between gap-2">
-              <Button
-                variant="outline"
-                size="sm"
-                :disabled="remainingPartSlots === 0"
-                @click="openVideoPicker('append')"
-              >
-                <Plus class="h-3.5 w-3.5" />
-                添加分P
-              </Button>
-              <p class="text-xs text-muted-foreground">
-                {{
-                  remainingPartSlots === 0
-                    ? '已达分P上限，再多的视频请新建一个作品'
-                    : '同一作品的分P共用标题、封面与分区'
-                }}
-              </p>
-            </div>
-          </template>
-        </section>
+        <UploadWorkTabs
+          :works="works"
+          :active-index="activeWorkIndex"
+          :issues="workIssues"
+          :strict="hasTriedPublish"
+          @select="activeWorkIndex = $event"
+          @remove="removeWork"
+          @add="addWorkFileInputRef?.click()"
+        />
 
-        <section v-if="activeWork" class="upload-section">
-          <div class="upload-section__head">
-            <h2 class="upload-section__title">基础信息</h2>
+        <template v-if="activeWork">
+          <div
+            :id="`upload-work-panel-${activeWork.id}`"
+            class="mt-3 space-y-2"
+            role="tabpanel"
+            :aria-labelledby="`upload-work-tab-${activeWork.id}`"
+          >
+            <UploadPartRow
+              v-for="(part, index) in activeParts"
+              :key="part.id"
+              :part="part"
+              :index="index"
+              :show-label="showPartLabels"
+              :queue-position="queuePositions.get(part.id) ?? 0"
+              :chunk-size="chunkSizeBytes"
+              @update:title="part.title = $event"
+              @replace="openReplacePicker(index)"
+              @pause="pausePart(part)"
+              @resume="resumePart(part)"
+              @remove="removePart(index)"
+            />
           </div>
 
-          <div class="space-y-5">
-            <div id="upload-field-title" class="space-y-2">
-              <div class="flex items-center justify-between gap-2">
-                <Label for="title" class="text-sm font-medium">
-                  标题 <span class="text-destructive">*</span>
-                </Label>
-                <span
-                  class="tabular text-xs"
-                  :class="
-                    activeWork.form.title.length > 80
-                      ? 'text-[var(--status-warning-ink)]'
-                      : 'text-muted-foreground'
-                  "
-                >
-                  {{ activeWork.form.title.length }}/80
-                </span>
-              </div>
+          <div class="mt-3 flex flex-wrap items-center justify-between gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              :disabled="remainingPartSlots === 0"
+              @click="openVideoPicker('append')"
+            >
+              <Plus class="h-3.5 w-3.5" />
+              添加分P
+            </Button>
+            <p class="text-xs text-muted-foreground">
+              {{
+                remainingPartSlots === 0
+                  ? '已达分P上限，再多的视频请新建一个作品'
+                  : '同一作品的分P共用标题、封面与分区'
+              }}
+            </p>
+          </div>
+        </template>
+      </section>
+
+      <div v-if="activeWork" class="upload-form-flow">
+        <UploadCoverCard
+          :cover-preview="activeWork.coverPreview"
+          :cover-source="activeWork.coverSource"
+          :cover-candidates="activeWork.coverCandidates"
+          :title="activeWork.form.title"
+          :invalid="showIssue('cover')"
+          :ai-busy="applyingAICover"
+          @open="openCoverSetting"
+          @ai="showAICoverDialog = true"
+          @select="applyRecommendedCover"
+        />
+
+        <div id="upload-field-title" class="upload-form-row">
+          <Label for="title" class="upload-form-row__label">
+            标题 <span class="text-destructive">*</span>
+          </Label>
+          <div class="upload-form-row__control">
+            <div class="relative">
               <Input
                 id="title"
                 :model-value="activeWork.form.title"
                 placeholder="用一句话说清这个视频讲了什么"
-                class="h-11 text-base"
+                class="h-11 pr-16 text-base"
                 :class="showIssue('title') ? 'border-destructive' : ''"
                 @update:model-value="(v) => updateActiveForm('title', String(v))"
               />
-              <p v-if="showIssue('title')" class="text-xs text-destructive">
-                标题是必填项，先给作品起个名字
-              </p>
-            </div>
-
-            <div class="space-y-2">
-              <Label for="desc" class="text-sm font-medium">简介</Label>
-              <textarea
-                id="desc"
-                :value="activeWork.form.description"
-                class="flex min-h-[7.5rem] w-full resize-y rounded-md border border-input bg-background px-3 py-2 text-sm leading-6 ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-                placeholder="补充视频背景、制作过程或参考来源，让更多人能搜到你的视频"
-                rows="4"
-                @input="
-                  (e) => updateActiveForm('description', (e.target as HTMLTextAreaElement).value)
+              <span
+                class="tabular pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-xs"
+                :class="
+                  activeWork.form.title.length > 80
+                    ? 'text-[var(--status-warning-ink)]'
+                    : 'text-muted-foreground'
                 "
-              ></textarea>
-            </div>
-
-            <div class="space-y-2">
-              <Label class="text-sm font-medium">标签</Label>
-              <TagInput
-                :model-value="activeWork.form.tags"
-                :max="10"
-                @update:model-value="(v) => updateActiveForm('tags', v)"
-              />
-            </div>
-          </div>
-        </section>
-
-        <section v-if="activeWork" class="upload-section">
-          <div class="upload-section__head">
-            <h2 class="upload-section__title">分类与授权</h2>
-          </div>
-
-          <div class="space-y-5">
-            <div id="upload-field-partition" class="space-y-2.5">
-              <div class="flex items-center justify-between gap-2">
-                <Label class="text-sm font-medium">
-                  分区 <span class="text-destructive">*</span>
-                </Label>
-                <span v-if="activePartitionName" class="text-xs text-muted-foreground">
-                  已选择 {{ activePartitionName }}
-                </span>
-              </div>
-              <PartitionPicker
-                :partitions="partitions"
-                :model-value="activeWork.form.partitionId"
-                :invalid="showIssue('partition')"
-                @update:model-value="(v) => updateActiveForm('partitionId', v)"
-              />
-              <p v-if="showIssue('partition')" class="text-xs text-destructive">
-                请选择一个分区，它决定视频出现在哪个频道
-              </p>
-              <p v-else-if="partitions.length === 0" class="text-xs text-muted-foreground">
-                分区列表加载中…
-              </p>
-            </div>
-
-            <div class="space-y-2.5">
-              <Label class="text-sm font-medium"
-                >类型 <span class="text-destructive">*</span></Label
               >
-              <SegmentedChoice
-                :model-value="activeWork.form.isOriginal"
-                :options="originalOptions"
-                label="视频类型"
-                block
-                @update:model-value="(v) => updateActiveForm('isOriginal', v)"
-              />
-              <p class="text-xs leading-5 text-muted-foreground">
-                {{
-                  activeWork.form.isOriginal
-                    ? '自制：内容由你本人拍摄或制作。'
-                    : '转载：请在简介里注明原作者与来源链接。'
-                }}
-              </p>
+                {{ activeWork.form.title.length }}/80
+              </span>
+            </div>
+            <p v-if="showIssue('title')" class="mt-2 text-xs text-destructive">
+              标题是必填项，先给作品起个名字
+            </p>
+          </div>
+        </div>
+
+        <div class="upload-form-row">
+          <Label for="upload-partition" class="upload-form-row__label">
+            类型 <span class="text-destructive">*</span>
+          </Label>
+          <div class="upload-form-row__control">
+            <SegmentedChoice
+              :model-value="activeWork.form.isOriginal"
+              :options="originalOptions"
+              label="视频类型"
+              @update:model-value="(v) => updateActiveForm('isOriginal', v)"
+            />
+            <p class="mt-2 text-xs leading-5 text-muted-foreground">
+              {{
+                activeWork.form.isOriginal
+                  ? '自制：内容由你本人拍摄或制作。'
+                  : '转载：请在简介里注明原作者与来源链接。'
+              }}
+            </p>
+          </div>
+        </div>
+
+        <div id="upload-field-partition" class="upload-form-row">
+          <Label class="upload-form-row__label">
+            分区 <span class="text-destructive">*</span>
+          </Label>
+          <div class="upload-form-row__control">
+            <PartitionPicker
+              :partitions="partitions"
+              :model-value="activeWork.form.partitionId"
+              :invalid="showIssue('partition')"
+              @update:model-value="(v) => updateActiveForm('partitionId', v)"
+            />
+            <p v-if="showIssue('partition')" class="mt-2 text-xs text-destructive">
+              请选择一个分区，它决定视频出现在哪个频道
+            </p>
+            <p v-else-if="partitions.length === 0" class="mt-2 text-xs text-muted-foreground">
+              分区列表加载中…
+            </p>
+          </div>
+        </div>
+
+        <div class="upload-form-row">
+          <Label class="upload-form-row__label">标签</Label>
+          <div class="upload-form-row__control">
+            <TagInput
+              :model-value="activeWork.form.tags"
+              :max="10"
+              @update:model-value="(v) => updateActiveForm('tags', v)"
+            />
+          </div>
+        </div>
+
+        <div class="upload-form-row">
+          <Label for="desc" class="upload-form-row__label">简介</Label>
+          <div class="upload-form-row__control">
+            <textarea
+              id="desc"
+              :value="activeWork.form.description"
+              class="flex min-h-[9rem] w-full resize-y rounded-md border border-input bg-background px-3 py-3 text-sm leading-6 ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+              placeholder="补充视频背景、制作过程或参考来源，让更多人能搜到你的视频"
+              rows="5"
+              @input="
+                (e) => updateActiveForm('description', (e.target as HTMLTextAreaElement).value)
+              "
+            ></textarea>
+          </div>
+        </div>
+
+        <div class="upload-form-row">
+          <Label class="upload-form-row__label">可见性</Label>
+          <div class="upload-form-row__control">
+            <SegmentedChoice
+              :model-value="activeWork.form.isPrivate"
+              :options="visibilityOptions"
+              label="可见性"
+              @update:model-value="(v) => updateActiveForm('isPrivate', v)"
+            />
+            <p class="mt-2 text-xs leading-5 text-muted-foreground">
+              {{
+                activeWork.form.isPrivate
+                  ? '私密作品只有你自己能看到，不进入推荐与搜索。'
+                  : '公开后所有人都能看到，也会进入推荐与搜索。'
+              }}
+            </p>
+          </div>
+        </div>
+
+        <div class="upload-form-row">
+          <Label class="upload-form-row__label">发布时间</Label>
+          <div class="upload-form-row__control">
+            <SegmentedChoice
+              :model-value="activeWork.form.publishType"
+              :options="publishTypeOptions"
+              label="发布时间"
+              @update:model-value="(v) => updateActiveForm('publishType', v)"
+            />
+            <p class="mt-2 text-xs leading-5 text-muted-foreground">
+              {{
+                isActiveScheduleDisabled
+                  ? '私密作品只能立即发布，取消私密后可以预约 5 分钟到 15 天内的时间。'
+                  : '定时发布可预约最早 5 分钟后、最晚 15 天内。'
+              }}
+            </p>
+            <div
+              v-if="!isActiveScheduleDisabled && activeWork.form.publishType === 'scheduled'"
+              class="upload-form-row__sub mt-3"
+            >
+              <ScheduledPublishPicker v-model="activeWork.form.publishTime" />
             </div>
           </div>
-        </section>
-
-        <section v-if="activeWork" class="upload-section">
-          <div class="upload-section__head">
-            <h2 class="upload-section__title">发布设置</h2>
-          </div>
-
-          <div class="grid gap-5 sm:grid-cols-2">
-            <div class="space-y-2.5">
-              <Label class="text-sm font-medium">可见性</Label>
-              <SegmentedChoice
-                :model-value="activeWork.form.isPrivate"
-                :options="visibilityOptions"
-                label="可见性"
-                block
-                @update:model-value="(v) => updateActiveForm('isPrivate', v)"
-              />
-              <p class="text-xs leading-5 text-muted-foreground">
-                {{
-                  activeWork.form.isPrivate
-                    ? '私密作品只有你自己能看到，不进入推荐与搜索。'
-                    : '公开后所有人都能看到，也会进入推荐与搜索。'
-                }}
-              </p>
-            </div>
-
-            <div class="space-y-2.5">
-              <Label class="text-sm font-medium">发布时间</Label>
-              <SegmentedChoice
-                :model-value="activeWork.form.publishType"
-                :options="publishTypeOptions"
-                label="发布时间"
-                block
-                @update:model-value="(v) => updateActiveForm('publishType', v)"
-              />
-              <p v-if="isActiveScheduleDisabled" class="text-xs leading-5 text-muted-foreground">
-                私密作品只能立即发布，取消私密后可以预约 5 分钟到 15 天内的时间。
-              </p>
-              <p v-else class="text-xs leading-5 text-muted-foreground">
-                定时发布可预约最早 5 分钟后、最晚 15 天内。
-              </p>
-            </div>
-          </div>
-
-          <div
-            v-if="!isActiveScheduleDisabled && activeWork.form.publishType === 'scheduled'"
-            class="mt-4 rounded-xl border border-border bg-muted/30 p-3"
-          >
-            <ScheduledPublishPicker v-model="activeWork.form.publishTime" />
-          </div>
-        </section>
+        </div>
       </div>
-
-      <!--
-        封面与检查清单在流程里的位置：
-        封面是必填项，跟「基础信息 / 分类」同级，排在发布设置之后、检查清单之前；
-        检查清单是「发布前最后一眼」，紧挨着底部发布条，看完就能按发布。
-        （原来这两块在右侧 20rem sticky 栏里，见 .upload-layout 注释。）
-      -->
-      <UploadCoverCard
-        v-if="activeWork"
-        :cover-preview="activeWork.coverPreview"
-        :cover-source="activeWork.coverSource"
-        :title="activeWork.form.title"
-        :invalid="showIssue('cover')"
-        :ai-busy="applyingAICover"
-        :tip="coverDialogTip"
-        @open="openCoverSetting"
-        @ai="showAICoverDialog = true"
-      />
-
-      <UploadChecklist
-        v-if="activeWork"
-        :works="works"
-        :active-index="activeWorkIndex"
-        :issues="workIssues"
-        :strict="hasTriedPublish"
-        @jump="focusField"
-        @select="activeWorkIndex = $event"
-      />
     </div>
 
     <div v-if="works.length > 0" class="upload-actionbar">
-      <p class="min-w-0 flex-1 text-xs leading-5 text-muted-foreground">
-        {{ publishBlockReason || '所有必填项都填好了，随时可以发布' }}
+      <p v-if="publishBlockReason" class="min-w-0 flex-1 text-xs leading-5 text-muted-foreground">
+        {{ publishBlockReason }}
       </p>
       <Button
         size="lg"
@@ -2116,130 +2091,15 @@ const handlePublish = async () => {
       @apply="handleBatchApply"
     />
 
-    <!-- Cover Setting Dialog -->
-    <Dialog :open="showCoverSetting" @update:open="showCoverSetting = $event">
-      <DialogContent
-        class="flex max-h-[min(90vh,860px)] flex-col overflow-hidden p-0 sm:max-w-[760px]"
-      >
-        <DialogHeader class="border-b border-border/70 px-6 py-5">
-          <DialogTitle>设置封面</DialogTitle>
-          <DialogDescription class="sr-only">
-            设置视频封面，可上传自定义图片；若浏览器支持视频预览，也可以截取当前帧。
-          </DialogDescription>
-        </DialogHeader>
-
-        <div class="cover-dialog-scroll flex-1 space-y-5 overflow-y-auto px-6 py-5">
-          <div
-            class="rounded-2xl border border-border/70 bg-muted/30 px-4 py-3 text-sm text-muted-foreground"
-          >
-            {{ coverDialogTip }}
-          </div>
-
-          <div
-            class="grid gap-5"
-            :class="canCaptureCover ? 'lg:grid-cols-[minmax(0,1.2fr)_260px]' : 'lg:grid-cols-1'"
-          >
-            <div v-if="canCaptureCover" class="space-y-4">
-              <div
-                class="relative flex aspect-video max-h-[38vh] min-h-[220px] items-center justify-center overflow-hidden rounded-2xl bg-[var(--media-overlay)]"
-              >
-                <video
-                  v-if="previewVideoUrl"
-                  ref="frameVideoRef"
-                  :src="previewVideoUrl"
-                  controls
-                  class="h-full w-full"
-                  crossorigin="anonymous"
-                  @loadeddata="previewVideoError = false"
-                  @error="onPreviewVideoError"
-                ></video>
-                <div
-                  v-else
-                  class="absolute inset-0 flex items-center justify-center px-6 text-center text-sm text-[var(--media-overlay-text)]"
-                >
-                  暂无可预览视频
-                </div>
-              </div>
-              <div
-                class="flex flex-col gap-3 rounded-2xl bg-muted/45 p-4 sm:flex-row sm:items-center sm:justify-between"
-              >
-                <span class="text-sm leading-6 text-muted-foreground">
-                  拖动视频进度条到目标时间，点击右侧按钮截取当前画面
-                </span>
-                <Button
-                  class="shrink-0"
-                  :disabled="!previewVideoUrl || previewVideoError"
-                  @click="captureFrame"
-                >
-                  截取当前帧
-                </Button>
-              </div>
-            </div>
-
-            <div class="space-y-4">
-              <div
-                class="t-tint group relative aspect-video cursor-pointer overflow-hidden rounded-2xl border-2 border-dashed bg-muted/30 hover:border-primary/50"
-              >
-                <img
-                  v-if="tempCoverPreview"
-                  :src="tempCoverPreview"
-                  alt="待应用的封面"
-                  class="h-full w-full object-cover"
-                />
-                <div
-                  v-else
-                  class="absolute inset-0 flex flex-col items-center justify-center px-6 text-center text-muted-foreground"
-                >
-                  <UploadCloud class="mb-3 h-10 w-10 opacity-50" />
-                  <span class="text-sm font-medium">点击上传封面</span>
-                  <span class="mt-1 text-xs opacity-70">建议比例 16:9</span>
-                </div>
-
-                <div
-                  v-if="tempCoverPreview"
-                  class="cover-picker__veil absolute inset-0 flex items-center justify-center bg-[var(--media-overlay)] opacity-0 group-hover:opacity-100"
-                >
-                  <span class="text-sm font-medium text-[var(--media-overlay-text)]">更换封面</span>
-                </div>
-                <input
-                  type="file"
-                  accept="image/*"
-                  class="absolute inset-0 cursor-pointer opacity-0"
-                  aria-label="上传封面图片"
-                  @change="onTempCoverChange"
-                />
-              </div>
-
-              <div class="space-y-2">
-                <p class="text-sm font-medium text-foreground">当前封面预览</p>
-                <div
-                  class="flex aspect-video items-center justify-center overflow-hidden rounded-2xl border bg-muted/20"
-                >
-                  <img
-                    v-if="tempCoverPreview"
-                    :src="tempCoverPreview"
-                    alt="封面预览"
-                    class="h-full w-full object-cover"
-                  />
-                  <div v-else class="px-6 text-center text-sm text-muted-foreground">
-                    {{
-                      canCaptureCover
-                        ? '可以从视频中截帧，也可以直接上传自定义封面'
-                        : '当前视频浏览器无法预览，请直接上传自定义封面'
-                    }}
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <DialogFooter class="border-t border-border/70 px-6 py-4 sm:justify-end">
-          <Button variant="outline" @click="showCoverSetting = false">取消</Button>
-          <Button @click="confirmCoverSetting">确定</Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+    <UploadCoverEditor
+      :open="showCoverSetting"
+      :video-url="previewVideoUrl"
+      :initial-preview="activeWork?.coverPreview ?? ''"
+      :initial-file="activeWork?.coverFile ?? null"
+      :title="activeWork?.form.title ?? ''"
+      @update:open="showCoverSetting = $event"
+      @confirm="handleCoverEditorConfirm"
+    />
 
     <AiChatDialog
       :open="showAICoverDialog"
@@ -2262,77 +2122,128 @@ const handlePublish = async () => {
 </template>
 
 <style scoped lang="scss">
-/* 单栏表单，版心收窄到 56rem。
-   72rem 是给「左表单 + 右侧栏」两栏留的宽度；单栏下 72rem 会让输入框拉到近千像素，
-   一行标题跑完整个屏幕，眼睛从行尾扫回行首要横跨半个显示器。 */
+/* 投稿工作台使用单一阅读轴，但给多 P 文件轨道与抽帧封面保留足够横向空间。 */
 .upload-page {
-  max-width: 56rem;
-  margin: 0 auto;
-  padding-bottom: 0.5rem;
+  width: 100%;
+  max-width: 68rem;
+  margin-inline: auto;
+  padding-bottom: 1.5rem;
 }
 
-/*
- * 投稿是一条线性的填表流程：文件 → 基础信息 → 分类 → 发布设置 → 封面 → 检查清单。
- * 原来把封面和检查清单甩到右边 20rem 的 sticky 侧栏，代价有三个：
- * 1) 阅读动线被劈成两条，左边填到一半得抬头去右边看还差什么，回来还要找回原位；
- * 2) 右栏 20rem 固定宽，左栏在 1024~1280 之间被压到 ~40rem，输入框和分区选择器挤成一团；
- * 3) 封面是必填项，却因为在侧栏而看起来像个附属信息，用户经常漏填。
- * 改回单栏顺序流：每一步占满版心宽度，从上往下填完就能发布。
- */
-.upload-layout {
+.upload-page__header {
   display: flex;
-  flex-direction: column;
-  gap: 1.25rem;
-}
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  align-items: flex-end;
+  justify-content: space-between;
+  margin-bottom: 1.25rem;
 
-.upload-section {
-  padding: 1.25rem;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-2xl);
-  background-color: var(--color-card);
-  box-shadow: var(--shadow-surface);
-}
-
-@media (width >= 640px) {
-  .upload-section {
-    padding: 1.5rem;
+  &[data-empty='true'] {
+    justify-content: center;
+    text-align: center;
   }
 }
 
-.upload-section__head {
+.upload-layout {
   display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.upload-file-stage {
+  position: relative;
+  padding: 1.25rem;
+  border-radius: var(--radius-xl);
+  background-color: color-mix(in oklch, var(--color-muted) 48%, var(--color-background));
+}
+
+.upload-file-stage::before {
+  position: absolute;
+  top: 0;
+  left: 1.25rem;
+  width: 3rem;
+  height: 0.1875rem;
+  border-radius: 0 0 999px 999px;
+  background-color: var(--color-primary);
+  content: '';
+}
+
+.upload-file-stage__head {
+  display: flex;
+  flex-wrap: wrap;
   gap: 0.75rem;
-  align-items: baseline;
+  align-items: center;
   justify-content: space-between;
   margin-bottom: 1rem;
 }
 
-.upload-section__title {
+.upload-file-stage__title {
   font-size: 1.0625rem;
   font-weight: 600;
   letter-spacing: -0.01em;
 }
 
-/* ── 底部操作条 ───────────────────────────────────────────────
-   用 sticky 而不是 fixed：创作中心有 256px 侧栏 + 居中版心，
-   fixed 条要么盖住侧栏、要么和内容对不齐；sticky 天然跟随内容列，
-   且退化时只是回到内容末尾（等于改造前的位置），不会遮挡任何东西。 */
+.upload-form-flow {
+  padding-top: 0.5rem;
+}
+
+.upload-form-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0.75rem;
+  padding: 1.5rem 0;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.upload-form-row__label {
+  align-self: start;
+  min-height: 2.5rem;
+  padding-top: 0.625rem;
+  color: var(--color-foreground);
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+
+.upload-form-row__control {
+  min-width: 0;
+}
+
+.upload-form-row__sub {
+  padding: 0.875rem;
+  border-left: 2px solid color-mix(in oklch, var(--color-primary) 55%, var(--color-border));
+  background-color: color-mix(in oklch, var(--color-muted) 35%, transparent);
+}
+
+@media (width >= 720px) {
+  .upload-form-row {
+    grid-template-columns: 7rem minmax(0, 1fr);
+    gap: 1.25rem;
+  }
+}
+
+/* 发布操作留在内容流末尾，避免悬浮层遮挡最后一项设置。 */
 .upload-actionbar {
-  display: flex;
-  position: sticky;
-  z-index: 20;
-  bottom: 1rem;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
   flex-wrap: wrap;
-  gap: 0.75rem 1rem;
-  align-items: center;
-  justify-content: flex-end;
-  margin-top: 1.25rem;
-  padding: 0.75rem 0.875rem 0.75rem 1.125rem;
-  border: 1px solid var(--glass-border);
-  border-radius: var(--radius-xl);
-  background-color: var(--glass-bg);
-  box-shadow: var(--shadow-overlay);
-  backdrop-filter: blur(var(--glass-blur));
+  gap: 1rem;
+  place-items: center start;
+  padding-top: 1.5rem;
+}
+
+@media (width >= 720px) {
+  .upload-actionbar {
+    grid-template-columns: 7rem minmax(0, 1fr);
+    gap: 1.25rem;
+  }
+
+  .upload-actionbar > p {
+    grid-column: 2;
+  }
+
+  .upload-actionbar > button {
+    grid-column: 2;
+  }
 }
 
 /* ── 空态 ───────────────────────────────────────────────────── */
@@ -2419,6 +2330,7 @@ const handlePublish = async () => {
   width: 100%;
   max-width: 38rem;
   margin-top: 2.5rem;
+  margin-inline: auto;
   padding-top: 1.5rem;
   border-top: 1px solid var(--color-border);
   text-align: left;
@@ -2486,33 +2398,5 @@ const handlePublish = async () => {
   box-shadow:
     inset 0 1px 0 color-mix(in oklch, var(--text-1) 10%, transparent),
     0 24px 60px -38px color-mix(in oklch, var(--status-warning) 46%, transparent);
-}
-
-/* hover 遮罩：只动 opacity，时长/缓动走 token（原来是 Tailwind 默认 150ms ease） */
-.cover-picker__veil {
-  transition: opacity var(--duration-fast) var(--ease-out-quart);
-}
-
-.cover-dialog-scroll {
-  scrollbar-width: thin;
-  scrollbar-color: color-mix(in oklch, var(--color-foreground) 15%, transparent) transparent;
-
-  &::-webkit-scrollbar {
-    width: 6px;
-  }
-
-  &::-webkit-scrollbar-track {
-    background: transparent;
-  }
-
-  &::-webkit-scrollbar-thumb {
-    border-radius: 999px;
-    background: color-mix(in oklch, var(--color-foreground) 15%, transparent);
-    background-clip: padding-box;
-
-    &:hover {
-      background: color-mix(in oklch, var(--color-foreground) 25%, transparent);
-    }
-  }
 }
 </style>

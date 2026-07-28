@@ -31,6 +31,11 @@ $motion-exempt: '.artplayer-app, .artplayer-app *, [data-is-danmu-clone], .motio
     --glass-blur: 22px;
 
     --signal-foreground: oklch(98.5% 0.004 230deg);
+    /* 未读信号是跨主题的固定语义色，不跟随品牌色或状态色切换。 */
+    --signal-unread-message: oklch(63% 0.225 25deg);
+    --signal-unread-message-foreground: oklch(98.5% 0.006 25deg);
+    --signal-unread-dynamic: oklch(66% 0.165 238deg);
+    --signal-unread-dynamic-foreground: oklch(98.5% 0.006 238deg);
     --media-overlay: oklch(29% 0.02 242deg / 0.72);
     --media-overlay-text: oklch(97.8% 0.004 230deg);
 
@@ -690,6 +695,27 @@ $motion-exempt: '.artplayer-app, .artplayer-app *, [data-is-danmu-clone], .motio
 
   .signal-badge-rank {
     background-image: linear-gradient(135deg, var(--signal-rank-start), var(--signal-rank-end));
+  }
+
+  .signal-unread-message,
+  .signal-unread-dynamic {
+    box-shadow: 0 0 0 2px var(--color-card);
+  }
+
+  .signal-unread-message {
+    background: var(--signal-unread-message);
+    color: var(--signal-unread-message-foreground);
+    box-shadow:
+      0 0 0 2px var(--color-card),
+      0 4px 10px -4px color-mix(in oklch, var(--signal-unread-message) 58%, transparent);
+  }
+
+  .signal-unread-dynamic {
+    background: var(--signal-unread-dynamic);
+    color: var(--signal-unread-dynamic-foreground);
+    box-shadow:
+      0 0 0 2px var(--color-card),
+      0 4px 10px -4px color-mix(in oklch, var(--signal-unread-dynamic) 58%, transparent);
   }
 
   .status-verified-surface {

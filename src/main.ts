@@ -16,7 +16,7 @@ pinia.use(piniaPluginPersistedstate)
 app.use(pinia)
 app.use(router)
 
-// 初始导航包含异步 layout / view。等待它解析完再挂载，避免 RouterView
-// 先渲染一次空内容，露出 body 背景形成刷新时的“黑屏”。
-await router.isReady()
+// 立即让 Vue 接管静态启动占位。初始异步路由的等待、超时与失败状态由 App.vue
+// 统一收口；若在这里 await router.isReady()，任一分包加载异常都会让 index.html
+// 的占位永久留在页面上，看起来像“随机卡死在骨架屏”。
 app.mount('#app')

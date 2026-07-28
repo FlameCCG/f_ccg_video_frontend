@@ -1,9 +1,9 @@
 <script setup lang="ts">
-import { defineAsyncComponent, ref, onMounted, onUnmounted } from 'vue'
-import { RouterView } from 'vue-router'
+import { defineAsyncComponent, onMounted, onUnmounted, ref } from 'vue'
 import { toast } from 'vue-sonner'
 import { Toaster } from '@/components/ui/sonner'
 import { Toaster as ToastToaster } from '@/components/ui/toast'
+import InitialRouteView from '@/components/common/InitialRouteView.vue'
 import { getAccessToken } from '@/api/request'
 import { useAuthStore } from '@/stores/auth'
 import { useNotificationStore } from '@/stores/notification'
@@ -128,7 +128,7 @@ onUnmounted(() => {
     因此加载 UserLayout 等分包时旧页面会继续保留；解析完成后一次性交接，
     不再经过 out-in 的全空白帧。各 layout 内部仍负责自己的内容区转场。
   -->
-  <RouterView />
+  <InitialRouteView />
 
   <AuthDialog v-if="showAuthDialog" :open="showAuthDialog" @update:open="showAuthDialog = $event" />
 

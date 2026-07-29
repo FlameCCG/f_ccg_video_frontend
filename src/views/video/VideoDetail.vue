@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, onBeforeUnmount, watch } from 'vue'
+import { ref, computed, onBeforeUnmount, watch } from 'vue'
 import { onBeforeRouteLeave, useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import {
@@ -497,20 +497,18 @@ const persistVideoHistoryWithoutPlayer = async () => {
   await videoStore.saveProgress()
 }
 
-onMounted(() => {
-  if (videoId.value) {
-    startVideoLoad(videoId.value)
-  }
-})
-
-watch(videoId, (id, previousId) => {
-  if (previousId && previousId !== id) {
-    void persistVideoHistoryWithoutPlayer()
-  }
-  if (id) {
-    startVideoLoad(id)
-  }
-})
+watch(
+  videoId,
+  (id, previousId) => {
+    if (previousId && previousId !== id) {
+      void persistVideoHistoryWithoutPlayer()
+    }
+    if (id) {
+      startVideoLoad(id)
+    }
+  },
+  { immediate: true }
+)
 
 onBeforeRouteLeave(() => {
   void persistVideoHistoryWithoutPlayer()
@@ -526,7 +524,6 @@ watch(
 
 onBeforeUnmount(() => {
   videoLoadRequestId++
-  videoStore.clearVideo()
   if (hideTooltipTimer) clearTimeout(hideTooltipTimer)
   document.removeEventListener('keydown', handleReportKeydown)
 })
@@ -727,7 +724,7 @@ onBeforeUnmount(() => {
               ref="playerRef"
               :part-id="currentPartId"
               :enable-danmu="!isPreviewMode"
-              class="overflow-hidden rounded-lg bg-black"
+              class="overflow-hidden rounded-lg"
               @danmu-hover="handleDanmuHover"
               @danmu-leave="handleDanmuLeave"
               @danmu-hold-end="handleDanmuHoldEnd"

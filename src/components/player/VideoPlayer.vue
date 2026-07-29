@@ -1446,8 +1446,8 @@ onBeforeUnmount(() => {
   --art-theme: var(--color-primary);
   --art-font-color: var(--media-overlay-text);
   --art-background-color: var(--player-cinema-black);
-  --player-progress-track: rgb(255 255 255 / 0.22);
-  --player-progress-loaded: rgb(255 255 255 / 0.36);
+  --player-progress-track: rgb(255 255 255 / 0.25);
+  --player-progress-loaded: rgb(255 255 255 / 0.6);
   --art-progress-color: var(--player-progress-track);
   --art-loaded-color: var(--player-progress-loaded);
   --art-hover-color: transparent;
@@ -1498,8 +1498,8 @@ onBeforeUnmount(() => {
 :deep(.art-bottom) {
   background-image: linear-gradient(
     to top,
-    rgb(0 0 0 / 0.72) 0%,
-    rgb(0 0 0 / 0.35) 60%,
+    rgb(0 0 0 / 0.82) 0%,
+    rgb(0 0 0 / 0.45) 50%,
     transparent 100%
   ) !important;
   background-repeat: no-repeat !important;

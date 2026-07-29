@@ -15,6 +15,9 @@ import {
   type AiImageEditParams,
   type AiVideoGenParams,
   type AiModelOption,
+  type AiResponsesContentPart,
+  type AiResponsesMessage,
+  type AiResponsesRequest,
 } from '@/api/ai'
 import { toast } from 'vue-sonner'
 import ImageViewer from '@/components/common/ImageViewer.vue'
@@ -501,17 +504,8 @@ watch(
 // 后端 /responses 是无状态代理，多轮上下文必须由前端把历史一起带上。
 // 图片只在「当前这一轮」以 data URI 发送（后端交给多模态向量模型做 RAG 检索）；
 // 历史里的图片折叠成占位符，避免每轮都把几百 KB 的 base64 重复上行。
-const HISTORY_MAX_MESSAGES = 12
-const HISTORY_MAX_CHARS_PER_MESSAGE = 1200
-
-type ResponsesContentPart = Record<string, unknown>
-type ResponsesMessage = { role: 'user' | 'assistant'; content: ResponsesContentPart[] }
-
-const truncateForHistory = (text: string) => {
-  const trimmed = text.trim()
-  if (trimmed.length <= HISTORY_MAX_CHARS_PER_MESSAGE) return trimmed
-  return `${trimmed.slice(0, HISTORY_MAX_CHARS_PER_MESSAGE)}...`
-}
+// 条数与字符预算由后端 conversation.trimHistory 统一裁剪，避免前端更小的硬编码窗口
+// 提前丢失仍在后端预算内的上下文。
 
 /** 把一条历史消息压成纯文本；无内容可带时返回空串。 */
 const historyMessageText = (message: ChatMessage): string => {
@@ -526,7 +520,7 @@ const historyMessageText = (message: ChatMessage): string => {
   }
 
   const parts: string[] = []
-  if (message.content?.trim()) parts.push(truncateForHistory(message.content))
+  if (message.content?.trim()) parts.push(message.content.trim())
   if (message.role === 'user' && message.images?.length) {
     parts.push(`[用户上传了 ${message.images.length} 张图片]`)
   }
@@ -535,8 +529,8 @@ const historyMessageText = (message: ChatMessage): string => {
 }
 
 /** 从历史消息构建 Responses 格式的多轮上下文。 */
-const buildHistoryMessages = (history: ChatMessage[]): ResponsesMessage[] => {
-  const result: ResponsesMessage[] = []
+const buildHistoryMessages = (history: ChatMessage[]): AiResponsesMessage[] => {
+  const result: AiResponsesMessage[] = []
 
   for (const message of history) {
     // 仍在流式中的占位消息没有可用内容，带上去只会污染上下文
@@ -545,10 +539,13 @@ const buildHistoryMessages = (history: ChatMessage[]): ResponsesMessage[] => {
     const text = historyMessageText(message)
     if (!text) continue
 
-    result.push({ role: message.role, content: [{ type: 'input_text', text }] })
+    result.push({
+      role: message.role,
+      content: [{ type: message.role === 'assistant' ? 'output_text' : 'input_text', text }],
+    })
   }
 
-  return result.slice(-HISTORY_MAX_MESSAGES)
+  return result
 }
 
 const encodeImageForAI = async (file: File): Promise<string> => {
@@ -902,7 +899,7 @@ const sendRequest = async (payload: AiComposerSendPayload) => {
 
       // 只有当前这一轮才带真实图片数据：后端用多模态向量模型把「文本+图片」融合成
       // 同一个向量，去站内作品库做 RAG 召回，从而支持「以图搜视频」。
-      const latestInput: ResponsesContentPart[] = []
+      const latestInput: AiResponsesContentPart[] = []
       if (userText) latestInput.push({ type: 'input_text', text: userText })
       for (const f of currentImages) {
         // 先降采样再编码，避免整张原图的 base64 上行
@@ -910,12 +907,12 @@ const sendRequest = async (payload: AiComposerSendPayload) => {
         latestInput.push({ type: 'input_image', image_url: b64, detail: 'high' })
       }
 
-      const finalInput: ResponsesMessage[] = [
+      const finalInput: AiResponsesMessage[] = [
         ...historyMessages,
         { role: 'user', content: latestInput },
       ]
 
-      const streamPayload: Record<string, unknown> = {
+      const streamPayload: AiResponsesRequest = {
         model: payload.chat.model || undefined,
         input: finalInput,
       }

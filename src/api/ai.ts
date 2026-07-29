@@ -67,8 +67,34 @@ const asDeltaText = (delta: unknown): string | null => {
   return null
 }
 
+export interface AiResponsesTextPart {
+  type: 'input_text' | 'output_text'
+  text: string
+}
+
+export interface AiResponsesImagePart {
+  type: 'input_image'
+  image_url: string
+  detail?: 'low' | 'high' | 'auto'
+}
+
+export type AiResponsesContentPart = AiResponsesTextPart | AiResponsesImagePart
+
+export interface AiResponsesMessage {
+  role: 'user' | 'assistant'
+  content: string | AiResponsesContentPart[]
+}
+
+/** POST /common/ai/responses — 与后端 ai_service.ResponsesRequest 保持一致。 */
+export interface AiResponsesRequest {
+  model?: string
+  input: string | AiResponsesMessage[]
+  thinking?: boolean
+  thinkingEffort?: string
+}
+
 export const fetchAiChatStream = async (
-  payload: Record<string, unknown>,
+  payload: AiResponsesRequest,
   onChunk: (text: string) => void,
   onReasoningChunk: (text: string) => void,
   onComplete: () => void,

@@ -26,13 +26,8 @@ export const BannerDisplay = {
   topHeight: 200,
   /** 用户主页头图高度（px）— User space */
   profileHeight: 220,
-  /**
-   * 首页/分区轮播移动端固定比例（CSS aspect-ratio）
-   * 桌面端仍由布局对齐推荐位高度（aspect auto + h-full）
-   */
-  homeCarouselMobileAspect: '4 / 3',
-  /** 首页轮播容器最小高度（px），避免加载时塌缩 */
-  homeCarouselMinHeight: 220,
+  /** 首页/分区轮播固定比例；骨架、真实图片与空态均使用同一画幅 */
+  homeCarouselAspect: '16 / 9',
   objectFit: 'cover' as const,
   objectPosition: 'center' as const,
 } as const
@@ -56,17 +51,17 @@ export interface BannerArtSpecItem {
 
 /**
  * 制图规格（主场景最佳实践）
- * - homeCarousel：移动端 4:3 硬约束 + 桌面接近该比例
+ * - homeCarousel：与当前轮播素材和视频封面统一为 16:9
  * - top/profile：按常见 1920 宽桌面 × 定高，再 ×2 得到 3840×400（9.6:1）
  */
 export const BannerArtSpec: Record<BannerArtKind, BannerArtSpecItem> = {
   homeCarousel: {
-    width: 1600,
-    height: 1200,
-    ratioLabel: '4:3',
-    ratioCss: '4 / 3',
-    sizeLabel: '1600×1200',
-    safeZone: '关键主体放在画面中心；移动端按 4:3 展示，桌面可能轻微裁切边缘',
+    width: 1920,
+    height: 1080,
+    ratioLabel: '16:9',
+    ratioCss: '16 / 9',
+    sizeLabel: '1920×1080',
+    safeZone: '关键主体放在画面中心；超宽素材会等比裁切左右边缘',
   },
   topBanner: {
     width: 3840,

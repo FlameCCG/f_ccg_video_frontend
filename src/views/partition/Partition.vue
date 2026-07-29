@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, onBeforeUnmount, computed, watch, nextTick } from 'vue'
+import { ref, onMounted, computed, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { getHomeVideos, getPartitions, type FeedItem, type Partition } from '@/api/video'
 import { getHomeCarouselBanners, type BannerItem } from '@/api/banner'
@@ -23,13 +23,10 @@ const finished = ref(false)
 const page = ref(1)
 const pageSize = 20
 const initialLoading = ref(true)
-const featuredRailRef = ref<HTMLElement | null>(null)
-const heroBannerHeight = ref<number | null>(null)
-let heroResizeObserver: ResizeObserver | null = null
 
 // Featured videos count (shown next to carousel - 3 columns x 2 rows)
 const FEATURED_COUNT = 6
-const homeCarouselMinHeight = BannerDisplay.homeCarouselMinHeight
+const homeCarouselAspect = BannerDisplay.homeCarouselAspect
 
 const shouldShowHero = computed(
   () =>
@@ -124,31 +121,6 @@ const handleLoadMore = () => {
   void fetchVideos()
 }
 
-const updateHeroBannerHeight = () => {
-  if (!featuredRailRef.value || window.innerWidth < 1024) {
-    heroBannerHeight.value = null
-    return
-  }
-
-  const railStyles = window.getComputedStyle(featuredRailRef.value)
-  const rowGap = Number.parseFloat(railStyles.rowGap || railStyles.gap || '0')
-  const columnGap = Number.parseFloat(railStyles.columnGap || railStyles.gap || '0')
-  const firstVisibleCard = Array.from(featuredRailRef.value.children).find(
-    (element) => window.getComputedStyle(element).display !== 'none'
-  ) as HTMLElement | undefined
-
-  const measuredCoverHeight = firstVisibleCard?.firstElementChild?.getBoundingClientRect().height
-  const measuredCardHeight = firstVisibleCard?.getBoundingClientRect().height
-  const railWidth = featuredRailRef.value.getBoundingClientRect().width
-  const cardWidth = (railWidth - columnGap * 2) / 3
-  const fallbackCoverHeight = cardWidth * (9 / 16)
-  const fallbackCardHeight = fallbackCoverHeight + 79
-  const coverHeight = measuredCoverHeight ?? fallbackCoverHeight
-  const cardHeight = measuredCardHeight ?? fallbackCardHeight
-
-  heroBannerHeight.value = Math.round(cardHeight + rowGap + coverHeight)
-}
-
 // Full load/reload
 const loadData = async () => {
   page.value = 1
@@ -158,13 +130,7 @@ const loadData = async () => {
   initialLoading.value = true
   bannerLoading.value = true
 
-  await nextTick()
-  updateHeroBannerHeight()
-
   await Promise.all([fetchPartitionInfo(), fetchBanners(), fetchVideos()])
-
-  await nextTick()
-  updateHeroBannerHeight()
 }
 
 watch(
@@ -179,20 +145,6 @@ watch(
 onMounted(async () => {
   // Parallel fetch
   await Promise.all([loadData(), siteTouchOnce()])
-
-  await nextTick()
-  updateHeroBannerHeight()
-  heroResizeObserver = new ResizeObserver(() => {
-    updateHeroBannerHeight()
-  })
-
-  if (featuredRailRef.value) {
-    heroResizeObserver.observe(featuredRailRef.value)
-  }
-})
-
-onBeforeUnmount(() => {
-  heroResizeObserver?.disconnect()
 })
 </script>
 
@@ -220,11 +172,8 @@ onBeforeUnmount(() => {
     <!-- Hero Section: Carousel + Featured Videos -->
     <div v-if="shouldShowHero" class="mb-6 lg:flex lg:items-start lg:gap-4">
       <div
-        class="relative overflow-hidden rounded-[var(--radius-2xl)] border border-border/50 bg-card shadow-raised lg:min-w-0 lg:flex-[2]"
-        :style="{
-          minHeight: `${homeCarouselMinHeight}px`,
-          ...(heroBannerHeight ? { height: `${heroBannerHeight}px` } : {}),
-        }"
+        class="relative w-full overflow-hidden rounded-[var(--radius-2xl)] border border-border/50 bg-card shadow-raised lg:min-w-0 lg:flex-[2]"
+        :style="{ aspectRatio: homeCarouselAspect }"
       >
         <div class="home-hero-carousel block h-full w-full lg:absolute lg:inset-0">
           <Carousel
@@ -237,10 +186,7 @@ onBeforeUnmount(() => {
         </div>
       </div>
 
-      <div
-        ref="featuredRailRef"
-        class="mt-4 hidden lg:grid lg:min-w-0 lg:flex-[3] lg:grid-cols-3 lg:gap-4 lg:mt-0"
-      >
+      <div class="mt-4 hidden lg:grid lg:min-w-0 lg:flex-[3] lg:grid-cols-3 lg:gap-4 lg:mt-0">
         <template v-if="initialLoading">
           <VideoCardSkeleton v-for="i in 6" :key="i" />
         </template>

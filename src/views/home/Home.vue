@@ -28,8 +28,8 @@ const initialLoading = ref(true)
 
 // Featured videos count (shown next to carousel - 3 columns x 2 rows)
 const FEATURED_COUNT = 6
-/** 轮播容器最小高度，与 BannerDisplay 同源 */
-const homeCarouselMinHeight = BannerDisplay.homeCarouselMinHeight
+/** 轮播容器与真实素材、骨架共用同一画幅。 */
+const homeCarouselAspect = BannerDisplay.homeCarouselAspect
 
 /** hero（轮播 + 精选位）是否占位：加载期间恒占，加载完才由「有没有推荐位」决定去留 */
 const showHero = computed(() => initialLoading.value || banners.value.length > 0)
@@ -120,16 +120,11 @@ onMounted(async () => {
 
 <template>
   <div class="mx-auto mt-6 w-full max-w-page px-4 pb-8 sm:px-6 lg:px-8">
-    <!--
-      轮播 + 精选六宫格用同一个 grid 对齐：轮播占 2 份、卡片区占 3 份，
-      两者作为 grid item 默认 stretch，轮播高度由卡片区自然撑出来。
-      原实现靠 ResizeObserver + getComputedStyle 同步测量卡片高度再回写 inline height，
-      既是强制同步布局，又把 VideoCard 的信息区像素高度（79）耦合进了本文件。
-    -->
-    <div v-if="showHero" class="mb-6 lg:grid lg:grid-cols-[2fr_3fr] lg:items-stretch lg:gap-4">
+    <!-- 轮播保持 16:9，右侧精选位独立排版，不再反向拉伸 banner。 -->
+    <div v-if="showHero" class="mb-6 lg:grid lg:grid-cols-[2fr_3fr] lg:items-start lg:gap-4">
       <div
-        class="home-hero-frame relative overflow-hidden rounded-2xl border border-border/50 bg-card shadow-raised lg:min-w-0"
-        :style="{ minHeight: `${homeCarouselMinHeight}px` }"
+        class="home-hero-frame relative w-full overflow-hidden rounded-2xl border border-border/50 bg-card shadow-raised lg:min-w-0"
+        :style="{ aspectRatio: homeCarouselAspect }"
       >
         <div class="home-hero-carousel block h-full w-full lg:absolute lg:inset-0">
           <Carousel
@@ -151,12 +146,7 @@ onMounted(async () => {
         半步步进是为了让末档停在 8.85（708ms），仍远小于 --duration-shimmer 1600ms，
         扫光不会绕回去。整屏因此是一道光从轮播斜着推到网格底部，而不是两组各闪各的。
 
-        content-start 不能省：本区块是外层 items-stretch 下的 grid item，会被拉到
-        整行高度（轮播那侧由 ::before 的 68.97% 撑出约 474px）。稿件够 4 条以上时
-        本区块自己有两行、比轮播还高，看不出问题；稿件只有一两条时只剩一行隐式行，
-        align-content 的默认 stretch 会把这一行、连带 VideoCard 一起拉到 474px 高
-        —— 封面还是 16:9，标题下面空出三百多像素，作者行被 mt-auto 顶到卡片最底。
-        改成按内容高度排、整体靠上，卡片在任何稿件数量下都是它该有的尺寸。
+        content-start 让稿件不足两行时仍按内容高度靠上排列，避免隐式行被网格拉伸。
       -->
       <Transition name="skeleton-swap" mode="out-in">
         <SkeletonGroup
@@ -213,35 +203,6 @@ onMounted(async () => {
 
 <style scoped lang="scss">
 @media (width >= 1024px) {
-  /*
-   * 轮播自带固有高度，不再依赖右侧卡片区把行撑起来。
-   *
-   * 只靠 grid + items-stretch 时，一旦精选视频为空（新站/无稿件），
-   * 右列高度为 0，行高塌到 min-height 220px，轮播就被压扁 —— 这正是
-   * 删掉旧 ResizeObserver 测高后暴露的问题。
-   *
-   * 1.45 的来历：右列是 3 列 2 行 VideoCard，卡片宽 = (3fr - 2*gap)/3，
-   * 封面 16:9，旧公式高度 = 卡片高 + gap + 封面高。在 1800px 版心下
-   * 该高度 ≈ 474px、轮播宽 688px，比值 ≈ 1.45。取这个值有两个好处：
-   * 有稿件时行高由卡片决定、轮播 stretch 跟上（1.45 略小于卡片行高，
-   * 不会反过来把行撑高）；没稿件时轮播仍是应有的尺寸。
-   */
-  /*
-   * 用 ::before 的百分比 padding 撑高，**不要用 aspect-ratio**。
-   * aspect-ratio 在这里是双向的：本元素是 grid item 且 align-items:stretch，
-   * 行高被右侧两行卡片撑到 548 后，aspect-ratio 会反过来用高度推算宽度
-   * (548 × 1.45 = 796)，直接撑破自己的 2fr 栅格列、盖住右边第一张卡片。
-   * 百分比 padding 永远相对**宽度**解析，只能贡献高度，不可能反推宽度。
-   * 68.97% = 1 / 1.45，来历见下：右列 3 列 2 行 VideoCard，
-   * 卡片宽 = (3fr - 2*gap)/3，封面 16:9，行高 = 卡片高 + gap + 封面高，
-   * 在 1800 版心下 ≈ 474px 对应轮播宽 688px。
-   */
-  .home-hero-frame::before {
-    display: block;
-    padding-top: 68.97%;
-    content: '';
-  }
-
   .home-hero-carousel :deep(.group) {
     height: 100%;
   }

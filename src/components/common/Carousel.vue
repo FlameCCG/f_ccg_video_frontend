@@ -18,11 +18,8 @@ const props = withDefaults(defineProps<Props>(), {
   loading: false,
 })
 
-/**
- * 移动端固定 4:3（与 BannerArtSpec.homeCarousel 一致）；
- * 桌面在 scoped CSS 中用媒体查询取消固定比例并对齐父级高度。
- */
-const homeCarouselMobileAspect = BannerDisplay.homeCarouselMobileAspect
+/** 骨架、真实图片与空态共享同一 16:9 画幅。 */
+const homeCarouselAspect = BannerDisplay.homeCarouselAspect
 
 const currentIndex = shallowRef(0)
 const pendingIndex = shallowRef<number | null>(null)
@@ -242,17 +239,11 @@ onUnmounted(() => {
 </template>
 
 <style scoped lang="scss">
-/* 比例来自 BannerDisplay.homeCarouselMobileAspect；桌面交给父级高度 */
+/* 比例来自 BannerDisplay.homeCarouselAspect，所有状态保持同一几何尺寸。 */
 .carousel-frame {
   width: 100%;
   overflow: hidden;
-  aspect-ratio: v-bind(homeCarouselMobileAspect);
-
-  @media (width >= 1024px) {
-    aspect-ratio: auto;
-    height: 100%;
-    min-height: 0;
-  }
+  aspect-ratio: v-bind(homeCarouselAspect);
 }
 
 /* 骨架垫层：脱离文档流盖在内容层上，画幅完全由下面的 .carousel-frame 决定。

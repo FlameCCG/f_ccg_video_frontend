@@ -1498,14 +1498,13 @@ onBeforeUnmount(() => {
 :deep(.art-bottom) {
   background-image: linear-gradient(
     to top,
-    rgb(0 0 0 / 0.92) 0%,
-    rgb(0 0 0 / 0.58) 50%,
-    rgb(0 0 0 / 0.22) 80%,
+    rgb(0 0 0 / 0.72) 0%,
+    rgb(0 0 0 / 0.35) 60%,
     transparent 100%
   ) !important;
   background-repeat: no-repeat !important;
   background-position: center bottom !important;
-  background-size: 100% 100% !important;
+  background-size: 100% 64px !important;
   transition: opacity var(--duration-fast) linear !important;
 }
 

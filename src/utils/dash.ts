@@ -4,6 +4,7 @@ import type {
   MediaPlayerClass,
   MediaPlayerSettingClass,
   QualityChangeRenderedEvent,
+  QualityChangeRequestedEvent,
   Representation,
 } from 'dashjs'
 import type { VideoResourceItem } from '@/api/video'
@@ -104,8 +105,11 @@ type DeepPartial<T> = {
 }
 
 /**
- * 4K/顶档优先「稳缓冲」：避免过小缓冲 + 一切档就 flush 造成「播一会卡一下」。
- * 局域网带宽通常够用，卡顿更常见于 ABR 抖动与软解尖峰。
+ * 手动清晰度切换必须保留当前 MSE 缓冲，不能使用 forceReplace。
+ *
+ * dash.js 的无缝降档会在已有缓冲末尾、下一个分片边界自然接入目标档位；因此前向缓冲
+ * 不能像普通长视频那样堆到 40–60 秒。当前后端 DASH 统一为 4 秒分片，保留约 3 个分片
+ * 能兼顾网络抖动容错，并把手动降档的等待控制在一个短且有界的窗口内。
  *
  * 注意键路径按 dash.js v5 命名：
  * - v4 的 `buffer.stableBufferTime` 在 v5 改名为 `buffer.bufferTimeDefault`（默认 18s）
@@ -115,13 +119,13 @@ type DeepPartial<T> = {
 const DASH_STABLE_BUFFER_SETTINGS: DeepPartial<MediaPlayerSettingClass> = {
   streaming: {
     buffer: {
-      // 稳定缓冲目标（秒）：顶档与长视频再拉长，减少 underflow
-      bufferTimeDefault: 25,
-      bufferTimeAtTopQuality: 40,
-      bufferTimeAtTopQualityLongForm: 60,
+      // 所有档位使用同一个有界前向缓冲，避免长视频顶档把降档生效时间拖到一分钟。
+      bufferTimeDefault: 12,
+      bufferTimeAtTopQuality: 12,
+      bufferTimeAtTopQualityLongForm: 12,
       longFormContentDurationThreshold: 300,
-      // 切档时不要立刻冲掉已有缓冲，降低「切换一顿」
-      fastSwitchEnabled: false,
+      // 升档可安全地替换播放头之后的分片；降档仍保留连续缓冲并在分片边界接入。
+      fastSwitchEnabled: true,
       flushBufferAtTrackSwitch: false,
       bufferToKeep: 20,
       bufferPruningInterval: 12,
@@ -246,7 +250,6 @@ export const setupDashQualityMenu = (
   const SETTING_NAME = 'dash-quality'
   let disposed = false
   let built = false
-  let isManualSwitch = false
   // 跳过初始 ABR 自动选档通知（视频首次加载时 ABR 会即刻选定初始清晰度）
   let firstQualityChange = true
   let isAuto = true // 记录当前是否是自动（ABR）模式
@@ -258,8 +261,15 @@ export const setupDashQualityMenu = (
   let autoEvaluationTimer: ReturnType<typeof setTimeout> | null = null
   let lastManualDashIndex: number | null = null
   let autoEvaluationToken = 0
+  let renderedRepresentationId: string | null = null
+  let pendingManualSwitch: {
+    representationId: string
+    label: string
+    requestAccepted: boolean
+  } | null = null
 
   type DashSelectorItem = {
+    dashId?: string
     dashIndex?: number
     html?: string
     $html?: HTMLDivElement
@@ -546,14 +556,19 @@ export const setupDashQualityMenu = (
 
     const selector = [
       { html: initialAutoLabel, default: true, dashIndex: -1 },
-      ...sorted.map((rep) => ({ html: resolveLabel(rep), default: false, dashIndex: rep.index })),
+      ...sorted.map((rep) => ({
+        html: resolveLabel(rep),
+        default: false,
+        dashId: rep.id,
+        dashIndex: rep.index,
+      })),
     ]
 
     const setAuto = (): string => {
       clearAutoFallbackListeners()
       clearAutoEvaluationTimer()
       isAuto = true
-      isManualSwitch = false
+      pendingManualSwitch = null
       firstQualityChange = false
       isAutoEvaluationPending = true
       suppressNextAutoRenderedNotice = false
@@ -564,8 +579,8 @@ export const setupDashQualityMenu = (
       dash.updateSettings({
         streaming: {
           abr: { autoSwitchBitrate: { video: true } },
-          // 切回自动时同样不 flush，避免「点一下自动就卡一下」
-          buffer: { fastSwitchEnabled: false, flushBufferAtTrackSwitch: false },
+          // 自动升档也只替换播放头之后的安全缓冲，不 flush 当前解码区。
+          buffer: { fastSwitchEnabled: true, flushBufferAtTrackSwitch: false },
         },
       })
 
@@ -591,7 +606,11 @@ export const setupDashQualityMenu = (
 
       return autoPendingLabel
     }
-    const setFixed = (index: number): void => {
+    const setFixed = (
+      representation: Representation,
+      label: string
+    ): 'current' | 'pending' | 'failed' => {
+      const isAlreadyRendered = renderedRepresentationId === representation.id
       clearAutoFallbackListeners()
       clearAutoEvaluationTimer()
       isAuto = false
@@ -599,27 +618,64 @@ export const setupDashQualityMenu = (
       suppressNextAutoRenderedNotice = false
       pendingAutoEvaluationLabel = null
       autoEvaluationToken += 1
-      lastManualDashIndex = index
+      lastManualDashIndex = representation.index
+      pendingManualSwitch = isAlreadyRendered
+        ? null
+        : {
+            representationId: representation.id,
+            label,
+            requestAccepted: false,
+          }
       dash.updateSettings({
         streaming: {
           abr: { autoSwitchBitrate: { video: false } },
-          // 手动锁档：不启用 fastSwitch flush，减少切 4K 时的卡顿尖峰
-          buffer: { fastSwitchEnabled: false, flushBufferAtTrackSwitch: false },
+          // 不 flush、也不 forceReplace：当前解码帧和连续缓冲始终保留。
+          buffer: { fastSwitchEnabled: true, flushBufferAtTrackSwitch: false },
         },
       })
-      // forceReplace=true 确保降档（高→低清晰度）时立即切走，而非仅设置上限等待 ABR 自然下探
-      const dashAny = dash as unknown as Record<string, unknown>
-      if (typeof dashAny.setQualityFor === 'function') {
-        ;(dashAny.setQualityFor as (type: string, index: number, replace: boolean) => void)(
-          'video',
-          index,
-          true
-        )
-      } else {
-        dash.setRepresentationForTypeByIndex('video', index, true)
+
+      const isTargetAccepted = (): boolean => {
+        const pending = pendingManualSwitch
+        if (pending?.representationId === representation.id && pending.requestAccepted) {
+          return true
+        }
+        try {
+          return dash.getCurrentRepresentationForType('video')?.id === representation.id
+        } catch {
+          return false
+        }
       }
+
+      const requestTargetRepresentation = (): boolean => {
+        try {
+          // forceReplace=false 是连续播放的关键：降档从已有缓冲末尾的安全分片边界接入，
+          // 不清空 SourceBuffer，也不 seek 当前时间。
+          dash.setRepresentationForTypeById('video', representation.id, false)
+          if (isTargetAccepted()) return true
+
+          // setRepresentationForTypeById 找不到目标时会静默返回；用同一份过滤后
+          // representation 数组的相对位置兜底，避免 UI 永久停在“正在切换”。
+          const relativeIndex = reps.findIndex((rep) => rep.id === representation.id)
+          if (relativeIndex < 0) return false
+          dash.setRepresentationForTypeByIndex('video', relativeIndex, false)
+          return isTargetAccepted()
+        } catch (error) {
+          console.error('[dash] manual quality switch failed', error)
+          return false
+        }
+      }
+
+      // 即便目标正在屏幕上渲染，也要确认下载档位已经锁到目标；这可以取消用户快速
+      // 连点清晰度时尚未渲染的旧请求，同时不触碰当前播放缓冲。
+      if (!isTargetAccepted() && !requestTargetRepresentation()) {
+        pendingManualSwitch = null
+        return 'failed'
+      }
+
       // 切到手动清晰度时，自动重置「自动」选项后方的分辨率括号，只显示“自动”
       updateAutoItemLabel()
+      if (isAlreadyRendered) updateTooltip(label)
+      return isAlreadyRendered ? 'current' : 'pending'
     }
 
     try {
@@ -630,17 +686,28 @@ export const setupDashQualityMenu = (
         tooltip: initialAutoLabel,
         selector,
         onSelect(item) {
-          const dashIndex = (item as { dashIndex?: number }).dashIndex ?? -1
-          // 标记手动切档，避免 ABR 事件监听器再弹一次通知
-          isManualSwitch = dashIndex >= 0
-          const html = (item as { html?: string }).html ?? autoLabel
-          if (dashIndex < 0) {
+          const selected = item as { dashId?: string; dashIndex?: number; html?: string }
+          const dashIndex = selected.dashIndex ?? -1
+          const html = selected.html ?? autoLabel
+          if (dashIndex < 0 || selected.dashId == null) {
             const pendingLabel = setAuto()
             art.notice.show = `正在评估网络情况...`
             return pendingLabel
+          }
+
+          const representation = reps.find((rep) => rep.id === selected.dashId)
+          if (!representation) {
+            art.notice.show = '该清晰度暂不可用'
+            return html
+          }
+
+          const result = setFixed(representation, html)
+          if (result === 'pending') {
+            art.notice.show = `正在切换至 ${html}`
+          } else if (result === 'current') {
+            art.notice.show = `当前已是 ${html}`
           } else {
-            setFixed(dashIndex)
-            art.notice.show = `清晰度：${html}`
+            art.notice.show = `切换至 ${html} 失败`
           }
           return html
         },
@@ -656,15 +723,21 @@ export const setupDashQualityMenu = (
   if (dash.isReady()) build()
 
   // ABR 决定请求新视频分片时，立刻同步更新“自动(xxx)”文案，让用户感知到最新的网络评估结果
-  const onQualityRequested = (e: { mediaType: string; newQuality: number }): void => {
+  const onQualityRequested = (e: QualityChangeRequestedEvent): void => {
     if (e.mediaType !== 'video') return
-    const index = e.newQuality
-    const rep = reps.find((r) => r.index === index)
+    const rep = e.newRepresentation
     if (!rep) return
-    if (!isAuto || isManualSwitch) return
+    if (!isAuto) {
+      const pending = pendingManualSwitch
+      if (pending?.representationId === rep.id) {
+        pending.requestAccepted = true
+      }
+      return
+    }
 
     suppressNextAutoRenderedNotice = true
     firstQualityChange = false
+    const index = rep.index
     const label = resolveLabel(rep)
 
     if (
@@ -686,7 +759,19 @@ export const setupDashQualityMenu = (
     if (e.mediaType !== 'video') return
     const rep = e.newRepresentation
     if (!rep) return
+    renderedRepresentationId = rep.id
     const label = resolveLabel(rep)
+
+    // 手动清晰度只有在目标 representation 真正进入屏幕渲染后才算完成。
+    // 过程中若先渲染了旧档或上一个快速点击的目标，不提前报成功。
+    if (!isAuto) {
+      const pending = pendingManualSwitch
+      if (!pending || pending.representationId !== rep.id) return
+      pendingManualSwitch = null
+      updateTooltip(pending.label)
+      art.notice.show = `已切换至 ${pending.label}`
+      return
+    }
 
     // 切回自动后的评估窗口内，dash.js 可能先报告上一个手动档仍在渲染。
     // 这不是新的网络评估结果，不能写回清晰度 tooltip。
@@ -708,12 +793,6 @@ export const setupDashQualityMenu = (
       return
     }
 
-    // 手动切档由 onSelect 直接弹通知并更新 tooltip，此处不再重复。
-    if (isManualSwitch) {
-      isManualSwitch = false
-      return
-    }
-    if (!isAuto) return
     if (suppressNextAutoRenderedNotice) {
       suppressNextAutoRenderedNotice = false
       updateAutoItemLabel(label)
@@ -730,6 +809,7 @@ export const setupDashQualityMenu = (
 
   return () => {
     disposed = true
+    pendingManualSwitch = null
     clearAutoFallbackListeners()
     clearAutoEvaluationTimer()
     try {

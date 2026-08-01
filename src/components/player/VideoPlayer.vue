@@ -1446,8 +1446,22 @@ onBeforeUnmount(() => {
   --art-theme: var(--color-primary);
   --art-font-color: var(--media-overlay-text);
   --art-background-color: var(--player-cinema-black);
-  --player-progress-track: rgb(255 255 255 / 0.25);
-  --player-progress-loaded: rgb(255 255 255 / 0.6);
+  // 深色内芯负责亮画面对比，浅色外缘负责暗画面对比，避免依赖视频背景或阴影。
+  --player-progress-track: color-mix(
+    in oklch,
+    var(--player-cinema-black) 76%,
+    var(--media-overlay-text)
+  );
+  --player-progress-track-edge: color-mix(
+    in oklch,
+    var(--media-overlay-text) 78%,
+    var(--player-cinema-black)
+  );
+  --player-progress-loaded: color-mix(
+    in oklch,
+    var(--media-overlay-text) 58%,
+    var(--player-cinema-black)
+  );
   --art-progress-color: var(--player-progress-track);
   --art-loaded-color: var(--player-progress-loaded);
   --art-hover-color: transparent;
@@ -1514,8 +1528,10 @@ onBeforeUnmount(() => {
 }
 
 :deep(.art-control-progress-inner) {
-  height: 4px !important;
+  box-sizing: border-box;
+  height: 6px !important;
   overflow: visible;
+  border: 1px solid var(--player-progress-track-edge);
   background: var(--player-progress-track) !important;
   border-radius: 999px !important;
   box-shadow: none !important;
@@ -1557,29 +1573,23 @@ onBeforeUnmount(() => {
   width: 12px;
   height: 100%;
   border-radius: 999px;
-  background: linear-gradient(
-    90deg,
-    transparent,
-    rgb(255 255 255 / 0.4)
-  );
+  background: linear-gradient(90deg, transparent, rgb(255 255 255 / 0.4));
   content: '';
 }
 
 :deep(.art-progress-played) {
   background: var(--brand-blue) !important;
   border-radius: inherit !important;
-  box-shadow: 0 0 12px color-mix(in oklch, var(--brand-blue) 36%, transparent);
+  box-shadow: none !important;
 }
 
 :deep(.art-progress-indicator) {
   background-color: var(--media-overlay-text) !important;
-  border: 2px solid var(--media-overlay-text) !important;
+  border: 2px solid var(--player-progress-track) !important;
   width: 12px !important;
   height: 12px !important;
   border-radius: 50% !important;
-  box-shadow:
-    0 0 0 3px color-mix(in oklch, var(--brand-blue) 34%, transparent),
-    0 4px 14px rgb(0 0 0 / 0.62) !important;
+  box-shadow: none !important;
   transform: scale(0) !important;
   transition: transform var(--duration-fast) var(--ease-out-quint) !important;
 }

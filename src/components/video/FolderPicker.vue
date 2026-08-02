@@ -4,12 +4,13 @@ import {
   getFolderList,
   getFolderVideos,
   createFolder,
+  deleteFolder,
   toggleVideoFavorite,
   type FolderItem,
 } from '@/api/video'
 import { useVideoStore } from '@/stores/video'
 import { Dialog, DialogContent, DialogTitle, DialogHeader } from '@/components/ui/dialog'
-import { Plus, Loader2, Check } from 'lucide-vue-next'
+import { Plus, Loader2, Check, Trash2 } from 'lucide-vue-next'
 import { toast } from 'vue-sonner'
 
 const props = defineProps<{
@@ -36,7 +37,25 @@ const showCreateInput = ref(false)
 const newFolderName = ref('')
 const isCreating = ref(false)
 
-const MAX_FOLDER_VIDEOS = 1000
+const handleDeleteFolder = async (folder: FolderItem) => {
+  if (folder.isDefault) return
+  if (!confirm(`确定要删除收藏夹"${folder.name}"吗？`)) return
+  try {
+    await deleteFolder({ folderId: folder.id })
+    folders.value = folders.value.filter((f) => f.id !== folder.id)
+    const nextSelected = new Set(selectedFolderIds.value)
+    nextSelected.delete(folder.id)
+    selectedFolderIds.value = nextSelected
+    const nextInitial = new Set(initialFolderIds.value)
+    nextInitial.delete(folder.id)
+    initialFolderIds.value = nextInitial
+    toast.success('收藏夹已删除')
+  } catch (err: unknown) {
+    const msg =
+      (err as { response?: { data?: { msg?: string } } })?.response?.data?.msg || '删除收藏夹失败'
+    toast.error(msg)
+  }
+}
 
 const loadFolders = async () => {
   isLoading.value = true
@@ -204,21 +223,27 @@ const handleOpenChange = (val: boolean) => {
       <!-- Folder List -->
       <template v-else>
         <div class="folder-list">
-          <button
-            v-for="folder in folders"
-            :key="folder.id"
-            class="folder-row"
-            @click="toggleFolder(folder.id)"
-          >
-            <span
-              class="folder-checkbox"
-              :class="{ 'is-checked': selectedFolderIds.has(folder.id) }"
+          <div v-for="folder in folders" :key="folder.id" class="folder-row-wrap">
+            <button class="folder-row" @click="toggleFolder(folder.id)">
+              <span
+                class="folder-checkbox"
+                :class="{ 'is-checked': selectedFolderIds.has(folder.id) }"
+              >
+                <Check v-if="selectedFolderIds.has(folder.id)" :size="12" class="check-icon" />
+              </span>
+              <span class="folder-name">{{ folder.isDefault ? '默认收藏夹' : folder.name }}</span>
+              <span class="folder-count">{{ folder.videoCount }}</span>
+            </button>
+            <button
+              v-if="!folder.isDefault"
+              class="folder-delete-btn"
+              title="删除收藏夹"
+              type="button"
+              @click.stop="handleDeleteFolder(folder)"
             >
-              <Check v-if="selectedFolderIds.has(folder.id)" :size="12" class="check-icon" />
-            </span>
-            <span class="folder-name">{{ folder.isDefault ? '默认收藏夹' : folder.name }}</span>
-            <span class="folder-count">{{ folder.videoCount }}/{{ MAX_FOLDER_VIDEOS }}</span>
-          </button>
+              <Trash2 :size="14" />
+            </button>
+          </div>
         </div>
 
         <!-- Create Folder -->
@@ -301,20 +326,54 @@ const handleOpenChange = (val: boolean) => {
   padding: 8px 0;
 }
 
+.folder-row-wrap {
+  display: flex;
+  align-items: center;
+  padding-right: 24px;
+  transition: background-color var(--duration-fast) var(--ease-out-quart);
+
+  &:hover {
+    background: oklch(var(--muted) / 0.5);
+
+    .folder-delete-btn {
+      opacity: 1;
+    }
+  }
+}
+
 .folder-row {
   display: flex;
   align-items: center;
   gap: 12px;
-  width: 100%;
-  padding: 10px 24px;
+  flex: 1;
+  min-width: 0;
+  padding: 10px 12px 10px 24px;
   cursor: pointer;
-  transition: background-color var(--duration-fast) var(--ease-out-quart);
   background: transparent;
   border: none;
   text-align: left;
+}
+
+.folder-delete-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 4px;
+  border: none;
+  background: transparent;
+  color: oklch(var(--muted-foreground));
+  opacity: 0;
+  cursor: pointer;
+  transition:
+    opacity var(--duration-fast) linear,
+    color var(--duration-fast) linear,
+    background-color var(--duration-fast) linear;
 
   &:hover {
-    background: oklch(var(--muted) / 0.5);
+    color: oklch(var(--destructive, 0.6 0.2 25));
+    background: oklch(var(--muted) / 0.8);
   }
 }
 

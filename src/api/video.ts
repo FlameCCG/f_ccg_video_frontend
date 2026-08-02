@@ -303,6 +303,11 @@ export interface CreateFolderParams {
   name: string
 }
 
+export interface UpdateFolderParams {
+  folderId: number
+  name: string
+}
+
 export interface FolderItem {
   id: number
   name: string
@@ -620,6 +625,17 @@ export const getPlayHistoryList = (
  */
 export const createFolder = (params: CreateFolderParams): Promise<FolderItem> => {
   return request.post('/common/video/folder', params)
+}
+
+/**
+ * 更新收藏夹信息
+ * PUT /common/video/folder
+ * 认证: 需要登录（客户端全局自动携带 Token）
+ * 依赖接口: 无
+ * 接口说明: 更新收藏夹名称（需登录）
+ */
+export const updateFolder = (params: UpdateFolderParams): Promise<FolderItem> => {
+  return request.put('/common/video/folder', params)
 }
 
 /**

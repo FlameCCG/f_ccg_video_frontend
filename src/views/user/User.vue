@@ -26,10 +26,13 @@ import {
 import {
   getFolderList,
   getFolderVideos,
+  updateFolder,
+  deleteFolder,
   toggleVideoLike,
   type FolderItem,
   type FolderVideoItem,
 } from '@/api/video'
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import {
   getDynamicList,
   createDynamic,
@@ -382,6 +385,13 @@ const fetchFolders = async () => {
   try {
     const r = await getFolderList()
     folders.value = r.list
+    if (!selectedFolderId.value || !r.list.some((f) => f.id === selectedFolderId.value)) {
+      if (r.list.length > 0) {
+        selectFolder(r.list[0]!.id)
+      } else {
+        selectedFolderId.value = null
+      }
+    }
     void fetchFolderCovers()
   } catch {
     /* noop */
@@ -582,6 +592,57 @@ const handleFollowInList = async (targetId: number) => {
 }
 
 // ---- Actions ----
+
+// 收藏夹编辑与删除
+const editFolderDialogOpen = ref(false)
+const editFolderName = ref('')
+const isUpdatingFolder = ref(false)
+
+const openEditFolderDialog = () => {
+  if (!selectedFolder.value) return
+  editFolderName.value = selectedFolder.value.name
+  editFolderDialogOpen.value = true
+}
+
+const handleUpdateFolder = async () => {
+  if (!selectedFolder.value) return
+  const name = editFolderName.value.trim()
+  if (!name) return
+
+  isUpdatingFolder.value = true
+  try {
+    const updated = await updateFolder({ folderId: selectedFolder.value.id, name })
+    const item = folders.value.find((f) => f.id === updated.id)
+    if (item) item.name = updated.name
+    editFolderDialogOpen.value = false
+    toast.success('收藏夹名称已更新')
+  } catch (err: unknown) {
+    const msg =
+      (err as { response?: { data?: { msg?: string } } })?.response?.data?.msg || '更新收藏夹失败'
+    toast.error(msg)
+  } finally {
+    isUpdatingFolder.value = false
+  }
+}
+
+const handleDeleteFolderInUser = async () => {
+  if (!selectedFolder.value) return
+  if (selectedFolder.value.isDefault) {
+    toast.error('默认收藏夹不可删除')
+    return
+  }
+  if (!confirm(`确定要删除收藏夹"${selectedFolder.value.name}"吗？`)) return
+  try {
+    await deleteFolder({ folderId: selectedFolder.value.id })
+    toast.success('收藏夹已删除')
+    selectedFolderId.value = null
+    await fetchFolders()
+  } catch (err: unknown) {
+    const msg =
+      (err as { response?: { data?: { msg?: string } } })?.response?.data?.msg || '删除收藏夹失败'
+    toast.error(msg)
+  }
+}
 
 const selectFolder = (id: number) => {
   selectedFolderId.value = id
@@ -1824,11 +1885,36 @@ const privacySettings = [
           <div v-if="selectedFolder" class="flex-1 p-5">
             <div class="flex items-center justify-between mb-5 pb-5 border-b border-border">
               <div>
-                <h3 class="text-base font-medium text-foreground mb-1">
-                  {{ selectedFolder.name }}
-                </h3>
+                <div class="flex items-center gap-2 mb-1">
+                  <h3 class="text-base font-medium text-foreground">
+                    {{ selectedFolder.isDefault ? '默认收藏夹' : selectedFolder.name }}
+                  </h3>
+                  <DropdownMenu v-if="isSelf">
+                    <DropdownMenuTrigger as-child>
+                      <button
+                        class="p-1 rounded-md text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors"
+                        title="收藏夹设置"
+                        type="button"
+                      >
+                        <MoreVertical :size="16" />
+                      </button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="start" class="w-36">
+                      <DropdownMenuItem class="cursor-pointer" @select="openEditFolderDialog">
+                        编辑收藏夹
+                      </DropdownMenuItem>
+                      <DropdownMenuItem
+                        v-if="!selectedFolder.isDefault"
+                        class="cursor-pointer text-destructive focus:text-destructive"
+                        @select="handleDeleteFolderInUser"
+                      >
+                        删除收藏夹
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                </div>
                 <div class="text-2xs text-muted-foreground/80">
-                  创建者：{{ user.username }} · {{ selectedFolder.videoCount }}个内容
+                  创建者：{{ user?.username || '' }} · {{ selectedFolder.videoCount }}个内容
                 </div>
               </div>
               <div class="flex items-center gap-3">
@@ -2216,6 +2302,42 @@ const privacySettings = [
             </div>
           </transition>
         </Teleport>
+
+        <!-- Edit Folder Dialog -->
+        <Dialog :open="editFolderDialogOpen" @update:open="editFolderDialogOpen = $event">
+          <DialogContent class="max-w-sm">
+            <DialogHeader>
+              <DialogTitle>编辑收藏夹信息</DialogTitle>
+            </DialogHeader>
+            <div class="py-4">
+              <label class="text-xs font-medium text-muted-foreground block mb-2">收藏夹名称</label>
+              <input
+                v-model="editFolderName"
+                class="w-full h-9 px-3 text-sm rounded border border-border bg-background text-foreground focus:border-primary focus:outline-none"
+                placeholder="输入新的收藏夹名称"
+                maxlength="20"
+                @keydown.enter="handleUpdateFolder"
+              />
+            </div>
+            <div class="flex justify-end gap-2 pt-2">
+              <button
+                class="px-4 py-1.5 rounded border border-border text-xs text-foreground hover:bg-secondary transition-colors"
+                type="button"
+                @click="editFolderDialogOpen = false"
+              >
+                取消
+              </button>
+              <button
+                class="px-4 py-1.5 rounded bg-primary hover:bg-primary/80 text-xs text-primary-foreground font-medium transition-colors disabled:opacity-50"
+                type="button"
+                :disabled="!editFolderName.trim() || isUpdatingFolder"
+                @click="handleUpdateFolder"
+              >
+                保存
+              </button>
+            </div>
+          </DialogContent>
+        </Dialog>
       </div>
     </template>
   </div>

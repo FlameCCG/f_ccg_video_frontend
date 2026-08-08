@@ -1838,7 +1838,7 @@ const privacySettings = [
               class="flex cursor-pointer items-center justify-between bg-primary px-4 py-2 text-primary-foreground"
             >
               <span class="text-sm-plus">视频</span>
-              <span class="text-2xs bg-card/20 px-1.5 rounded">{{ videoTotal }}</span>
+              <span class="text-2xs text-primary-foreground/90">{{ videoTotal }}</span>
             </div>
           </div>
           <div class="flex-1 p-5">
@@ -2172,7 +2172,7 @@ const privacySettings = [
                 class="text-2xs ml-2"
                 :class="
                   activeTab === 'following'
-                    ? 'bg-card/20 px-1.5 rounded'
+                    ? 'text-primary-foreground/90'
                     : 'text-muted-foreground/80'
                 "
                 >{{ user.followCount }}</span
@@ -2195,7 +2195,7 @@ const privacySettings = [
               <span
                 class="text-2xs ml-2"
                 :class="
-                  activeTab === 'fans' ? 'bg-card/20 px-1.5 rounded' : 'text-muted-foreground/80'
+                  activeTab === 'fans' ? 'text-primary-foreground/90' : 'text-muted-foreground/80'
                 "
                 >{{ user.fansCount }}</span
               >

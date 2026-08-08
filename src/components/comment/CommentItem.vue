@@ -10,6 +10,7 @@ import { onClickOutside } from '@vueuse/core'
 import { toast } from 'vue-sonner'
 import CommentInput from './CommentInput.vue'
 import AppAvatar from '@/components/common/AppAvatar.vue'
+import { resolveMediaUrl } from '@/utils/media'
 import ImageViewer from '@/components/common/ImageViewer.vue'
 
 const router = useRouter()
@@ -264,7 +265,7 @@ const handleReplyDeleted = (id: number) => {
           class="h-24 w-24 overflow-hidden rounded-md border border-border cursor-pointer hover:opacity-90 transition-opacity"
           @click="openImagePreview(pic)"
         >
-          <img :src="pic" class="h-full w-full object-cover" loading="lazy" />
+          <img :src="resolveMediaUrl(pic)" class="h-full w-full object-cover" loading="lazy" />
         </div>
       </div>
 
@@ -374,6 +375,6 @@ const handleReplyDeleted = (id: number) => {
     </div>
 
     <!-- Image Preview Modal -->
-    <ImageViewer v-model="showPreview" :src="previewImageUrl" />
+    <ImageViewer v-model="showPreview" :src="resolveMediaUrl(previewImageUrl)" />
   </div>
 </template>

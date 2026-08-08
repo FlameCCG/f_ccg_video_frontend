@@ -20,6 +20,7 @@ import {
 } from '@/api/chat'
 import { uploadImage } from '@/api/upload'
 import { getUserDetail, type UserDetail } from '@/api/user'
+import { resolveMediaUrl } from '@/utils/media'
 import EmojiPicker from '@/components/common/EmojiPicker.vue'
 import ImageViewer from '@/components/common/ImageViewer.vue'
 import AppAvatar from '@/components/common/AppAvatar.vue'
@@ -133,14 +134,14 @@ const preloadPeerProfiles = (peerIds: number[]) => {
 }
 
 const resolvePeerName = (peerId: number) => peerProfiles.value[peerId]?.username ?? `UID ${peerId}`
-const resolvePeerAvatar = (peerId: number) => peerProfiles.value[peerId]?.avatar ?? ''
+const resolvePeerAvatar = (peerId: number) => resolveMediaUrl(peerProfiles.value[peerId]?.avatar ?? '')
 const resolveMessageName = (message: ChatTimelineMessage) =>
   message.senderId === currentUserId.value
     ? authStore.user?.username || '我'
     : resolvePeerName(message.senderId)
 const resolveMessageAvatar = (message: ChatTimelineMessage) =>
   message.senderId === currentUserId.value
-    ? authStore.user?.avatar || ''
+    ? resolveMediaUrl(authStore.user?.avatar || '')
     : resolvePeerAvatar(message.senderId)
 
 const resolveMessagePreview = (message: Pick<ChatMessage, 'type' | 'text' | 'emoji'>): string => {
@@ -462,6 +463,7 @@ const uploadAndSendFile = async (file: File, previewUrl: string) => {
       type: 'send',
       to: currentPeerId.value,
       msgType: 'image',
+      // 保持原始相对路径经 WS 回传后端，渲染时再拼 host
       media: {
         url: result.imageUrl,
         mime: file.type || 'image/png',
@@ -856,7 +858,7 @@ onMounted(() => {
                         </div>
                         <img
                           v-else
-                          :src="message.media?.url"
+                          :src="resolveMediaUrl(message.media?.url)"
                           :alt="message.type === 'sticker' ? '表情包消息' : '图片消息'"
                           class="chat-media-img cursor-pointer rounded-[20px] border border-border/50 bg-card object-cover"
                           :class="

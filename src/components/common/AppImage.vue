@@ -18,6 +18,7 @@
  */
 import { computed, nextTick, onMounted, ref, watch, type Component } from 'vue'
 import { ImageOff } from 'lucide-vue-next'
+import { resolveMediaUrl } from '@/utils/media'
 
 type LoadState = 'loading' | 'ready' | 'failed'
 
@@ -89,7 +90,7 @@ const emit = defineEmits<Emits>()
 const imgRef = ref<HTMLImageElement | null>(null)
 
 const normalizedSrc = computed(() => {
-  const candidate = props.src?.trim() ?? ''
+  const candidate = resolveMediaUrl(props.src)
   return /^(null|undefined)$/i.test(candidate) ? '' : candidate
 })
 

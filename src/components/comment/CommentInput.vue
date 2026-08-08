@@ -7,6 +7,7 @@ import AppAvatar from '@/components/common/AppAvatar.vue'
 import { Smile, AtSign, ImagePlus, X, Loader2 } from 'lucide-vue-next'
 import { useDebounceFn, onClickOutside } from '@vueuse/core'
 import { uploadImage } from '@/api/upload'
+import { resolveMediaUrl } from '@/utils/media'
 import { toast } from 'vue-sonner'
 
 const props = defineProps<{
@@ -239,7 +240,7 @@ onMounted(() => {
           :key="idx"
           class="group relative h-16 w-16 overflow-hidden rounded-md border border-border"
         >
-          <img :src="pic" class="h-full w-full object-cover" />
+          <img :src="resolveMediaUrl(pic)" class="h-full w-full object-cover" />
           <button
             class="media-chip focus-ring absolute right-1 top-1 rounded-full p-0.5 opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
             @click="removePicture(idx)"

@@ -44,6 +44,7 @@ import {
 } from '@/api/dynamic'
 import { createConversation } from '@/api/chat'
 import { uploadImage } from '@/api/upload'
+import { resolveMediaUrl } from '@/utils/media'
 import { toast } from 'vue-sonner'
 import Navbar from '@/components/layout/Navbar.vue'
 import AppAvatar from '@/components/common/AppAvatar.vue'
@@ -846,6 +847,7 @@ const handleDynamicImageUpload = async (e: Event) => {
   try {
     const hash = `img-${Date.now()}`
     const res = await uploadImage(hash, file)
+    // 保持原始相对路径（createDynamic 回传后端），渲染时再拼 host
     newDynamicImageUrl.value = res.imageUrl
   } catch {
     toast.error('图片上传失败')
@@ -1116,7 +1118,7 @@ const privacySettings = [
         <div class="absolute inset-0 z-0 overflow-hidden">
           <img
             v-if="displayBannerUrl"
-            :src="displayBannerUrl"
+            :src="resolveMediaUrl(displayBannerUrl)"
             class="h-full w-full object-cover object-center"
             alt=""
           />
@@ -1312,7 +1314,7 @@ const privacySettings = [
                     @click="goVideo(v.id)"
                   >
                     <div class="uvc-cover">
-                      <img :src="v.cover" />
+                      <img :src="resolveMediaUrl(v.cover)" />
                       <div class="uvc-stats">
                         <span> <Play :size="11" /> {{ fmtCount(v.views) }} </span>
                         <span> <MessageSquare :size="11" /> {{ fmtCount(v.danmuCount) }} </span>
@@ -1418,7 +1420,7 @@ const privacySettings = [
                   @click="goVideo(v.id)"
                 >
                   <div class="uvc-cover">
-                    <img :src="v.cover" />
+                    <img :src="resolveMediaUrl(v.cover)" />
                     <div class="uvc-stats">
                       <span> <Play :size="11" /> {{ fmtCount(v.views) }} </span>
                       <span> <MessageSquare :size="11" /> {{ fmtCount(v.danmuCount) }} </span>
@@ -1442,7 +1444,7 @@ const privacySettings = [
                   @click="goVideo(v.id)"
                 >
                   <div class="uvc-cover">
-                    <img :src="v.cover" />
+                    <img :src="resolveMediaUrl(v.cover)" />
                     <div class="uvc-stats">
                       <span> <Play :size="11" /> {{ fmtCount(v.views) }} </span>
                       <span> <MessageSquare :size="11" /> {{ fmtCount(v.danmuCount) }} </span>
@@ -1480,7 +1482,7 @@ const privacySettings = [
                   <div class="ufc-cover">
                     <img
                       v-if="folderCovers[f.id]"
-                      :src="folderCovers[f.id]"
+                      :src="resolveMediaUrl(folderCovers[f.id])"
                       class="ufc-cover-img"
                     />
                     <div v-else class="ufc-cover-placeholder"></div>
@@ -1554,7 +1556,7 @@ const privacySettings = [
                     placeholder="有什么想和大家分享的？"
                   ></textarea>
                   <div v-if="newDynamicImageUrl" class="mt-2 relative inline-block">
-                    <img :src="newDynamicImageUrl" class="h-20 rounded" />
+                    <img :src="resolveMediaUrl(newDynamicImageUrl)" class="h-20 rounded" />
                     <button
                       class="media-chip absolute -right-1 -top-1 flex h-4 w-4 items-center justify-center rounded-full text-2xs"
                       @click="newDynamicImageUrl = ''"
@@ -1668,7 +1670,7 @@ const privacySettings = [
                       </p>
                       <img
                         v-if="item.dynamic.imageUrl"
-                        :src="item.dynamic.imageUrl"
+                        :src="resolveMediaUrl(item.dynamic.imageUrl)"
                         class="mt-3 max-w-[360px] rounded-lg cursor-pointer"
                       />
                     </div>
@@ -1867,7 +1869,7 @@ const privacySettings = [
                 @click="goVideo(v.id)"
               >
                 <div class="uvc-cover">
-                  <img :src="v.cover" />
+                  <img :src="resolveMediaUrl(v.cover)" />
                   <div class="uvc-stats">
                     <span> <Play :size="11" /> {{ fmtCount(v.views) }} </span>
                     <span> <MessageSquare :size="11" /> {{ fmtCount(v.danmuCount) }} </span>
@@ -2017,7 +2019,7 @@ const privacySettings = [
                 @click="goVideo(v.id)"
               >
                 <div class="uvc-cover">
-                  <img :src="v.cover" />
+                  <img :src="resolveMediaUrl(v.cover)" />
                   <div class="uvc-stats">
                     <span> <Play :size="11" /> {{ fmtCount(v.views) }} </span>
                     <span> <MessageSquare :size="11" /> {{ fmtCount(v.danmuCount) }} </span>

@@ -1645,6 +1645,7 @@ const handlePublish = async () => {
       let coverUrl = work.currentCoverUrl
       if (work.coverFile) {
         const coverRes = await uploadImage(work.parts[0]?.hash || '', work.coverFile)
+        // 保持原始相对路径回传后端（对外契约），渲染时由 UploadCoverCard/resolveMediaUrl 拼 host
         coverUrl = coverRes.imageUrl
       }
       const publishPayload: PublishVideoParams = {

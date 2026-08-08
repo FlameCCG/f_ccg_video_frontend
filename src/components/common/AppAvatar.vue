@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
+import { resolveMediaUrl } from '@/utils/media'
 
 const props = withDefaults(
   defineProps<{
@@ -30,7 +31,7 @@ watch(
 )
 
 const normalizedSrc = computed(() => {
-  const candidate = props.src?.trim() ?? ''
+  const candidate = resolveMediaUrl(props.src)
   return /^(null|undefined)$/i.test(candidate) ? '' : candidate
 })
 

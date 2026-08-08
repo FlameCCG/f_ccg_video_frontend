@@ -19,6 +19,7 @@ import {
   setupDashQualityMenu,
 } from '@/utils/dash'
 import type { ArtWithDash } from '@/utils/dash'
+import { resolveMediaUrl } from '@/utils/media'
 import { toast } from 'vue-sonner'
 
 const props = withDefaults(
@@ -157,7 +158,7 @@ const qualityList = computed(() => {
   return list.map((r, i) => ({
     default: preferred ? r.id === preferred.id : i === 0,
     html: r.resolution || `清晰度${i + 1}`,
-    url: r.fileUrl,
+    url: resolveMediaUrl(r.fileUrl),
   }))
 })
 
@@ -1117,7 +1118,10 @@ const initPlayer = () => {
 
   const useDash = shouldUseDash()
   // DASH 原样传清单 URL（含查询串，切勿改写）；MP4 取默认清晰度直链。
-  const startUrl = useDash ? dashResource.value?.fileUrl : defaultMp4.value?.fileUrl
+  // 两者都先经 resolveMediaUrl 解析（根相对路径 → 按环境拼 host）。
+  const startUrl = useDash
+    ? resolveMediaUrl(dashResource.value?.fileUrl)
+    : resolveMediaUrl(defaultMp4.value?.fileUrl)
   if (!startUrl) return
 
   const savedVolume = parseFloat(localStorage.getItem(VOLUME_STORAGE_KEY) ?? '0.7')
@@ -1390,8 +1394,10 @@ const destroyPlayer = () => {
 
 // 视频 / 分P / 弹幕开关 / VIP 可见性 / 资源清单变化时，销毁旧实例并按选流策略重建。
 const rebuildKey = computed(() => {
-  const dashUrl = dashResource.value?.fileUrl ?? ''
-  const mp4Sig = mp4Resources.value.map((r) => `${r.id}:${r.fileUrl}`).join('|')
+  const dashUrl = resolveMediaUrl(dashResource.value?.fileUrl ?? '')
+  const mp4Sig = mp4Resources.value
+    .map((r) => `${r.id}:${resolveMediaUrl(r.fileUrl)}`)
+    .join('|')
   return [
     videoStore.currentVideo?.id ?? 0,
     props.partId ?? 0,

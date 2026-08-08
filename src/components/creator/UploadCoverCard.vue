@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { Bot, ImageIcon, Loader2, Shuffle, SlidersHorizontal } from 'lucide-vue-next'
 import { Button } from '@/components/ui/button'
+import { resolveMediaUrl } from '@/utils/media'
 import { dataAttrs, type CoverCandidate } from './upload-shared'
 
 defineProps<{
@@ -48,7 +49,7 @@ const emit = defineEmits<{
         >
           <img
             v-if="coverPreview"
-            :src="coverPreview"
+            :src="resolveMediaUrl(coverPreview)"
             :alt="title ? `${title} 的封面` : '视频封面'"
             class="cover-field__image"
             draggable="false"

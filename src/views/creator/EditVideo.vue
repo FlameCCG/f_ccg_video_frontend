@@ -376,6 +376,7 @@ const handleSave = async () => {
         `video-edit-${videoId.value}-${Date.now()}`,
         form.value.coverFile
       )
+      // 保持原始相对路径回传后端（对外契约），渲染时由 AppImage/resolveMediaUrl 拼 host
       coverUrl = uploadResult.imageUrl
     }
 

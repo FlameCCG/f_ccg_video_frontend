@@ -3,6 +3,7 @@ import { computed } from 'vue'
 import { useRouter } from 'vue-router'
 import type { FeedItem } from '@/api/video'
 import { formatCount, formatDuration } from '@/utils/format'
+import { resolveMediaUrl } from '@/utils/media'
 
 interface Props {
   video: FeedItem
@@ -52,7 +53,7 @@ const rankBadgeStyle = computed(() => {
           {{ rank }}
         </div>
         <img
-          :src="video.cover"
+          :src="resolveMediaUrl(video.cover)"
           :alt="video.title"
           class="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
           loading="lazy"

@@ -15,6 +15,11 @@ const backendAgent = new http.Agent({
 
 const backendTarget = process.env.VITE_DEV_PROXY_TARGET || 'http://127.0.0.1:8080'
 
+// 媒体同源代理（VITE_MEDIA_BASE 为空时浏览器走这里）：
+//  - /user_files/* → MinIO（对象路径含 bucket 前缀，target 直接带桶名）
+//  - /uploads/*    → 后端本地静态目录（本地存储模式）
+const mediaMinioTarget = process.env.VITE_MEDIA_MINIO_TARGET || 'http://127.0.0.1:9002/videos'
+
 /** 规范化 Node remoteAddress（可能是 :ffff:x.x.x.x 或带 zone 的 IPv6） */
 function normalizeProxyClientIP(raw: string | undefined): string {
   if (!raw) return ''
@@ -42,6 +47,17 @@ export default defineConfig({
     port: 3000,
     host: true,
     proxy: {
+      // 媒体资源（同源方案）：/user_files → MinIO，/uploads → 后端本地静态目录
+      '/user_files': {
+        target: mediaMinioTarget,
+        changeOrigin: true,
+        secure: false,
+      },
+      '/uploads': {
+        target: backendTarget,
+        changeOrigin: true,
+        secure: false,
+      },
       '/v1': {
         target: backendTarget,
         changeOrigin: true,

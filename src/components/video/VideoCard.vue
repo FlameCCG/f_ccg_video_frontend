@@ -2,6 +2,7 @@
 import { computed } from 'vue'
 import type { FeedItem } from '@/api/video'
 import { formatCount, formatDuration } from '@/utils/format'
+import { resolveMediaUrl } from '@/utils/media'
 import DOMPurify from 'dompurify'
 
 interface Props {
@@ -89,7 +90,7 @@ const formattedTime = computed(() => {
       :class="[variant === 'compact' ? 'aspect-[16/10] flex-1' : 'aspect-video']"
     >
       <img
-        :src="video.cover"
+        :src="resolveMediaUrl(video.cover)"
         :alt="video.title"
         class="video-card__img h-full w-full object-cover"
         loading="lazy"

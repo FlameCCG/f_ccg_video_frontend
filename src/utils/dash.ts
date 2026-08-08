@@ -8,6 +8,7 @@ import type {
   Representation,
 } from 'dashjs'
 import type { VideoResourceItem } from '@/api/video'
+import { resolveMediaUrl } from '@/utils/media'
 
 // dash.js 较重（MSE 自适应内核），只在真正播放 DASH 流时按需加载，避免在每个
 // 视频页都急切拉进主包。模块级缓存确保整个会话只动态 import 一次。
@@ -181,8 +182,10 @@ export const createMpdLoader = (options: MpdLoaderOptions = {}) => {
     // 防御：同一实例上不残留上一个 dash。
     destroyDash(art)
 
-    // 剔除 URL 中的 response-content-type，避免 dash.js 将其透传给 m4s/mp4 分片导致 MSE 失败
-    const cleanUrl = new URL(url)
+    // 剔除 URL 中的 response-content-type，避免 dash.js 将其透传给 m4s/mp4 分片导致 MSE 失败。
+    // URL 可能是根相对路径（对外契约），显式给 base 解析为绝对地址后交给 dash.js，
+    // 分片 mp4 由 dash.js 基于 manifest 相对解析，同源请求直达网关。
+    const cleanUrl = new URL(resolveMediaUrl(url), window.location.origin)
     cleanUrl.searchParams.delete('response-content-type')
 
     const dash = dashjs.MediaPlayer().create()
@@ -484,7 +487,7 @@ export const setupDashQualityMenu = (
     const timeout = setTimeout(() => controller.abort(), 4500)
     const startedAt = performance.now()
     try {
-      const response = await fetch(probeResource.fileUrl, {
+      const response = await fetch(resolveMediaUrl(probeResource.fileUrl), {
         headers: { Range: 'bytes=0-1048575' },
         cache: 'no-store',
         signal: controller.signal,

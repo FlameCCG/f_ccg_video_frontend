@@ -25,6 +25,7 @@ import {
 import { toggleVideoLike } from '@/api/video'
 import { uploadImage } from '@/api/upload'
 import { getHotSearchKeywords, type HotKeywordItem } from '@/api/video'
+import { resolveMediaUrl } from '@/utils/media'
 import CommentSection from '@/components/comment/CommentSection.vue'
 import AppAvatar from '@/components/common/AppAvatar.vue'
 import { toast } from 'vue-sonner'
@@ -314,6 +315,7 @@ const handleImageUpload = async (e: Event) => {
   try {
     const hash = `dyn-${Date.now()}`
     const res = await uploadImage(hash, file)
+    // 保持原始相对路径（createDynamic 回传后端），渲染时再拼 host
     newImageUrl.value = res.imageUrl
   } catch {
     toast.error('图片上传失败')
@@ -644,7 +646,7 @@ watch(
                 @focus="showEmojiPicker = false"
               ></textarea>
               <div v-if="newImageUrl" class="dyn-editor-preview">
-                <img :src="newImageUrl" class="dyn-editor-preview-img" />
+                <img :src="resolveMediaUrl(newImageUrl)" class="dyn-editor-preview-img" />
                 <button class="dyn-editor-preview-close" @click="newImageUrl = ''">×</button>
               </div>
               <div class="dyn-editor-toolbar">
@@ -816,7 +818,7 @@ watch(
                   <p class="dyn-feed-text">{{ item.dynamic.content }}</p>
                   <img
                     v-if="item.dynamic.imageUrl"
-                    :src="item.dynamic.imageUrl"
+                    :src="resolveMediaUrl(item.dynamic.imageUrl)"
                     class="dyn-feed-image"
                   />
                 </div>
@@ -827,7 +829,7 @@ watch(
                   @click="goVideo(item.video!.id)"
                 >
                   <div class="dyn-video-cover">
-                    <img :src="item.video.cover" />
+                    <img :src="resolveMediaUrl(item.video.cover)" />
                     <span class="dyn-video-dur">{{ fmtDuration(item.video.duration) }}</span>
                   </div>
                   <div class="dyn-video-info">

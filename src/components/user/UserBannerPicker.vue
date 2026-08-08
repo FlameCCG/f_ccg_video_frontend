@@ -11,6 +11,7 @@ import {
 import type { BannerItem } from '@/api/banner'
 import { BannerArtSpec, BannerDisplay, formatProfileBannerUploadTip } from '@/constants/banner'
 import { getBannerPresetMediaStyle, normalizeBannerUrl } from '@/utils/user-banner-preview'
+import { resolveMediaUrl } from '@/utils/media'
 
 /** 预设缩略图 / 自定义预览：贴近真实头图裁切（制图 9.6:1 + 页面定高） */
 const profileArtAspect = BannerArtSpec.profileBanner.ratioCss
@@ -257,7 +258,7 @@ const isPresetActive = (banner: BannerItem) => currentPresetBannerId.value === b
               "
             >
               <img
-                :src="banner.cover"
+                :src="resolveMediaUrl(banner.cover)"
                 :alt="getPresetTitle(banner, index)"
                 class="banner-preset-thumb w-full object-cover object-center"
                 :style="getBannerPresetMediaStyle(index)"
@@ -317,7 +318,7 @@ const isPresetActive = (banner: BannerItem) => currentPresetBannerId.value === b
             >
               <img
                 v-if="customBannerPreview"
-                :src="customBannerPreview"
+                :src="resolveMediaUrl(customBannerPreview)"
                 alt="自定义横幅预览"
                 class="h-full w-full object-cover object-center"
               />

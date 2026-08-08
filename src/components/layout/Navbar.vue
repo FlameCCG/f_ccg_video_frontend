@@ -29,6 +29,7 @@ import { useDebounceFn } from '@vueuse/core'
 import UserHoverPanel from '@/components/layout/UserHoverPanel.vue'
 import AppAvatar from '@/components/common/AppAvatar.vue'
 import DOMPurify from 'dompurify'
+import { toast } from 'vue-sonner'
 
 /** 登录 Dialog 按需加载，避免首屏同步打包 Lain/验证码等重依赖 */
 const AuthDialog = defineAsyncComponent(() => import('@/components/auth/AuthDialog.vue'))
@@ -246,13 +247,20 @@ const sanitizeHighlight = (html: string) => {
 
 // Nav action items
 const navActions = [
-  { name: '大会员', icon: Crown, path: '/vip', mobileHidden: true },
+  { name: '大会员', icon: Crown, path: '/vip', mobileHidden: true, comingSoon: true },
   { name: '消息', icon: Mail, path: '/message', badge: 'message' as const, isMessage: true },
   { name: '动态', icon: Zap, path: '/dynamic', badge: 'dynamic' as const },
   { name: '收藏', icon: Star, path: '/favorites' },
   { name: '历史', icon: History, path: '/history', mobileHidden: true },
   { name: '创作中心', icon: Lightbulb, path: '/creator', mobileHidden: true },
 ]
+
+/** 未开放的功能入口（大会员等）：点击只提示不跳转，/vip 路由并不存在 */
+const handleNavActionClick = (action: (typeof navActions)[number], e?: MouseEvent) => {
+  if (!action.comingSoon) return
+  e?.preventDefault()
+  toast.info(`${action.name}功能即将上线`)
+}
 </script>
 
 <template>
@@ -452,6 +460,7 @@ const navActions = [
               :to="action.path"
               class="group relative flex cursor-pointer flex-col items-center justify-center px-2 py-1 sm:px-3"
               :class="navActionTextClass"
+              @click="handleNavActionClick(action, $event)"
             >
               <div class="relative">
                 <component :is="action.icon" class="h-5 w-5" />
@@ -545,7 +554,7 @@ const navActions = [
             v-else
             class="group relative cursor-pointer flex-col items-center justify-center px-1 py-1 sm:px-3"
             :class="[navActionTextClass, action.mobileHidden ? 'hidden lg:flex' : 'flex']"
-            @click="openLoginDialog"
+            @click="action.comingSoon ? handleNavActionClick(action) : openLoginDialog"
           >
             <div class="relative">
               <component :is="action.icon" class="h-5 w-5" />

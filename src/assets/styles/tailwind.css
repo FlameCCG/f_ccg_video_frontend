@@ -47,7 +47,7 @@
   --color-foreground: var(--text-1);
   --color-card: var(--bg-surface-1);
   --color-card-foreground: var(--text-1);
-  --color-popover: var(--glass-bg);
+  --color-popover: var(--bg-surface-1);
   --color-popover-foreground: var(--text-1);
 
   --color-primary: var(--brand-blue);

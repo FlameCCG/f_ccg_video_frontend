@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, watch, type Component } from 'vue'
+import { ref, computed, onMounted, onBeforeUnmount, watch, type Component } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import {
@@ -597,21 +597,65 @@ const handleFollowInList = async (targetId: number) => {
 const editFolderDialogOpen = ref(false)
 const editFolderName = ref('')
 const isUpdatingFolder = ref(false)
+/** 正在编辑的收藏夹 id：行内 ⋯ 菜单可以直接编辑非当前选中的收藏夹 */
+const editingFolderId = ref<number | null>(null)
 
-const openEditFolderDialog = () => {
-  if (!selectedFolder.value) return
-  editFolderName.value = selectedFolder.value.name
+// 收藏夹行内 ⋯ 浮动菜单：悬停数字位置浮出 ⋯，再悬停 ⋯ 弹出选项（与顶栏消息面板同模式）
+const rowMenuOpen = ref<number | null>(null)
+let rowMenuTimer: ReturnType<typeof setTimeout> | null = null
+/** 当前悬停的收藏夹行：驱动「数字淡出、⋯ 浮出」的互换（JS 态，不依赖 hover 媒体查询） */
+const hoveredFolderId = ref<number | null>(null)
+
+const closeRowMenu = () => {
+  if (rowMenuTimer) clearTimeout(rowMenuTimer)
+  rowMenuTimer = null
+  rowMenuOpen.value = null
+}
+
+const openRowMenu = (id: number) => {
+  if (rowMenuTimer) clearTimeout(rowMenuTimer)
+  rowMenuTimer = null
+  rowMenuOpen.value = id
+}
+
+const scheduleCloseRowMenu = () => {
+  if (rowMenuTimer) clearTimeout(rowMenuTimer)
+  rowMenuTimer = setTimeout(() => {
+    rowMenuOpen.value = null
+    rowMenuTimer = null
+  }, 200)
+}
+
+/** 取消待执行的关闭：面板与 ⋯ 之间有 mt-1 空隙，鼠标从 ⋯ 移入面板会短暂离开
+    容器触发 mouseleave 并挂起 200ms 关闭定时器；进入面板时必须取消它，
+    否则菜单会在用户还没点到选项前就关闭。 */
+const cancelCloseRowMenu = () => {
+  if (rowMenuTimer) clearTimeout(rowMenuTimer)
+  rowMenuTimer = null
+}
+
+onBeforeUnmount(() => {
+  if (rowMenuTimer) clearTimeout(rowMenuTimer)
+})
+
+const openEditFolderDialog = (folder?: FolderItem) => {
+  const target = folder ?? selectedFolder.value
+  if (!target) return
+  editingFolderId.value = target.id
+  editFolderName.value = target.name
   editFolderDialogOpen.value = true
+  closeRowMenu()
 }
 
 const handleUpdateFolder = async () => {
-  if (!selectedFolder.value) return
+  const target = folders.value.find((f) => f.id === editingFolderId.value)
+  if (!target) return
   const name = editFolderName.value.trim()
   if (!name) return
 
   isUpdatingFolder.value = true
   try {
-    const updated = await updateFolder({ folderId: selectedFolder.value.id, name })
+    const updated = await updateFolder({ folderId: target.id, name })
     const item = folders.value.find((f) => f.id === updated.id)
     if (item) item.name = updated.name
     editFolderDialogOpen.value = false
@@ -625,17 +669,17 @@ const handleUpdateFolder = async () => {
   }
 }
 
-const handleDeleteFolderInUser = async () => {
-  if (!selectedFolder.value) return
-  if (selectedFolder.value.isDefault) {
+const handleDeleteFolderRow = async (folder: FolderItem) => {
+  if (folder.isDefault) {
     toast.error('默认收藏夹不可删除')
     return
   }
-  if (!confirm(`确定要删除收藏夹"${selectedFolder.value.name}"吗？`)) return
+  if (!confirm(`确定要删除收藏夹"${folder.name}"吗？`)) return
+  closeRowMenu()
   try {
-    await deleteFolder({ folderId: selectedFolder.value.id })
+    await deleteFolder({ folderId: folder.id })
     toast.success('收藏夹已删除')
-    selectedFolderId.value = null
+    if (selectedFolderId.value === folder.id) selectedFolderId.value = null
     await fetchFolders()
   } catch (err: unknown) {
     const msg =
@@ -649,6 +693,7 @@ const selectFolder = (id: number) => {
   folderVideoPage.value = 1
   folderVideoSort.value = 0
   folderVideos.value = []
+  closeRowMenu()
   void fetchFolderVideos()
 }
 
@@ -1862,24 +1907,69 @@ const privacySettings = [
             <div
               v-for="f in folders"
               :key="f.id"
-              class="flex items-center justify-between px-4 py-2.5 cursor-pointer transition-colors"
-              :class="
+              class="folder-item relative flex items-center justify-between px-4 py-2.5 cursor-pointer transition-colors"
+              :class="[
                 selectedFolderId === f.id
                   ? 'bg-primary text-primary-foreground'
-                  : 'text-muted-foreground hover:bg-secondary'
-              "
+                  : 'text-muted-foreground hover:bg-secondary',
+                { 'is-hovered': hoveredFolderId === f.id },
+              ]"
+              @mouseenter="hoveredFolderId = f.id"
+              @mouseleave="hoveredFolderId = null"
               @click="selectFolder(f.id)"
             >
               <span class="text-sm-plus truncate flex-1">{{ f.name }}</span>
+              <!-- 数字列：固定右缘 + tabular 等宽，选中/未选中几何一致，行间右缘对齐。
+                   选中行本身已是 bg-primary，数字不再叠胶囊背景，只用透明度区分层级。 -->
               <span
-                class="text-2xs ml-2"
+                class="count-slot ml-2 flex h-5 min-w-7 items-center justify-end pr-1 text-2xs tabular transition-opacity duration-[var(--duration-fast)]"
                 :class="
                   selectedFolderId === f.id
-                    ? 'bg-card/20 px-1.5 rounded'
+                    ? 'text-primary-foreground/90'
                     : 'text-muted-foreground/80'
                 "
                 >{{ f.videoCount }}</span
               >
+              <!-- 行内 ⋯：行 hover 时在数字原位浮出。
+                   浮动选项只在鼠标严格悬停在 ⋯ 图标上时才弹出——触发框收窄到图标本身，
+                   划过数字槽位/行内其他区域不会误触发；菜单弹出后鼠标移入面板仍保持打开。 -->
+              <div
+                class="row-menu absolute right-4 top-1/2 z-10 -translate-y-1/2 flex justify-end"
+                @mouseleave="scheduleCloseRowMenu"
+              >
+                <button
+                  type="button"
+                  class="row-more-btn flex h-5 w-5 items-center justify-end pr-1 opacity-0"
+                  aria-label="收藏夹选项"
+                  @mouseenter="openRowMenu(f.id)"
+                  @click.stop="rowMenuOpen === f.id ? closeRowMenu() : openRowMenu(f.id)"
+                >
+                  <MoreVertical :size="14" />
+                </button>
+                <Transition name="row-panel">
+                  <div
+                    v-if="rowMenuOpen === f.id"
+                    class="absolute right-0 top-full mt-1 w-32 overflow-hidden rounded-md border bg-popover p-1 text-popover-foreground shadow-overlay"
+                    @mouseenter="cancelCloseRowMenu"
+                  >
+                    <button
+                      type="button"
+                      class="t-tint flex w-full cursor-pointer items-center px-3 py-1.5 text-sm-plus hover:bg-accent hover:text-accent-foreground"
+                      @click.stop="openEditFolderDialog(f)"
+                    >
+                      编辑收藏夹
+                    </button>
+                    <button
+                      v-if="!f.isDefault"
+                      type="button"
+                      class="t-tint flex w-full cursor-pointer items-center px-3 py-1.5 text-sm-plus text-destructive hover:bg-accent"
+                      @click.stop="handleDeleteFolderRow(f)"
+                    >
+                      删除收藏夹
+                    </button>
+                  </div>
+                </Transition>
+              </div>
             </div>
           </div>
           <div v-if="selectedFolder" class="flex-1 p-5">
@@ -1889,29 +1979,7 @@ const privacySettings = [
                   <h3 class="text-base font-medium text-foreground">
                     {{ selectedFolder.isDefault ? '默认收藏夹' : selectedFolder.name }}
                   </h3>
-                  <DropdownMenu v-if="isSelf">
-                    <DropdownMenuTrigger as-child>
-                      <button
-                        class="p-1 rounded-md text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors"
-                        title="收藏夹设置"
-                        type="button"
-                      >
-                        <MoreVertical :size="16" />
-                      </button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="start" class="w-36">
-                      <DropdownMenuItem class="cursor-pointer" @select="openEditFolderDialog">
-                        编辑收藏夹
-                      </DropdownMenuItem>
-                      <DropdownMenuItem
-                        v-if="!selectedFolder.isDefault"
-                        class="cursor-pointer text-destructive focus:text-destructive"
-                        @select="handleDeleteFolderInUser"
-                      >
-                        删除收藏夹
-                      </DropdownMenuItem>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
+                  <!-- 编辑/删除入口已由左侧行内 ⋯ 提供，这里不再保留重复的收藏夹设置 ⋯ -->
                 </div>
                 <div class="text-2xs text-muted-foreground/80">
                   创建者：{{ user?.username || '' }} · {{ selectedFolder.videoCount }}个内容
@@ -2408,6 +2476,40 @@ const privacySettings = [
     background-color: color-mix(in oklch, var(--media-overlay) 74%, transparent);
     color: var(--media-overlay-text);
   }
+}
+
+/* 收藏夹行内 ⋯：默认只显示数字，行 hover 时数字淡出、⋯ 在原位浮出。
+   数字与 ⋯ 共用同一固定尺寸的右缘盒子，切换只走 opacity，不产生位移。
+   悬停态由 JS 驱动（行 @mouseenter/@mouseleave 绑定 is-hovered），不依赖
+   (hover:hover) 媒体查询——部分环境查询不命中时，数字会一直不隐藏、⋯ 永不浮现。 */
+.folder-item {
+  .row-more-btn {
+    transition: opacity var(--duration-fast) linear;
+  }
+
+  &.is-hovered {
+    .count-slot {
+      opacity: 0;
+    }
+
+    .row-more-btn {
+      opacity: 1;
+    }
+  }
+}
+
+/* 行内 ⋯ 浮动选项出现/消失（与顶栏消息面板同源） */
+.row-panel-enter-active,
+.row-panel-leave-active {
+  transition:
+    opacity var(--duration-fast) linear,
+    transform var(--duration-fast) var(--ease-out-quart);
+}
+
+.row-panel-enter-from,
+.row-panel-leave-to {
+  opacity: 0;
+  transform: translate3d(0, -4px, 0);
 }
 
 /* 列表增删：leave 必须绝对定位，否则离场元素仍占位，兄弟节点的 -move FLIP 不会播 */

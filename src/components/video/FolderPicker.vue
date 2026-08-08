@@ -243,6 +243,8 @@ const handleOpenChange = (val: boolean) => {
             >
               <Trash2 :size="14" />
             </button>
+            <!-- 默认收藏夹没有删除按钮：占位保持各行的数字右缘对齐 -->
+            <span v-else class="folder-delete-slot" aria-hidden="true"></span>
           </div>
         </div>
 
@@ -375,6 +377,13 @@ const handleOpenChange = (val: boolean) => {
     color: oklch(var(--destructive, 0.6 0.2 25));
     background: oklch(var(--muted) / 0.8);
   }
+}
+
+/* 与删除按钮同尺寸的占位：默认收藏夹行用它顶住右侧，数字列右缘全行对齐 */
+.folder-delete-slot {
+  width: 28px;
+  height: 28px;
+  flex-shrink: 0;
 }
 
 .folder-checkbox {

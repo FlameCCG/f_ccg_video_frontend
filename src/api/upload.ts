@@ -92,7 +92,7 @@ export const completeUpload = (
 
 /**
  * 上传图片
- * POST /common/video/image/upload
+ * POST /common/image/upload
  * 认证: 需要登录（客户端全局自动携带 Token）
  * 依赖接口: 无
  * 接口说明: 上传图片（需登录）
@@ -101,9 +101,19 @@ export const uploadImage = (fileHash: string, cover: File): Promise<ImageUploadR
   const formData = new FormData()
   formData.append('fileHash', fileHash)
   formData.append('cover', cover)
-  return request.post('/common/video/image/upload', formData, {
+  return request.post('/common/image/upload', formData, {
     headers: {
       'Content-Type': 'multipart/form-data',
     },
+  })
+}
+
+/** 上传投稿封面，受站点投稿开关约束。 */
+export const uploadVideoCover = (fileHash: string, cover: File): Promise<ImageUploadResult> => {
+  const formData = new FormData()
+  formData.append('fileHash', fileHash)
+  formData.append('cover', cover)
+  return request.post('/common/video/image/upload', formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
   })
 }

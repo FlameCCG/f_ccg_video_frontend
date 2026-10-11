@@ -22,7 +22,7 @@ import {
   type HotKeywordItem,
 } from '@/api/video'
 import { getDynamicCounts } from '@/api/dynamic'
-import { useAuthStore } from '@/stores/auth'
+import { useSubmissionAccess, SUBMISSION_DISABLED_MESSAGE } from '@/composables/useSubmissionAccess'
 import { useNotificationStore } from '@/stores/notification'
 import { useSearchHistory } from '@/composables/useSearchHistory'
 import { useDebounceFn } from '@vueuse/core'
@@ -57,7 +57,7 @@ const searchContainerClass = computed(() => (props.light ? 'search-bar-solid' : 
 
 const router = useRouter()
 const route = useRoute()
-const authStore = useAuthStore()
+const { authStore, submissionBlocked } = useSubmissionAccess()
 const isSearchPage = computed(() => route.name === 'search')
 const notificationStore = useNotificationStore()
 const { counts } = storeToRefs(notificationStore)
@@ -573,9 +573,13 @@ const handleNavActionClick = (action: (typeof navActions)[number], e?: MouseEven
         size="sm"
         class="ml-1 h-8 rounded-lg border-0 bg-primary px-2 text-primary-foreground shadow-raised hover:bg-primary/90 sm:ml-3 sm:px-4"
       >
-        <router-link to="/upload" class="flex items-center gap-1.5">
+        <router-link
+          to="/upload"
+          class="flex items-center gap-1.5"
+          :title="submissionBlocked ? SUBMISSION_DISABLED_MESSAGE : '投稿'"
+        >
           <Upload class="h-4 w-4" />
-          <span class="hidden sm:inline">投稿</span>
+          <span class="hidden sm:inline">{{ submissionBlocked ? '投稿已暂停' : '投稿' }}</span>
         </router-link>
       </Button>
       <Button
@@ -585,7 +589,7 @@ const handleNavActionClick = (action: (typeof navActions)[number], e?: MouseEven
         @click="openLoginDialog"
       >
         <Upload class="h-4 w-4" />
-        <span class="hidden sm:inline">投稿</span>
+        <span class="hidden sm:inline">{{ submissionBlocked ? '投稿已暂停' : '投稿' }}</span>
       </Button>
     </div>
   </nav>

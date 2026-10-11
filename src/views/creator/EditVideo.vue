@@ -20,7 +20,7 @@ import { useToast } from '@/components/ui/toast/use-toast'
 import TagInput from '@/components/creator/TagInput.vue'
 import ScheduledPublishPicker from '@/components/creator/ScheduledPublishPicker.vue'
 import AppImage from '@/components/common/AppImage.vue'
-import { uploadImage } from '@/api/upload'
+import { uploadVideoCover } from '@/api/upload'
 import {
   getPartitions,
   getVideoDetail,
@@ -372,7 +372,7 @@ const handleSave = async () => {
     let coverUrl = form.value.currentCoverUrl
 
     if (form.value.coverFile) {
-      const uploadResult = await uploadImage(
+      const uploadResult = await uploadVideoCover(
         `video-edit-${videoId.value}-${Date.now()}`,
         form.value.coverFile
       )

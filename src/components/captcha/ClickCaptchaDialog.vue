@@ -79,6 +79,7 @@ let glowY = 0
 const failMessage = ref('')
 let recoilTimer: ReturnType<typeof setTimeout> | undefined
 const lastSubmission = ref<ClickCaptchaSubmission | null>(null)
+let pendingVerified: ClickCaptchaSubmission | null = null
 
 const frame = useFrameWriter()
 const state = useCaptchaState({
@@ -92,13 +93,12 @@ const isVerifying = state.isVerifying
 const isSettled = state.isSettled
 
 const settle = useSettleSignal(() => {
-  const submission = lastSubmission.value
+  pendingVerified = lastSubmission.value
   emit('update:open', false)
-  if (submission) emit('verified', submission)
 })
 
 const isReady = computed(() => !isLoading.value && !hasError.value && Boolean(captchaData.value))
-const canPick = computed(() => isReady.value && isIdle.value)
+const canPick = computed(() => props.open && isReady.value && isIdle.value)
 const canConfirm = computed(() => canPick.value && points.value.length > 0)
 const canRefresh = computed(
   () => !isLoading.value && status.value !== 'verifying' && status.value !== 'success'
@@ -107,8 +107,9 @@ const tipText = computed(() => {
   // 失败可能来自验证码，也可能来自它守着的那次请求（比如密码错）。
   // 父组件用 silent 抑制了 toast，把真实原因通过 fail(message) 递进来，
   // 这里优先显示它；拿不到才退回通用文案。
-  if (status.value === 'fail') return failMessage.value || '没有通过，已为你换一张'
+  if (status.value === 'fail') return failMessage.value || '没有通过，正在换一张…'
   if (status.value !== 'idle') return captchaTipText(status.value, IDLE_TIP)
+  if (points.value.length >= MAX_POINTS) return `最多选择 ${MAX_POINTS} 个 · 可撤销后重选`
   if (points.value.length === 0) return IDLE_TIP
   return `已选 ${points.value.length} 个 · 点错可以点掉重选`
 })
@@ -141,6 +142,8 @@ async function loadCaptcha(): Promise<void> {
 
   const requestId = ++captchaRequestId
   clearRecoil()
+  frame.cancel()
+  isHovering.value = false
   state.toIdle()
   isLoading.value = true
   hasError.value = false
@@ -187,6 +190,11 @@ const flushGlow = (): void => {
 function handlePointerEnter(event: PointerEvent): void {
   if (event.pointerType !== 'mouse' || !canPick.value) return
   cacheHoverRect()
+  if (hoverRect) {
+    glowX = event.clientX - hoverRect.left
+    glowY = event.clientY - hoverRect.top
+    flushGlow()
+  }
   isHovering.value = true
 }
 
@@ -201,6 +209,7 @@ function handlePointerMove(event: PointerEvent): void {
 
 function handlePointerLeave(): void {
   isHovering.value = false
+  frame.cancel()
 }
 
 function handleCanvasClick(event: MouseEvent): void {
@@ -230,6 +239,13 @@ function removeLastPoint(): void {
   points.value.pop()
 }
 
+function handleUndoKey(event: KeyboardEvent): void {
+  if (event.key !== 'Backspace' && event.key !== 'Delete') return
+  if (!canPick.value || points.value.length === 0) return
+  event.preventDefault()
+  removeLastPoint()
+}
+
 function handleConfirm(): void {
   if (!canConfirm.value) return
 
@@ -251,10 +267,15 @@ function handleDotSettled(index: number): void {
   settle.fire()
 }
 
-function handleCancel(): void {
-  settle.disarm()
-  emit('cancel')
-  emit('update:open', false)
+function handleAfterLeave(): void {
+  if (props.open) return
+  const submission = pendingVerified
+  pendingVerified = null
+  lastSubmission.value = null
+  state.toIdle()
+  resetPicks()
+  // 验证码完全退场后，父组件才能关闭登录弹窗或切换页面。
+  if (submission) emit('verified', submission)
 }
 
 function handleOpenChange(value: boolean): void {
@@ -266,6 +287,7 @@ function handleOpenChange(value: boolean): void {
 }
 
 function success(): void {
+  if (!props.open) return
   clearRecoil()
   isHovering.value = false
   state.toSuccess()
@@ -273,6 +295,7 @@ function success(): void {
 }
 
 function fail(message?: string): void {
+  if (!props.open) return
   settle.disarm()
   clearRecoil()
   isHovering.value = false
@@ -289,17 +312,18 @@ watch(
   () => props.open,
   (open) => {
     if (open) {
+      pendingVerified = null
+      lastSubmission.value = null
       void loadCaptcha()
       return
     }
     settle.disarm()
     clearRecoil()
+    frame.cancel()
     captchaRequestId += 1
-    isLoading.value = false
     isHovering.value = false
-    isRecoiling.value = false
-    state.toIdle()
-    resetPicks()
+    // 离场时保留选点和判定画面，只停止异步任务；清理放到 afterLeave。
+    state.clearStateTimers()
   },
   { immediate: true }
 )
@@ -322,8 +346,10 @@ defineExpose({
 <template>
   <Dialog :open="open" @update:open="handleOpenChange">
     <DialogContent
-      class="max-w-[min(100vw-1.5rem,360px)] gap-0 overflow-hidden rounded-2xl border-border/60 bg-background p-0 shadow-cinematic sm:max-w-[400px]"
-      @escape-key-down="handleCancel"
+      class="cap-dialog max-w-[min(100vw-1.5rem,360px)] gap-0 overflow-hidden rounded-2xl border-border/60 bg-background p-0 shadow-cinematic sm:max-w-[400px]"
+      overlay-class="cap-dialog-overlay"
+      @after-leave="handleAfterLeave"
+      @keydown="handleUndoKey"
       @pointer-down-outside="(e: Event) => e.preventDefault()"
     >
       <div class="cap-shell">
@@ -389,31 +415,37 @@ defineExpose({
 
                     <span class="click-captcha__glow" aria-hidden="true"></span>
 
-                    <div
-                      v-for="(point, index) in points"
-                      :key="point.key"
-                      class="click-captcha__anchor"
-                      :style="{ '--cc-dx': point.px, '--cc-dy': point.py, '--cc-i': index }"
-                    >
-                      <button
-                        type="button"
-                        class="click-captcha__dot"
-                        :class="{
-                          'click-captcha__dot--verifying': status === 'verifying',
-                          'click-captcha__dot--success': status === 'success',
-                          'click-captcha__dot--fail': status === 'fail',
-                          'click-captcha__dot--recoil': isRecoiling,
-                        }"
-                        :disabled="!canPick"
-                        :aria-label="`取消第 ${index + 1} 个选点`"
-                        @click.stop="removePoint(index)"
+                    <TransitionGroup name="cc-point">
+                      <div
+                        v-for="(point, index) in points"
+                        :key="point.key"
+                        class="click-captcha__anchor"
+                        :style="{ '--cc-dx': point.px, '--cc-dy': point.py, '--cc-i': index }"
                       >
-                        <span class="click-captcha__dot-index">{{ index + 1 }}</span>
-                        <svg class="click-captcha__dot-mark" viewBox="0 0 24 24" aria-hidden="true">
-                          <path d="m6 12.5 4 4 8-8.5" @animationend="handleDotSettled(index)" />
-                        </svg>
-                      </button>
-                    </div>
+                        <button
+                          type="button"
+                          class="click-captcha__dot"
+                          :class="{
+                            'click-captcha__dot--verifying': status === 'verifying',
+                            'click-captcha__dot--success': status === 'success',
+                            'click-captcha__dot--fail': status === 'fail',
+                            'click-captcha__dot--recoil': isRecoiling,
+                          }"
+                          :disabled="!canPick"
+                          :aria-label="`取消第 ${index + 1} 个选点`"
+                          @click.stop="removePoint(index)"
+                        >
+                          <span class="click-captcha__dot-index">{{ index + 1 }}</span>
+                          <svg
+                            class="click-captcha__dot-mark"
+                            viewBox="0 0 24 24"
+                            aria-hidden="true"
+                          >
+                            <path d="m6 12.5 4 4 8-8.5" @animationend="handleDotSettled(index)" />
+                          </svg>
+                        </button>
+                      </div>
+                    </TransitionGroup>
 
                     <Transition name="cap-veil">
                       <div v-if="isVerifying" class="cap-veil" aria-hidden="true">
@@ -461,6 +493,7 @@ defineExpose({
                         variant="ghost"
                         size="xs"
                         :disabled="!canPick || points.length === 0"
+                        aria-keyshortcuts="Backspace Delete"
                         @click="removeLastPoint"
                       >
                         撤销
@@ -555,6 +588,7 @@ defineExpose({
   &__canvas {
     position: relative;
     overflow: hidden;
+    touch-action: manipulation;
     transition: filter var(--cap-normal) linear;
 
     /* 系统光标零延迟，比 JS 画的准星准得多；跟随柔光只是辅助 */
@@ -625,7 +659,7 @@ defineExpose({
     box-shadow:
       0 0 0 2px color-mix(in oklch, var(--cap-on-signal) 40%, transparent),
       var(--shadow-raised-value);
-    animation: cc-dot-in var(--cap-normal) var(--cap-quint) both;
+    animation: cc-dot-in var(--cap-normal) var(--cap-quint) backwards;
     transition:
       background-color var(--cap-fast) var(--cap-out),
       box-shadow var(--cap-fast) var(--cap-out),
@@ -761,7 +795,7 @@ defineExpose({
 
   /* 提示图是白底黑字的位图：亮色 multiply、暗色 screen，随 html.dark 走，不用 dark: */
   &__hint-image {
-    flex-shrink: 0;
+    flex-shrink: 1;
     height: 1.75rem;
     width: auto;
     min-width: 0;
@@ -787,6 +821,24 @@ defineExpose({
     display: inline-block;
     font-size: 0.8125rem;
     line-height: 1.25;
+  }
+}
+
+/* 锚点保持原坐标，退场只收拢标记，其他选点不会被拖走。 */
+.cc-point-leave-active {
+  transition: opacity var(--cap-fast) var(--cap-out);
+
+  .click-captcha__dot {
+    pointer-events: none;
+    animation: none;
+  }
+}
+
+.cc-point-leave-to {
+  opacity: 0;
+
+  .click-captcha__dot {
+    transform: scale(0.65);
   }
 }
 
@@ -834,6 +886,10 @@ defineExpose({
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .cc-point-leave-active {
+    transition: none;
+  }
+
   .click-captcha__dot,
   .click-captcha__glow,
   .click-captcha__canvas,

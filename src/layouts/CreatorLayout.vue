@@ -1,6 +1,7 @@
 <script setup lang="ts">
+import { computed, ref, watch, onMounted, onBeforeUnmount } from 'vue'
 import { RouterView, useRouter, useRoute } from 'vue-router'
-import { useAuthStore } from '@/stores/auth'
+import { useSubmissionAccess, SUBMISSION_DISABLED_MESSAGE } from '@/composables/useSubmissionAccess'
 import {
   Upload,
   Home,
@@ -25,7 +26,59 @@ import AppAvatar from '@/components/common/AppAvatar.vue'
 
 const router = useRouter()
 const route = useRoute()
-const authStore = useAuthStore()
+const { authStore, siteStore, submissionBlocked } = useSubmissionAccess()
+const accessReady = ref(false)
+const accessError = ref(false)
+const isSubmissionPage = computed(
+  () => route.name === 'creator-upload' || route.name === 'creator-content-edit'
+)
+let accessRequest = 0
+let refreshTimer: ReturnType<typeof setInterval> | undefined
+
+const refreshSubmissionAccess = async () => {
+  const request = ++accessRequest
+  const [configOK, userOK] = await Promise.all([
+    siteStore.refreshConfig(true),
+    authStore.fetchUserInfo(),
+  ])
+  if (request !== accessRequest) return
+  if (!configOK || !userOK) {
+    // 后台刷新失败时保留已打开的草稿；首次进入仍需确认权限。
+    if (!accessReady.value) {
+      accessError.value = true
+      accessReady.value = true
+    }
+    return
+  }
+  accessError.value = false
+  accessReady.value = true
+}
+
+const refreshVisibleAccess = () => {
+  if (document.visibilityState === 'visible') void refreshSubmissionAccess()
+}
+
+watch(
+  () => [route.path, authStore.userId, authStore.isLoggedIn],
+  () => {
+    accessReady.value = false
+    void refreshSubmissionAccess()
+  },
+  { immediate: true }
+)
+
+onMounted(() => {
+  window.addEventListener('focus', refreshVisibleAccess)
+  document.addEventListener('visibilitychange', refreshVisibleAccess)
+  refreshTimer = setInterval(refreshVisibleAccess, 30_000)
+})
+
+onBeforeUnmount(() => {
+  accessRequest += 1
+  window.removeEventListener('focus', refreshVisibleAccess)
+  document.removeEventListener('visibilitychange', refreshVisibleAccess)
+  if (refreshTimer) clearInterval(refreshTimer)
+})
 
 const handleLogout = () => {
   authStore.logout()
@@ -131,7 +184,9 @@ const navItems = [
           >
             <router-link to="/creator/upload" class="flex items-center justify-center gap-2">
               <Upload class="h-5 w-5" />
-              <span class="font-medium text-base">投稿</span>
+              <span class="font-medium text-base">{{
+                submissionBlocked ? '投稿已暂停' : '投稿'
+              }}</span>
             </router-link>
           </Button>
 
@@ -158,7 +213,36 @@ const navItems = [
 
       <!-- Main View -->
       <main class="min-w-0 flex-1 p-4 sm:p-6">
-        <RouterView v-slot="{ Component, route: current }">
+        <section
+          v-if="submissionBlocked && accessReady && !accessError"
+          class="mb-6 rounded-xl border bg-background p-6"
+          role="status"
+          aria-live="polite"
+        >
+          <h1 class="text-lg font-semibold">用户投稿已暂停</h1>
+          <p class="mt-2 text-sm leading-6 text-muted-foreground">
+            {{ SUBMISSION_DISABLED_MESSAGE }}
+          </p>
+        </section>
+        <div
+          v-if="isSubmissionPage && !accessReady"
+          role="status"
+          class="py-12 text-center text-muted-foreground"
+        >
+          正在确认投稿权限…
+        </div>
+        <section
+          v-else-if="isSubmissionPage && accessError"
+          class="rounded-xl border bg-background p-6"
+          role="alert"
+        >
+          <p class="mb-4">无法确认投稿权限，请重试。</p>
+          <Button variant="outline" @click="refreshSubmissionAccess">重新加载</Button>
+        </section>
+        <RouterView
+          v-else-if="!isSubmissionPage || !submissionBlocked"
+          v-slot="{ Component, route: current }"
+        >
           <Transition name="route" mode="out-in">
             <component :is="Component" :key="current.path" />
           </Transition>

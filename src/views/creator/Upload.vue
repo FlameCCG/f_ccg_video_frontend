@@ -47,10 +47,11 @@ import {
   uploadChunk,
   getUploadStatus,
   completeUpload,
-  uploadImage,
+  uploadVideoCover,
   type UploadStatusResult,
 } from '@/api/upload'
 import { publishVideo, getPartitions, type Partition, type PublishVideoParams } from '@/api/video'
+import { ApiBusinessError } from '@/api/request'
 import {
   DEFAULT_STORAGE_CONFIG,
   getSiteConfig,
@@ -1087,6 +1088,7 @@ const withRetry = async <T,>(
       return await fn()
     } catch (error: unknown) {
       if (signal?.aborted || (error instanceof Error && error.message === 'canceled')) throw error
+      if (error instanceof ApiBusinessError) throw error
       const isNetworkOr5xx =
         !(error as { response?: { status?: number } }).response ||
         ((error as { response?: { status?: number } }).response?.status ?? 0) >= 500
@@ -1280,6 +1282,7 @@ const uploadPart = async (part: VideoPart, isResume = false) => {
         signal
       )
     } catch (error) {
+      if (error instanceof ApiBusinessError) throw error
       console.warn('Get upload status failed, fallback to full upload', error)
     }
 
@@ -1644,7 +1647,7 @@ const handlePublish = async () => {
       const tagIds = await resolveCreatorTagIds(work.form.tags)
       let coverUrl = work.currentCoverUrl
       if (work.coverFile) {
-        const coverRes = await uploadImage(work.parts[0]?.hash || '', work.coverFile)
+        const coverRes = await uploadVideoCover(work.parts[0]?.hash || '', work.coverFile)
         // 保持原始相对路径回传后端（对外契约），渲染时由 UploadCoverCard/resolveMediaUrl 拼 host
         coverUrl = coverRes.imageUrl
       }

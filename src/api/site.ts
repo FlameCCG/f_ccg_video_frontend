@@ -50,6 +50,8 @@ export interface ContentReviewConfig {
 
 // Site Config
 export interface SiteConfig {
+  /** 开启后仅管理员可上传、投稿和改稿；旧服务端缺省为 false */
+  disableUserSubmission?: boolean
   login: LoginConfig
   register: RegisterConfig
   storage: Partial<StorageConfig> | null

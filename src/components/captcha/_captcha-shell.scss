@@ -41,3 +41,44 @@
   justify-content: center;
   margin-top: 1rem;
 }
+
+/* Portal 内容和遮罩用同一拍离场，内容保持完整直到 Presence 卸载。 */
+:global(.cap-dialog[data-state='closed']) {
+  pointer-events: none;
+  animation: cap-dialog-leave var(--duration-normal, 240ms)
+    var(--ease-out-quart, cubic-bezier(0.25, 1, 0.5, 1)) both;
+}
+
+:global(.cap-dialog-overlay[data-state='closed']) {
+  animation: cap-dialog-fade var(--duration-normal, 240ms)
+    var(--ease-out-quart, cubic-bezier(0.25, 1, 0.5, 1)) both;
+}
+
+@keyframes cap-dialog-leave {
+  from {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+
+  to {
+    opacity: 0;
+    transform: translate3d(0, 2px, 0) scale(0.985);
+  }
+}
+
+@keyframes cap-dialog-fade {
+  from {
+    opacity: 1;
+  }
+
+  to {
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :global(.cap-dialog[data-state='closed']),
+  :global(.cap-dialog-overlay[data-state='closed']) {
+    animation: cap-dialog-fade 1ms linear both;
+  }
+}

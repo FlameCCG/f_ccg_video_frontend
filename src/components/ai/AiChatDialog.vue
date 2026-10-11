@@ -24,7 +24,7 @@ import ImageViewer from '@/components/common/ImageViewer.vue'
 import AppAvatar from '@/components/common/AppAvatar.vue'
 import AiChatComposer from '@/components/ai/AiChatComposer.vue'
 import { useCreatorBridgeStore } from '@/stores/creatorBridge'
-import { useAuthStore } from '@/stores/auth'
+import { useSubmissionAccess, SUBMISSION_DISABLED_MESSAGE } from '@/composables/useSubmissionAccess'
 import { buildAiSuggestedTitle, fetchAiAssetAsFile } from '@/utils/ai-assets'
 import { renderMarkdownHtml, renderStreamingPlainHtml } from '@/components/ai/ai-markdown'
 import { createStreamBuffer, type StreamFlushPayload } from '@/components/ai/ai-stream-buffer'
@@ -54,7 +54,7 @@ const emit = defineEmits<{
 
 const router = useRouter()
 const creatorBridgeStore = useCreatorBridgeStore()
-const authStore = useAuthStore()
+const { authStore, siteStore, submissionBlocked } = useSubmissionAccess()
 
 const isCoverPickerMode = computed(() => props.mode === 'cover-picker')
 const showVideoSubmitAction = computed(() => props.mode === 'default')
@@ -614,6 +614,14 @@ const handleOneClickSubmit = async (
   resultUrl: string,
   prompt: string
 ) => {
+  if (!(await siteStore.refreshConfig(true)) || !(await authStore.fetchUserInfo())) {
+    toast.error('无法确认投稿权限，请稍后重试')
+    return
+  }
+  if (submissionBlocked.value) {
+    toast.error(SUBMISSION_DISABLED_MESSAGE)
+    return
+  }
   const actionKey = makeAssetActionKey(messageId, resultIndex, 'submit')
   beginAssetAction(actionKey)
   try {
@@ -1515,8 +1523,15 @@ const handleComposerSend = (payload: AiComposerSendPayload) => {
                     <button
                       v-if="showVideoSubmitAction"
                       class="w-10 h-10 flex items-center justify-center rounded-full bg-[var(--glass-bg)] border border-[var(--glass-border)] text-[var(--text-1)] hover:text-[var(--brand-blue)] transition-colors shadow-overlay backdrop-blur-md"
-                      :disabled="isAssetActionBusy(makeAssetActionKey(msg.id, 0, 'submit'))"
-                      title="一键投稿：跳转到投稿页并自动上传"
+                      :disabled="
+                        submissionBlocked ||
+                        isAssetActionBusy(makeAssetActionKey(msg.id, 0, 'submit'))
+                      "
+                      :title="
+                        submissionBlocked
+                          ? SUBMISSION_DISABLED_MESSAGE
+                          : '一键投稿：跳转到投稿页并自动上传'
+                      "
                       @click.prevent="
                         void handleOneClickSubmit(
                           msg.id,

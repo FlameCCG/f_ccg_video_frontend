@@ -18,7 +18,12 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { RefreshCw } from 'lucide-vue-next'
 import { getSlideCaptcha, type SlideCaptcha } from '@/api/captcha'
-import { CAPTCHA_RECOIL_DURATION, captchaTipText, useCaptchaState } from './useCaptchaState'
+import {
+  CAPTCHA_RECOIL_DURATION,
+  captchaTipText,
+  prefersReducedMotion,
+  useCaptchaState,
+} from './useCaptchaState'
 import { clamp, useFrameWriter } from './captchaGeometry'
 
 interface Props {
@@ -77,6 +82,8 @@ const masterRef = ref<HTMLImageElement | null>(null)
 const metrics = { container: DEFAULT_CONTAINER_WIDTH, handle: DEFAULT_HANDLE_WIDTH, scale: 1 }
 let rawX = 0
 let dragging = false
+let activePointerId: number | null = null
+let keyboardTimer: ReturnType<typeof setTimeout> | undefined
 let pointerOrigin = 0
 let lastAriaSync = 0
 let resizeObserver: ResizeObserver | undefined
@@ -93,6 +100,9 @@ function later(job: () => void, delay: number): void {
 }
 
 function clearLocalTimers(): void {
+  clearTimeout(keyboardTimer)
+  keyboardTimer = undefined
+  isKeyboardActive.value = false
   timers.forEach((timer) => clearTimeout(timer))
   timers.clear()
 }
@@ -106,7 +116,12 @@ const state = useCaptchaState({
 const status = state.status
 
 const isInteractive = computed(
-  () => !loading.value && !loadFailed.value && Boolean(captchaData.value) && status.value === 'idle'
+  () =>
+    props.visible &&
+    !loading.value &&
+    !loadFailed.value &&
+    Boolean(captchaData.value) &&
+    status.value === 'idle'
 )
 const canRefresh = computed(
   () => !loading.value && status.value !== 'verifying' && status.value !== 'success'
@@ -180,7 +195,9 @@ function handleMasterLoad(event: Event): void {
 }
 
 async function fetchCaptcha(): Promise<void> {
+  if (!props.visible) return
   const requestId = ++captchaRequestId
+  stopDragging()
   clearLocalTimers()
   state.toIdle()
   loading.value = true
@@ -216,9 +233,11 @@ function handleRefresh(): void {
 }
 
 function markKeyboardActive(): void {
+  clearTimeout(keyboardTimer)
   isKeyboardActive.value = true
-  later(() => {
+  keyboardTimer = setTimeout(() => {
     isKeyboardActive.value = false
+    keyboardTimer = undefined
   }, KEYBOARD_ACTIVE_HOLD)
 }
 
@@ -232,8 +251,9 @@ function nudge(): void {
 }
 
 function handlePointerDown(event: PointerEvent): void {
-  if (!isInteractive.value) return
+  if (!isInteractive.value || dragging || event.button !== 0 || event.isPrimary === false) return
 
+  activePointerId = event.pointerId
   dragging = true
   isDragging.value = true
   pointerOrigin = event.clientX - rawX
@@ -245,7 +265,7 @@ function handlePointerDown(event: PointerEvent): void {
 }
 
 function handlePointerMove(event: PointerEvent): void {
-  if (!dragging) return
+  if (!dragging || event.pointerId !== activePointerId) return
   rawX = clamp(event.clientX - pointerOrigin, 0, maxSlide.value)
   frame.schedule(flushX)
 
@@ -258,38 +278,34 @@ function handlePointerMove(event: PointerEvent): void {
   event.preventDefault()
 }
 
-function releasePointer(event: PointerEvent): void {
-  if (
-    event.currentTarget instanceof HTMLElement &&
-    event.currentTarget.hasPointerCapture?.(event.pointerId)
-  ) {
-    event.currentTarget.releasePointerCapture(event.pointerId)
+function stopDragging(): void {
+  const pointerId = activePointerId
+  activePointerId = null
+  dragging = false
+  isDragging.value = false
+  frame.cancel()
+  if (pointerId !== null && sliderRef.value?.hasPointerCapture?.(pointerId)) {
+    sliderRef.value.releasePointerCapture(pointerId)
   }
 }
 
 function handlePointerUp(event: PointerEvent): void {
-  if (!dragging) return
-  dragging = false
-  isDragging.value = false
-  releasePointer(event)
-  frame.cancel()
-  setSliderX(rawX)
+  if (!dragging || event.pointerId !== activePointerId) return
+  setSliderX(event.clientX - pointerOrigin)
+  stopDragging()
   verifySlider()
 }
 
 function handlePointerCancel(event: PointerEvent): void {
-  if (!dragging) return
-  dragging = false
-  isDragging.value = false
-  releasePointer(event)
-  frame.cancel()
+  if (!dragging || event.pointerId !== activePointerId) return
+  stopDragging()
   setSliderX(rawX)
 }
 
 function handleSliderKeydown(event: KeyboardEvent): void {
-  if (!isInteractive.value) return
+  if (!isInteractive.value || dragging) return
 
-  const step = Math.max(Math.round(maxSlide.value / 20), 1)
+  const step = event.shiftKey ? 1 : Math.max(Math.round(maxSlide.value / 20), 1)
   let handled = true
 
   switch (event.key) {
@@ -352,8 +368,7 @@ function reset(): void {
 
 function success(): void {
   clearLocalTimers()
-  dragging = false
-  isDragging.value = false
+  stopDragging()
   state.toSuccess()
   if (lastResult.value) emit('success', lastResult.value)
 }
@@ -365,10 +380,14 @@ function success(): void {
  */
 function fail(): void {
   clearLocalTimers()
-  dragging = false
-  isDragging.value = false
+  stopDragging()
   emit('fail')
   state.toFail()
+
+  if (prefersReducedMotion()) {
+    setSliderX(0)
+    return
+  }
 
   isRecoiling.value = true
   later(() => {
@@ -403,6 +422,7 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   captchaRequestId += 1
+  stopDragging()
   resizeObserver?.disconnect()
   clearLocalTimers()
 })
@@ -410,7 +430,14 @@ onBeforeUnmount(() => {
 watch(
   () => props.visible,
   (visible) => {
-    if (visible) void fetchCaptcha()
+    if (visible) {
+      void fetchCaptcha()
+      return
+    }
+    captchaRequestId += 1
+    stopDragging()
+    clearLocalTimers()
+    state.clearStateTimers()
   }
 )
 
@@ -552,6 +579,7 @@ defineExpose({
         @pointermove="handlePointerMove"
         @pointerup="handlePointerUp"
         @pointercancel="handlePointerCancel"
+        @lostpointercapture="handlePointerCancel"
         @keydown="handleSliderKeydown"
       >
         <span

@@ -129,7 +129,11 @@ export function useSettleSignal(onSettle: () => void): {
   const fire = (): void => {
     if (!armed) return
     disarm()
-    onSettle()
+    // 留一拍完整的成功画面，再开始弹窗离场；关闭或重开可取消这次收尾。
+    timer = setTimeout(() => {
+      timer = undefined
+      onSettle()
+    }, prefersReducedMotion() ? 0 : 100)
   }
 
   const arm = (): void => {

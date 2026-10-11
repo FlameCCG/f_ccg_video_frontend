@@ -82,6 +82,8 @@ export interface JwtToken {
 
 // User Info Types
 export interface UserInfo {
+  /** 服务端按已分配的管理员角色返回 */
+  isAdmin?: boolean
   id: number
   username: string
   email: string

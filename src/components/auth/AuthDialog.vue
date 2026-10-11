@@ -564,7 +564,11 @@ const setOpen = (value: boolean) => {
   emit('update:open', value)
 }
 
-// 打开时确保站点配置就绪（已加载则秒开 OAuth）；关闭时复位表单
+const handleAuthAfterLeave = () => {
+  if (!props.open) resetForms()
+}
+
+// 打开时确保站点配置就绪，表单保留到弹窗完全离场后再复位。
 watch(
   () => props.open,
   (newVal) => {
@@ -576,7 +580,6 @@ watch(
         void siteStore.fetchConfig()
       }
     } else {
-      resetForms()
       clickCaptchaOpen.value = false
       slideCaptchaOpen.value = false
     }
@@ -623,6 +626,7 @@ onUnmounted(() => {
          原先这里挂的 data-[state=*]:slide-in-from-* / slide-out-to-* 是死类，不生成任何 CSS。 -->
     <DialogContent
       class="auth-dialog-content max-w-[min(100vw-1.5rem,400px)] gap-0 overflow-hidden p-0 sm:max-w-[400px]"
+      @after-leave="handleAuthAfterLeave"
     >
       <!-- 无障碍标题：视觉层级仍由下方自定义 header 承担 -->
       <DialogTitle class="sr-only">{{ modeTitle }}</DialogTitle>

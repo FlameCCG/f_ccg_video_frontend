@@ -51,12 +51,6 @@ function handleSettled(): void {
   settle.fire()
 }
 
-function handleCancel(): void {
-  settle.disarm()
-  emit('cancel')
-  emit('update:open', false)
-}
-
 function handleOpenChange(value: boolean): void {
   if (!value) {
     settle.disarm()
@@ -74,12 +68,14 @@ watch(
 
 defineExpose({
   success: (result?: SlideCaptchaResult) => {
+    if (!props.open) return
     captchaRef.value?.success()
     if (result) emit('success', result)
     // 判定动画播完（或兜底超时）再关窗
     settle.arm()
   },
   fail: () => {
+    if (!props.open) return
     settle.disarm()
     captchaRef.value?.fail()
   },
@@ -95,9 +91,9 @@ defineExpose({
 <template>
   <Dialog :open="open" @update:open="handleOpenChange">
     <DialogContent
-      class="max-w-[min(100vw-1.5rem,340px)] gap-0 overflow-hidden rounded-2xl border-border/60 bg-background p-0 shadow-cinematic sm:max-w-[368px]"
+      class="cap-dialog max-w-[min(100vw-1.5rem,340px)] gap-0 overflow-hidden rounded-2xl border-border/60 bg-background p-0 shadow-cinematic sm:max-w-[368px]"
+      overlay-class="cap-dialog-overlay"
       :hide-close="false"
-      @escape-key-down="handleCancel"
       @pointer-down-outside="(e: Event) => e.preventDefault()"
     >
       <div class="cap-shell">

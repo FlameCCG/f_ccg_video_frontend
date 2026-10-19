@@ -3,8 +3,8 @@
  * 底部命令栏独立组件：模型切换 / 参数 / 输入 全部在此本地状态中。
  * 切换 TEXT/IMAGE/VIDEO 时不会触发父级消息列表重渲染。
  */
-import { computed, ref, watch, onBeforeUnmount, onMounted } from 'vue'
-import { Send, Square, Settings2, X } from 'lucide-vue-next'
+import { computed, ref, watch, onBeforeUnmount, onMounted, nextTick, useId } from 'vue'
+import { ArrowUp, Square, Settings2, X, MessageCircle, Image, Clapperboard } from 'lucide-vue-next'
 import { toast } from 'vue-sonner'
 import type { AiModelOption } from '@/api/ai'
 import type { AiComposerSendPayload, AiModelType, AiPastedImage } from '@/components/ai/ai-types'
@@ -62,6 +62,16 @@ watch(inputContent, resizeInput, { flush: 'post' })
 onMounted(resizeInput)
 const pastedImages = ref<AiPastedImage[]>([])
 const showSettings = ref(false)
+const settingsId = useId()
+const focusInput = () => textareaRef.value?.focus()
+const choosePrompt = async (mode: AiModelType, prompt: string) => {
+  if (props.isSending) return
+  setModel(mode)
+  inputContent.value = inputContent.value.trim() ? inputContent.value + '\n' + prompt : prompt
+  await nextTick()
+  focusInput()
+}
+defineExpose({ choosePrompt, focusInput })
 
 const chatModel = ref(props.defaultChatModel)
 const chatThinking = ref(true)
@@ -263,44 +273,38 @@ onBeforeUnmount(() => {
       class="absolute top-0 left-0 right-0 h-12 -translate-y-full bg-gradient-to-t from-[var(--bg-surface-0)] to-transparent pointer-events-none"
     ></div>
 
-    <div class="max-w-4xl mx-auto px-6 pb-6 w-full">
-      <div class="field-surface flex flex-col rounded-[24px] p-2">
-        <div class="flex items-center justify-between px-3 py-2 mb-1">
-          <div
-            class="flex items-center gap-1 p-1 bg-[var(--bg-surface-2)] rounded-xl border border-[var(--border-color)]"
-            role="tablist"
-          >
+    <div class="ai-composer__inner">
+      <div class="ai-composer__surface">
+        <div class="ai-composer__toolbar">
+          <div class="ai-composer__modes" role="group" aria-label="创作模式">
             <button
               type="button"
-              role="tab"
-              :aria-selected="activeModel === 'text'"
+              :aria-pressed="activeModel === 'text'"
               class="ai-model-tab"
               :class="activeModel === 'text' ? 'ai-model-tab--active' : ''"
               :disabled="coverPickerMode"
               @click="setModel('text')"
             >
-              TEXT
+              <MessageCircle :size="14" /> 对话
             </button>
             <button
               type="button"
-              role="tab"
-              :aria-selected="activeModel === 'image'"
+              :aria-pressed="activeModel === 'image'"
               class="ai-model-tab"
               :class="activeModel === 'image' ? 'ai-model-tab--active' : ''"
               @click="setModel('image')"
             >
-              IMAGE
+              <Image :size="14" /> 绘图
             </button>
             <button
               type="button"
-              role="tab"
-              :aria-selected="activeModel === 'video'"
+              :aria-pressed="activeModel === 'video'"
               class="ai-model-tab"
               :class="activeModel === 'video' ? 'ai-model-tab--active' : ''"
               :disabled="coverPickerMode"
               @click="setModel('video')"
             >
-              VIDEO
+              <Clapperboard :size="14" /> 视频
             </button>
           </div>
           <button
@@ -311,7 +315,9 @@ onBeforeUnmount(() => {
                 ? 'border-primary text-primary surface-tint'
                 : 'text-[var(--text-2)] bg-[var(--bg-surface-2)] border-[var(--border-color)] hover:text-[var(--text-1)]'
             "
-            aria-label="设置"
+            aria-label="生成设置"
+            :aria-expanded="showSettings"
+            :aria-controls="settingsId"
             @click="showSettings = !showSettings"
           >
             <Settings2 class="w-4 h-4" />
@@ -319,13 +325,13 @@ onBeforeUnmount(() => {
         </div>
 
         <!-- 不用 transition max-height，避免参数面板动画导致布局抖动 -->
-        <div v-show="showSettings" class="overflow-hidden">
+        <div v-show="showSettings" :id="settingsId" class="ai-composer__settings custom-scrollbar">
           <div
-            class="px-4 py-3 mx-2 mb-2 bg-[var(--bg-surface-2)] rounded-[16px] border border-[var(--border-color)] flex gap-8 items-center text-xs font-mono uppercase tracking-widest text-[var(--text-2)] overflow-x-auto custom-scrollbar"
+            class="flex flex-wrap gap-x-6 gap-y-4 items-center text-xs text-muted-foreground p-4"
           >
             <template v-if="activeModel === 'text'">
               <label class="flex items-center gap-3 shrink-0">
-                <span class="font-bold">Model</span>
+                <span class="font-bold">模型</span>
                 <select
                   v-model="chatModel"
                   class="bg-transparent text-[var(--text-1)] border-b border-[var(--border-color)] focus:border-[var(--brand-blue)] outline-none"
@@ -341,7 +347,7 @@ onBeforeUnmount(() => {
                 </select>
               </label>
               <label v-if="thinkingFeatureEnabled" class="flex items-center gap-3 shrink-0">
-                <span class="font-bold">Think</span>
+                <span class="font-bold">深度思考</span>
                 <input
                   v-model="chatThinking"
                   type="checkbox"
@@ -352,7 +358,7 @@ onBeforeUnmount(() => {
                 v-if="thinkingFeatureEnabled && chatThinking"
                 class="flex items-center gap-3 shrink-0"
               >
-                <span class="font-bold">Effort</span>
+                <span class="font-bold">思考强度</span>
                 <select
                   v-model="chatThinkingEffort"
                   class="bg-transparent text-[var(--text-1)] border-b border-[var(--border-color)] focus:border-[var(--brand-blue)] outline-none"
@@ -371,7 +377,7 @@ onBeforeUnmount(() => {
 
             <template v-else-if="activeModel === 'image'">
               <label class="flex items-center gap-3 shrink-0">
-                <span class="font-bold">Model</span>
+                <span class="font-bold">模型</span>
                 <select
                   v-model="imgModel"
                   class="bg-transparent text-[var(--text-1)] border-b border-[var(--border-color)] focus:border-[var(--brand-blue)] outline-none"
@@ -387,7 +393,7 @@ onBeforeUnmount(() => {
                 </select>
               </label>
               <label class="flex items-center gap-3 shrink-0">
-                <span class="font-bold">Count</span>
+                <span class="font-bold">数量</span>
                 <input
                   v-model="imgCount"
                   type="number"
@@ -397,7 +403,7 @@ onBeforeUnmount(() => {
                 />
               </label>
               <label class="flex items-center gap-3 shrink-0">
-                <span class="font-bold">Ratio</span>
+                <span class="font-bold">画幅</span>
                 <select
                   v-model="imgRatio"
                   :disabled="isSingleImageEdit"
@@ -414,7 +420,7 @@ onBeforeUnmount(() => {
                 </select>
               </label>
               <label class="flex items-center gap-3 shrink-0">
-                <span class="font-bold">Res</span>
+                <span class="font-bold">清晰度</span>
                 <select
                   v-model="imgResolution"
                   class="bg-transparent text-[var(--text-1)] border-b border-[var(--border-color)] focus:border-[var(--brand-blue)] outline-none"
@@ -432,13 +438,13 @@ onBeforeUnmount(() => {
               <span
                 v-if="isSingleImageEdit"
                 class="ml-auto opacity-70 text-[10px] shrink-0 text-[var(--brand-blue)]"
-                >Inherits Source</span
+                >沿用原图比例</span
               >
             </template>
 
             <template v-else>
               <label class="flex items-center gap-3 shrink-0">
-                <span class="font-bold">Model</span>
+                <span class="font-bold">模型</span>
                 <select
                   v-model="vidModel"
                   class="bg-transparent text-[var(--text-1)] border-b border-[var(--border-color)] focus:border-[var(--brand-blue)] outline-none"
@@ -454,7 +460,7 @@ onBeforeUnmount(() => {
                 </select>
               </label>
               <label class="flex items-center gap-3 shrink-0">
-                <span class="font-bold">Seconds</span>
+                <span class="font-bold">时长（秒）</span>
                 <input
                   v-model.number="vidDuration"
                   type="number"
@@ -464,7 +470,7 @@ onBeforeUnmount(() => {
                 />
               </label>
               <label class="flex items-center gap-3 shrink-0">
-                <span class="font-bold">Ratio</span>
+                <span class="font-bold">画幅</span>
                 <select
                   v-model="vidRatio"
                   class="bg-transparent text-[var(--text-1)] border-b border-[var(--border-color)] focus:border-[var(--brand-blue)] outline-none"
@@ -480,7 +486,7 @@ onBeforeUnmount(() => {
                 </select>
               </label>
               <label class="flex items-center gap-3 shrink-0">
-                <span class="font-bold">Res</span>
+                <span class="font-bold">清晰度</span>
                 <select
                   v-model="vidResolution"
                   class="bg-transparent text-[var(--text-1)] border-b border-[var(--border-color)] focus:border-[var(--brand-blue)] outline-none"
@@ -498,7 +504,7 @@ onBeforeUnmount(() => {
               <span
                 v-if="isReferenceVideoMode"
                 class="ml-auto opacity-70 text-[10px] shrink-0 text-[var(--brand-blue)]"
-                >Max 10s Mode</span
+                >参考图模式 · 最长 10 秒</span
               >
             </template>
           </div>
@@ -518,6 +524,7 @@ onBeforeUnmount(() => {
               <button
                 type="button"
                 class="absolute -top-1.5 -right-1.5 w-5 h-5 bg-[var(--status-danger)] text-[var(--status-danger-ink)] rounded-full flex items-center justify-center shadow-md"
+                :aria-label="`移除第 ${idx + 1} 张图片`"
                 @click="removePastedImage(idx)"
               >
                 <X class="w-3 h-3" />
@@ -530,7 +537,13 @@ onBeforeUnmount(() => {
               ref="textareaRef"
               v-model="inputContent"
               class="ai-composer__input flex-1 max-h-[160px] min-h-[44px] bg-transparent resize-none outline-none py-2 px-2 text-[16px] leading-[1.6] text-[var(--text-1)] placeholder:text-[var(--text-2)] custom-scrollbar font-normal"
-              :placeholder="activeModel === 'text' ? '输入消息…' : '描述你想创作的内容…'"
+              :placeholder="
+                activeModel === 'text'
+                  ? '把想法写在这里…'
+                  : activeModel === 'image'
+                    ? '描述画面、风格，以及你想表达的氛围…'
+                    : '描述场景、镜头和动作…'
+              "
               rows="1"
               aria-label="AI 消息"
               @paste="handlePaste"
@@ -539,11 +552,11 @@ onBeforeUnmount(() => {
 
             <button
               type="button"
-              class="shrink-0 w-11 h-11 flex items-center justify-center rounded-2xl shadow-raised"
+              class="ai-composer__send"
               :class="
                 !canSend && !isSending
                   ? 'bg-[var(--bg-surface-2)] text-[var(--text-2)] cursor-not-allowed shadow-none border border-[var(--border-color)]'
-                  : 'bg-[var(--brand-blue)] text-[var(--signal-foreground)] hover:opacity-90 active:scale-95'
+                  : 'ai-composer__send--ready'
               "
               :disabled="!canSend && !isSending"
               :aria-label="isSending ? '停止生成' : '发送消息'"
@@ -551,16 +564,16 @@ onBeforeUnmount(() => {
               @click="isSending ? emit('stop') : handleSend()"
             >
               <Square v-if="isSending" class="w-4 h-4" />
-              <Send v-else class="w-4 h-4 ml-0.5" />
+              <ArrowUp v-else :size="19" />
             </button>
           </div>
         </div>
       </div>
 
-      <div class="mt-4 text-center">
-        <span
-          class="text-[10px] font-mono tracking-widest text-[var(--text-2)] uppercase opacity-70"
-          >Generated content may require verification</span
+      <div class="ai-composer__footnote">
+        <span>AI 也会有灵感偏差，请留意甄别</span
+        ><span class="ai-composer__shortcut"
+          ><kbd>Enter</kbd> 发送 · <kbd>Shift Enter</kbd> 换行</span
         >
       </div>
     </div>
@@ -569,52 +582,147 @@ onBeforeUnmount(() => {
 
 <style scoped lang="scss">
 .ai-composer {
+  position: relative;
+  flex-shrink: 0;
   contain: layout style;
 }
-
+.ai-composer__inner {
+  width: 100%;
+  max-width: 792px;
+  margin: 0 auto;
+  padding: 0 28px 18px;
+}
+.ai-composer__surface {
+  display: flex;
+  flex-direction: column;
+  padding: 4px;
+  background: var(--bg-surface-1);
+  border: 1px solid var(--field-border);
+  border-radius: 18px;
+  box-shadow: var(--shadow-raised-value);
+}
+.ai-composer__surface:focus-within {
+  border-color: var(--field-border-focus);
+  box-shadow:
+    0 0 0 3px var(--field-focus-ring),
+    var(--shadow-raised-value);
+}
+.ai-composer__toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 12px 6px;
+}
+.ai-composer__modes {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.ai-composer__settings {
+  max-height: min(220px, 28dvh);
+  margin: 6px 10px;
+  overflow: auto;
+  background: var(--bg-surface-0);
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+}
+.ai-composer__settings select {
+  max-width: 220px;
+}
 .ai-composer__input {
+  min-width: 0;
   caret-color: var(--brand-blue);
-
-  &::placeholder {
-    opacity: 1;
-  }
 }
-
-.ai-model-tab {
-  padding: 0.375rem 1rem;
-  border-radius: 0.5rem;
-  font-size: 0.75rem;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-  font-weight: 700;
-  letter-spacing: 0.1em;
+.ai-composer__input::placeholder {
+  opacity: 0.8;
+  font-size: 14px;
+}
+.ai-composer__send {
+  display: grid;
+  flex-shrink: 0;
+  width: 38px;
+  height: 38px;
+  place-items: center;
+  border-radius: 12px;
+  transition: transform 160ms var(--ease-out-quart);
+}
+.ai-composer__send--ready {
+  color: var(--bg-surface-0);
+  background: var(--text-1);
+}
+.ai-composer__send--ready:hover {
+  transform: translateY(-2px);
+}
+.ai-composer__send--ready:active {
+  transform: scale(0.95);
+}
+.ai-composer__footnote {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 12px 4px 0;
   color: var(--text-2);
-  border: 0;
-  background: transparent;
-  cursor: pointer;
-
-  &:disabled {
-    opacity: 0.4;
-    cursor: not-allowed;
-  }
-
-  &--active {
-    background: var(--text-1);
-    color: var(--bg-surface-0);
-    box-shadow: var(--shadow-surface);
-  }
+  font-size: 10px;
 }
-
+.ai-composer__footnote kbd {
+  font-family: inherit;
+}
+.ai-model-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 32px;
+  padding: 6px 10px;
+  color: var(--text-2);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 500;
+}
+.ai-model-tab:disabled {
+  cursor: not-allowed;
+  opacity: 0.4;
+}
+.ai-model-tab--active {
+  color: var(--text-1);
+  background: var(--bg-surface-0);
+  border-color: var(--border-color);
+  box-shadow: var(--shadow-surface-value);
+}
 .ai-model-tab:not(.ai-model-tab--active, :disabled):hover {
   color: var(--text-1);
+  background: var(--bg-surface-2);
+}
+.custom-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-color) transparent;
 }
 
-.custom-scrollbar::-webkit-scrollbar {
-  width: 4px;
-  height: 4px;
+@media (width <= 600px) {
+  .ai-composer__inner {
+    padding: 0 12px max(14px, env(safe-area-inset-bottom));
+  }
+  .ai-composer__shortcut {
+    display: none;
+  }
+  .ai-composer__footnote {
+    justify-content: center;
+  }
+  .ai-composer__toolbar {
+    padding-right: 8px;
+    padding-left: 8px;
+  }
+  .ai-model-tab {
+    gap: 5px;
+    padding: 6px 8px;
+  }
+}
 
-  &-thumb {
-    background: var(--border-color);
-    border-radius: 4px;
+@media (prefers-reduced-motion: reduce) {
+  .ai-composer__send {
+    transition: none;
   }
 }
 </style>

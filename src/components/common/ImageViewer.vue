@@ -6,6 +6,8 @@ import { useScrollLock } from '@vueuse/core'
 const props = defineProps<{
   modelValue: boolean
   src: string
+  /** 已在模态层中时复用该层，避免焦点和指针事件越过父弹窗。 */
+  teleportDisabled?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -93,7 +95,7 @@ const handlePointerUp = () => {
 </script>
 
 <template>
-  <Teleport to="body">
+  <Teleport to="body" :disabled="teleportDisabled">
     <Transition name="viewer">
       <div
         v-if="modelValue"

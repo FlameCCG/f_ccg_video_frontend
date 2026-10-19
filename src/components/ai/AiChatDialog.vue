@@ -2,7 +2,16 @@
 import { ref, reactive, nextTick, watch, onBeforeUnmount, computed, shallowRef } from 'vue'
 import { useRouter } from 'vue-router'
 import { getAccessToken } from '@/api/request'
-import { X, Download, Loader2, Bot, UploadCloud } from 'lucide-vue-next'
+import {
+  X,
+  Download,
+  Loader2,
+  Bot,
+  UploadCloud,
+  ArrowDown,
+  ChevronDown,
+  Brain,
+} from 'lucide-vue-next'
 import {
   fetchAiChatStream,
   formatAiErrorMessage,
@@ -22,14 +31,23 @@ import {
 } from '@/api/ai'
 import { toast } from 'vue-sonner'
 import ImageViewer from '@/components/common/ImageViewer.vue'
-import AppAvatar from '@/components/common/AppAvatar.vue'
 import AiChatComposer from '@/components/ai/AiChatComposer.vue'
 import { useCreatorBridgeStore } from '@/stores/creatorBridge'
 import { useSubmissionAccess, SUBMISSION_DISABLED_MESSAGE } from '@/composables/useSubmissionAccess'
 import { buildAiSuggestedTitle, fetchAiAssetAsFile } from '@/utils/ai-assets'
-import { renderMarkdownHtml, renderStreamingPlainHtml } from '@/components/ai/ai-markdown'
+import { renderMarkdownHtml } from '@/components/ai/ai-markdown'
 import { createStreamBuffer, type StreamFlushPayload } from '@/components/ai/ai-stream-buffer'
 import type { AiComposerSendPayload, AiModelType } from '@/components/ai/ai-types'
+import {
+  DialogRoot,
+  DialogPortal,
+  DialogOverlay,
+  DialogContent,
+  DialogTitle,
+  DialogDescription,
+} from 'reka-ui'
+import AiChatWelcome from './AiChatWelcome.vue'
+import AiMessageActions from './AiMessageActions.vue'
 import { setLive2dPaused } from '@/utils/live2d'
 
 const props = withDefaults(
@@ -83,16 +101,13 @@ interface VideoResultItem {
   description: string
 }
 
-const messages = ref<ChatMessage[]>([
-  {
-    id: 'init-1',
-    role: 'assistant',
-    type: 'text',
-    content: '',
-    isLoading: true,
-  },
-])
+const messages = ref<ChatMessage[]>([])
 
+const composerRef = ref<InstanceType<typeof AiChatComposer> | null>(null)
+
+const hasConversation = computed(() => messages.value.length > 0)
+const choosePrompt = (mode: AiModelType, prompt: string) =>
+  composerRef.value?.choosePrompt(mode, prompt)
 const isSending = ref(false)
 let activeRequest: AbortController | null = null
 const stopRequest = () => activeRequest?.abort()
@@ -102,12 +117,7 @@ const chatScrollRef = ref<HTMLElement | null>(null)
 const previewImageUrl = ref('')
 const showPreviewImage = ref(false)
 const activeAssetActionKey = ref<string | null>(null)
-const hasStreamedIntro = ref(false)
-let introStreamTimer: number | null = null
 let live2dPausedByDialog = false
-
-const INITIAL_GREETING =
-  '你好，我可以帮你找站内视频、整理灵感、生成图像与视频提示，也可以直接继续聊天。'
 
 /** 解析后的主内容 / 视频卡片缓存，避免模板里反复 regex */
 const primaryContentMap = shallowRef<Record<string, string>>({})
@@ -187,11 +197,11 @@ const isAssetActionBusy = (key: string) => activeAssetActionKey.value === key
 
 // --- Throttled auto-scroll (RAF-based) ---
 let scrollRafId: number | null = null
-let userPinnedToBottom = true
+const userPinnedToBottom = ref(true)
 const SCROLL_PIN_THRESHOLD = 96
 
 const scheduleScroll = (force = false) => {
-  if (!force && !userPinnedToBottom) return
+  if (!force && !userPinnedToBottom.value) return
   if (scrollRafId !== null) return
   scrollRafId = requestAnimationFrame(() => {
     scrollRafId = null
@@ -203,7 +213,7 @@ const scheduleScroll = (force = false) => {
 
 const scrollToBottom = async (force = false) => {
   await nextTick()
-  if (force) userPinnedToBottom = true
+  if (force) userPinnedToBottom.value = true
   scheduleScroll(force)
 }
 
@@ -211,14 +221,13 @@ const handleChatScroll = () => {
   const el = chatScrollRef.value
   if (!el) return
   const distance = el.scrollHeight - el.scrollTop - el.clientHeight
-  userPinnedToBottom = distance <= SCROLL_PIN_THRESHOLD
+  userPinnedToBottom.value = distance <= SCROLL_PIN_THRESHOLD
 }
 
 // --- Markdown / content cache ---
 // Maps message id → rendered HTML. Updated at display-rate, not chunk-rate.
 const renderedHtmlMap = reactive<Record<string, string>>({})
-const LOADING_CURSOR_HTML =
-  '<span class="inline-block animate-pulse w-2 h-4 bg-muted-foreground rounded-sm"></span>'
+const LOADING_CURSOR_HTML = '<span class="ai-stream-cursor" aria-hidden="true"></span>'
 
 const pendingRenderRaw: Record<string, string> = {}
 const pendingRenderStreaming: Record<string, boolean> = {}
@@ -368,55 +377,6 @@ const getRenderedHtml = (msg: ChatMessage) => {
 
 const decodeCopyPayload = (content: string) => decodeURIComponent(content)
 
-const clearIntroStream = () => {
-  if (introStreamTimer !== null) {
-    window.clearInterval(introStreamTimer)
-    introStreamTimer = null
-  }
-}
-
-/** 开场白流式输出：仅轻量纯文本，不跑 marked/hljs */
-const streamInitialGreeting = () => {
-  if (hasStreamedIntro.value) return
-  const introMessage = messages.value.find((msg) => msg.id === 'init-1')
-  if (!introMessage) return
-
-  if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
-    introMessage.content = INITIAL_GREETING
-    introMessage.isLoading = false
-    hasStreamedIntro.value = true
-    scheduleRender(introMessage.id, INITIAL_GREETING)
-    return
-  }
-
-  const chars = Array.from(INITIAL_GREETING)
-  let cursor = 0
-
-  introMessage.content = ''
-  introMessage.isLoading = true
-  applyRenderedHtml(introMessage.id, LOADING_CURSOR_HTML)
-  primaryContentMap.value = { ...primaryContentMap.value, [introMessage.id]: '' }
-  clearIntroStream()
-
-  introStreamTimer = window.setInterval(() => {
-    // 每 tick 多吐几个字，降低 interval 频率带来的主线程压力
-    cursor = Math.min(chars.length, cursor + (cursor < 12 ? 2 : 4))
-    const text = chars.slice(0, cursor).join('')
-    introMessage.content = text
-    primaryContentMap.value = { ...primaryContentMap.value, [introMessage.id]: text }
-    applyRenderedHtml(introMessage.id, renderStreamingPlainHtml(text) + LOADING_CURSOR_HTML)
-    scheduleScroll()
-
-    if (cursor >= chars.length) {
-      introMessage.isLoading = false
-      hasStreamedIntro.value = true
-      clearIntroStream()
-      // 结束：正式 markdown（欢迎语几乎无开销）
-      scheduleRender(introMessage.id, text, false)
-    }
-  }, 36)
-}
-
 /** 将缓冲后的 SSE 状态刷入对应消息（低频） */
 const applyStreamFlush = (payload: StreamFlushPayload) => {
   const msg = messages.value.find((m) => m.id === payload.msgId)
@@ -460,7 +420,7 @@ const handleAssistantMarkupClick = async (event: MouseEvent) => {
     toast.success('代码已复制')
     window.setTimeout(() => {
       if (!document.contains(copyButton)) return
-      copyButton.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="group-hover/copy:text-[var(--brand-blue)] transition-colors"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>`
+      copyButton.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="group-hover/copy:text-[var(--brand-blue)]"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>`
       copyButton.dataset.copied = 'false'
     }, 1400)
   } catch {
@@ -471,7 +431,6 @@ const handleAssistantMarkupClick = async (event: MouseEvent) => {
 onBeforeUnmount(() => {
   stopRequest()
   if (scrollRafId !== null) cancelAnimationFrame(scrollRafId)
-  clearIntroStream()
   textStreamBuffer.dispose()
   for (const timer of pendingRenderTimers.values()) {
     window.clearTimeout(timer)
@@ -496,12 +455,6 @@ watch(
         live2dPausedByDialog = true
       }
       void loadAiOptions()
-      if (!hasStreamedIntro.value) {
-        // 下一帧再开打字机，避免与弹层首帧合成抢主线程
-        requestAnimationFrame(() => {
-          if (props.open) streamInitialGreeting()
-        })
-      }
       void scrollToBottom(true)
     } else {
       stopRequest()
@@ -509,7 +462,6 @@ watch(
       previewImageUrl.value = ''
       isStreamingUi.value = false
       textStreamBuffer.flushFinal()
-      clearIntroStream()
       if (live2dPausedByDialog) {
         setLive2dPaused(false)
         live2dPausedByDialog = false
@@ -979,7 +931,7 @@ const sendRequest = async (payload: AiComposerSendPayload) => {
       }
 
       isStreamingUi.value = true
-      userPinnedToBottom = true
+      userPinnedToBottom.value = true
       signal.throwIfAborted()
       applyRenderedHtml(assistantMsgId, LOADING_CURSOR_HTML)
 
@@ -1212,51 +1164,43 @@ const handleComposerSend = (payload: AiComposerSendPayload) => {
 </script>
 
 <template>
-  <Teleport to="body">
-    <div
-      v-if="open"
-      class="fixed inset-0 z-[99998] flex items-center justify-center p-4 sm:p-6"
-      @click.self="handleClose"
-    >
-      <!-- 无 backdrop-filter：全屏 blur 与 Live2D 画布叠加时极卡 -->
-      <div class="absolute inset-0 bg-[var(--page-wash-3)]/88 pointer-events-none"></div>
-
-      <!-- The Monolithic Canvas -->
-      <div
-        class="relative flex flex-col w-full max-w-[1024px] h-[92vh] bg-[var(--bg-surface-0)] rounded-[2.5rem] shadow-cinematic ring-1 ring-[var(--glass-border)] overflow-hidden ai-dialog-shell"
-      >
-        <!-- Absolute minimal top header / Draggable zone -->
-        <div
-          class="shrink-0 flex items-center justify-between px-8 py-6 z-10 border-b border-[var(--border-color)] border-opacity-30"
-        >
-          <div class="flex items-center gap-3">
-            <div
-              class="w-9 h-9 rounded-full bg-[var(--bg-surface-2)] border border-[var(--border-color)] flex items-center justify-center text-[var(--text-1)] shadow-sm"
-            >
-              <Bot class="w-5 h-5" />
+  <DialogRoot :open="open" @update:open="emit('update:open', $event)">
+    <DialogPortal>
+      <DialogOverlay class="ai-dialog-overlay" />
+      <DialogContent class="ai-dialog-shell">
+        <header class="ai-dialog-header">
+          <div class="ai-dialog-identity">
+            <span class="ai-dialog-mark"><Bot :size="21" :stroke-width="1.6" /></span>
+            <div>
+              <DialogTitle class="ai-dialog-title">灵感会客室<span>AI</span></DialogTitle>
+              <DialogDescription class="ai-dialog-description">你的全能视频助手</DialogDescription>
             </div>
-            <h2 class="text-xs font-bold tracking-[0.2em] text-[var(--text-1)] uppercase font-mono">
-              全能视频助手
-            </h2>
           </div>
-          <button
-            aria-label="关闭 AI 助手"
-            class="group w-10 h-10 flex items-center justify-center rounded-full bg-[var(--bg-surface-1)] hover:bg-[var(--bg-surface-2)] border border-transparent hover:border-[var(--border-color)] text-[var(--text-2)] hover:text-[var(--text-1)] t-tint ui-button"
-            @click="handleClose"
-          >
-            <X
-              class="w-4 h-4 group-hover:rotate-90 transition-transform duration-500 ease-out-expo"
-            />
-          </button>
-        </div>
+          <div class="ai-header-actions">
+            <span class="ai-session-status" role="status"
+              ><i :class="{ 'is-active': isSending }"></i
+              >{{ isSending ? '正在回应' : '随时，聊聊' }}</span
+            >
+            <button type="button" aria-label="关闭 AI 助手" class="ai-close" @click="handleClose">
+              <X :size="18" />
+            </button>
+          </div>
+        </header>
 
         <!-- Immersive Chat Area -->
         <div
           ref="chatScrollRef"
-          class="flex-1 overflow-y-auto overflow-x-hidden px-8 sm:px-16 py-8 flex flex-col gap-12 custom-scrollbar ai-chat-scroll"
+          class="custom-scrollbar ai-chat-scroll"
+          aria-label="对话记录"
           :class="isStreamingUi ? 'ai-chat-scroll--streaming' : ''"
           @scroll.passive="handleChatScroll"
         >
+          <AiChatWelcome
+            v-if="!hasConversation"
+            :cover-picker-mode="isCoverPickerMode"
+            @choose="choosePrompt"
+          />
+          <div v-else class="ai-conversation-start"><span>灵感，从这里开始</span></div>
           <div
             v-for="msg in messages"
             :key="msg.id"
@@ -1273,31 +1217,26 @@ const handleComposerSend = (payload: AiComposerSendPayload) => {
               videoResultsMap[msg.id],
               activeAssetActionKey,
               isCoverPickerMode,
+              isSending,
             ]"
             class="flex w-full group ai-msg-row"
-            :class="msg.role === 'user' ? 'justify-end' : 'justify-start gap-6'"
+            :class="msg.role === 'user' ? 'ai-msg-row--user' : 'ai-msg-row--assistant'"
           >
-            <!-- AI Avatar Side -->
-            <div v-if="msg.role === 'assistant'" class="shrink-0 pt-1">
-              <div
-                class="w-8 h-8 rounded-full border border-[var(--border-color)] bg-[var(--bg-surface-1)] p-1 flex items-center justify-center shadow-surface"
-              >
-                <img
-                  src="/表情包/bili_emoji_20.png"
-                  alt="bot"
-                  class="w-full h-full object-contain"
-                />
-              </div>
+            <div v-if="msg.role === 'assistant'" class="ai-message-avatar" aria-hidden="true">
+              <Bot :size="18" :stroke-width="1.5" />
             </div>
 
             <!-- Content Area -->
             <div
-              class="flex flex-col gap-4 max-w-[85%] min-w-0"
+              class="ai-message-content"
               :class="[
                 msg.role === 'user' ? 'items-end' : 'items-start',
                 msg.type === 'video_gen' ? 'w-full' : '',
               ]"
             >
+              <div v-if="msg.role === 'assistant'" class="ai-message-author">
+                视频助手<span>AI</span>
+              </div>
               <!-- User Attached Images -->
               <div
                 v-if="msg.role === 'user' && msg.images?.length"
@@ -1308,46 +1247,30 @@ const handleComposerSend = (payload: AiComposerSendPayload) => {
                   :key="idx"
                   :src="img"
                   class="w-24 h-24 object-cover rounded-2xl shadow-raised border border-[var(--border-color)]"
+                  :alt="`上传的图片 ${idx + 1}`"
                 />
               </div>
 
-              <!-- Terminal-Style Reasoning (Assistant) -->
-              <details
-                v-if="msg.reasoningContent"
-                class="group/reasoning w-full overflow-hidden text-[13px] rounded-2xl border border-[var(--border-color)] bg-[var(--bg-surface-1)] contain-content"
-                open
-              >
-                <summary
-                  class="cursor-pointer select-none px-4 py-3 flex items-center gap-3 font-mono text-[var(--text-2)] hover:text-[var(--text-1)] transition-colors outline-none"
-                >
-                  <Loader2
-                    v-if="msg.isLoading && !msg.content"
-                    class="w-3.5 h-3.5 animate-spin text-[var(--text-1)]"
-                  />
-                  <span
-                    v-else
-                    class="w-2 h-2 rounded-full bg-[var(--text-2)] group-open/reasoning:bg-[var(--status-success)] transition-colors"
-                  ></span>
-                  <span class="tracking-widest uppercase text-[10px] font-bold"
-                    >Thought Process</span
-                  >
+              <!-- 按需展开思考过程 -->
+              <details v-if="msg.reasoningContent" class="ai-reasoning">
+                <summary>
+                  <Brain :size="14" /><span>{{
+                    isSending && !msg.content ? '正在梳理思路' : '查看思考过程'
+                  }}</span
+                  ><ChevronDown :size="14" class="ai-reasoning-chevron" />
                 </summary>
-                <div
-                  class="px-5 py-4 font-mono text-[var(--text-2)] leading-relaxed whitespace-pre-wrap border-t border-[var(--border-color)] bg-[var(--bg-surface-2)] opacity-80 max-h-64 overflow-y-auto custom-scrollbar"
-                >
-                  {{ msg.reasoningContent }}
-                </div>
+                <div class="ai-reasoning-content custom-scrollbar">{{ msg.reasoningContent }}</div>
               </details>
 
               <!-- Markdown Content -->
               <div
                 v-if="msg.role === 'user' && msg.content"
-                class="leading-[1.7] break-words text-[15px] contain-content px-6 py-4 bg-[var(--bg-surface-2)] text-[var(--text-1)] rounded-[24px] rounded-br-sm border border-[var(--border-color)] shadow-raised font-medium whitespace-pre-wrap"
+                class="ai-user-bubble"
                 v-text="msg.content"
               ></div>
               <div
                 v-else-if="msg.role === 'assistant' && (primaryContentMap[msg.id] || msg.content)"
-                class="leading-[1.7] break-words text-[15px] contain-content markdown-body ai-assistant-bubble text-[var(--text-1)] w-full"
+                class="markdown-body ai-assistant-bubble"
                 @click="handleAssistantMarkupClick"
                 v-html="getRenderedHtml(msg)"
               ></div>
@@ -1359,9 +1282,9 @@ const handleComposerSend = (payload: AiComposerSendPayload) => {
                 <div class="mb-3 flex items-center gap-2">
                   <span class="h-2 w-2 rounded-full bg-[var(--brand-blue)]"></span>
                   <span
-                    class="text-[11px] font-mono font-bold tracking-[0.24em] uppercase text-[var(--text-2)]"
+                    class="text-[11px] font-bold tracking-[0.24em] uppercase text-[var(--text-2)]"
                   >
-                    Video Results
+                    为你找到的视频
                   </span>
                 </div>
                 <div class="grid gap-3 max-w-[42rem]">
@@ -1384,9 +1307,9 @@ const handleComposerSend = (payload: AiComposerSendPayload) => {
                         </div>
                       </div>
                       <div
-                        class="shrink-0 rounded-full border border-[var(--border-color)] bg-[var(--bg-surface-2)] px-3 py-1 text-[10px] font-mono font-bold uppercase tracking-[0.18em] text-[var(--text-2)] transition-colors duration-300 group-hover:text-[var(--brand-blue)]"
+                        class="shrink-0 rounded-full border border-[var(--border-color)] bg-[var(--bg-surface-2)] px-3 py-1 text-[10px] font-bold uppercase tracking-[0.18em] text-[var(--text-2)] duration-300 group-hover:text-[var(--brand-blue)]"
                       >
-                        Open
+                        查看
                       </div>
                     </div>
                   </button>
@@ -1402,18 +1325,17 @@ const handleComposerSend = (payload: AiComposerSendPayload) => {
                   !msg.reasoningContent &&
                   msg.type === 'text'
                 "
-                class="flex items-center gap-1.5 py-2 px-1"
+                class="ai-waiting"
+                role="status"
               >
-                <div
-                  class="ai-wait-dot w-1.5 h-1.5 rounded-full bg-[var(--brand-blue)] animate-[pulse_1s_infinite]"
-                ></div>
-                <div
-                  class="ai-wait-dot w-1.5 h-1.5 rounded-full bg-[var(--brand-blue)] animate-[pulse_1s_infinite_0.2s]"
-                ></div>
-                <div
-                  class="ai-wait-dot w-1.5 h-1.5 rounded-full bg-[var(--brand-blue)] animate-[pulse_1s_infinite_0.4s]"
-                ></div>
+                <span class="ai-waiting-dots" aria-hidden="true"><i></i><i></i><i></i></span>
+                <span>正在想一想</span>
               </div>
+
+              <AiMessageActions
+                v-if="msg.role === 'assistant' && msg.content && !msg.isLoading && !isSending"
+                :content="msg.content"
+              />
 
               <p v-if="msg.notice" role="status" class="text-sm text-muted-foreground">
                 {{ msg.notice }}
@@ -1422,20 +1344,19 @@ const handleComposerSend = (payload: AiComposerSendPayload) => {
               <!-- Error Toast -->
               <div
                 v-if="msg.error"
+                role="alert"
                 class="px-4 py-2 bg-[var(--status-danger-soft)] text-[var(--status-danger-ink)] text-sm rounded-xl border border-[var(--status-danger-border)] flex items-center gap-2"
               >
                 <span class="w-2 h-2 rounded-full bg-[var(--status-danger)]"></span>
                 {{ msg.error }}
               </div>
 
-              <!-- Extravagant Image Grid -->
+              <!-- 生成图片 -->
               <div
                 v-if="msg.type === 'image_gen' && msg.results"
                 class="mt-4 grid gap-3 self-start"
                 :class="
-                  msg.results.length > 1
-                    ? 'w-[min(44rem,calc(100vw-12rem))] max-w-full grid-cols-2'
-                    : 'w-[20rem] max-w-full grid-cols-1'
+                  msg.results.length > 1 ? 'w-full grid-cols-2' : 'w-[20rem] max-w-full grid-cols-1'
                 "
               >
                 <div
@@ -1445,73 +1366,26 @@ const handleComposerSend = (payload: AiComposerSendPayload) => {
                   :class="res.url && !res.error ? 'cursor-zoom-in' : ''"
                   @click="res.url && !res.error ? openImagePreview(res.url) : undefined"
                 >
-                  <div
-                    v-if="!res.url"
-                    class="absolute inset-0 isolate overflow-hidden rounded-[1.5rem] border border-[var(--border-color)] bg-[var(--bg-surface-1)] shadow-surface"
-                  >
-                    <div
-                      class="absolute inset-0 bg-gradient-to-r from-transparent via-foreground/10 to-transparent animate-shimmer"
-                      style="background-size: 200% 100%"
-                    ></div>
-                    <div
-                      class="absolute inset-0 bg-[radial-gradient(circle_at_top,color-mix(in_oklch,var(--color-foreground)_10%,transparent),transparent_52%)]"
-                    ></div>
-
-                    <div class="relative z-10 flex h-full flex-col justify-between p-5">
-                      <div class="flex items-start justify-between gap-4">
-                        <div>
-                          <div
-                            class="text-[10px] font-mono font-bold tracking-[0.28em] text-[var(--text-2)]"
-                          >
-                            IMAGE
-                          </div>
-                          <div class="mt-2 h-2 w-20 rounded-full surface-tint-strong"></div>
-                        </div>
-                        <div
-                          class="rounded-full border border-[var(--border-color)] bg-[var(--bg-surface-1)] px-3 py-1 text-[10px] font-mono font-bold tracking-[0.2em] text-[var(--text-2)]"
-                        >
-                          {{ String(idx + 1).padStart(2, '0') }}
-                        </div>
-                      </div>
-
-                      <div class="flex flex-col gap-3">
-                        <div
-                          class="relative flex aspect-square items-center justify-center overflow-hidden rounded-[1.1rem] border border-[var(--border-color)] bg-[var(--bg-surface-0)]/80"
-                        >
-                          <div
-                            class="absolute inset-0 bg-gradient-to-br from-foreground/[0.04] via-transparent to-foreground/[0.08]"
-                          ></div>
-                          <div
-                            class="relative z-10 h-24 w-24 rounded-full border border-tint surface-tint"
-                          ></div>
-                        </div>
-                        <div class="space-y-2">
-                          <div class="h-2.5 rounded-full surface-tint-strong"></div>
-                          <div class="h-2.5 w-[72%] rounded-full surface-tint"></div>
-                        </div>
-                        <div
-                          class="flex items-center justify-between text-[10px] font-mono font-bold tracking-[0.22em] text-[var(--text-2)]"
-                        >
-                          <span>RENDERING</span>
-                          <span>IN PROGRESS</span>
-                        </div>
-                      </div>
-                    </div>
+                  <div v-if="!res.url && !res.error" class="ai-image-pending">
+                    <div class="ai-image-pending__sheen animate-shimmer"></div>
+                    <span class="ai-image-pending__number">{{
+                      String(idx + 1).padStart(2, '0')
+                    }}</span>
+                    <Loader2 :size="24" :stroke-width="1.3" class="animate-spin" />
+                    <span>正在描绘你的想象</span>
                   </div>
                   <div
                     v-else-if="res.error"
                     class="absolute inset-0 flex flex-col items-center justify-center gap-3 p-6 text-center"
                   >
-                    <span class="text-xs text-[var(--status-danger)] font-mono">{{
-                      res.error
-                    }}</span>
+                    <span class="text-xs text-[var(--status-danger)]">{{ res.error }}</span>
                   </div>
                   <template v-else>
                     <div
                       class="ai-asset-actions absolute top-4 right-4 z-10 flex items-center gap-2 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity duration-300"
                     >
                       <button
-                        class="w-10 h-10 flex items-center justify-center rounded-full bg-[var(--glass-bg)] border border-[var(--glass-border)] text-[var(--text-1)] hover:text-[var(--brand-blue)] transition-colors shadow-overlay backdrop-blur-md"
+                        class="w-10 h-10 flex items-center justify-center rounded-full bg-[var(--glass-bg)] border border-[var(--glass-border)] text-[var(--text-1)] hover:text-[var(--brand-blue)] shadow-overlay backdrop-blur-md"
                         title="下载图片"
                         @click.stop.prevent="void downloadAsset(res.url, `ai-${Date.now()}.png`)"
                       >
@@ -1519,7 +1393,7 @@ const handleComposerSend = (payload: AiComposerSendPayload) => {
                       </button>
                       <button
                         v-if="isCoverPickerMode"
-                        class="w-10 h-10 flex items-center justify-center rounded-full bg-[var(--glass-bg)] border border-[var(--glass-border)] text-[var(--text-1)] hover:text-[var(--brand-blue)] transition-colors shadow-overlay backdrop-blur-md"
+                        class="w-10 h-10 flex items-center justify-center rounded-full bg-[var(--glass-bg)] border border-[var(--glass-border)] text-[var(--text-1)] hover:text-[var(--brand-blue)] shadow-overlay backdrop-blur-md"
                         :disabled="isAssetActionBusy(makeAssetActionKey(msg.id, idx, 'cover'))"
                         title="上传到当前投稿封面"
                         @click.stop.prevent="
@@ -1541,6 +1415,7 @@ const handleComposerSend = (payload: AiComposerSendPayload) => {
                     </div>
                     <img
                       :src="res.url"
+                      :alt="`生成的图片 ${idx + 1}`"
                       referrerpolicy="no-referrer"
                       loading="lazy"
                       decoding="async"
@@ -1552,7 +1427,7 @@ const handleComposerSend = (payload: AiComposerSendPayload) => {
                 </div>
               </div>
 
-              <!-- Epic Video Container -->
+              <!-- 生成视频 -->
               <div v-if="msg.type === 'video_gen'" class="mt-4 w-full">
                 <div
                   v-if="msg.isLoading"
@@ -1568,9 +1443,7 @@ const handleComposerSend = (payload: AiComposerSendPayload) => {
                     <Loader2 class="h-4 w-4 sm:h-7 sm:w-7 animate-spin text-[var(--brand-blue)]" />
                   </div>
                   <div class="relative z-10 flex flex-col items-center gap-1 sm:gap-2 text-center">
-                    <span
-                      class="text-[10px] font-mono tracking-[0.3em] font-bold text-[var(--brand-blue)]"
-                    >
+                    <span class="text-[10px] tracking-[0.3em] font-bold text-[var(--brand-blue)]">
                       {{ (msg.status || 'queued').toUpperCase() }}
                     </span>
                     <span class="text-sm font-medium text-[var(--text-1)]">
@@ -1602,7 +1475,7 @@ const handleComposerSend = (payload: AiComposerSendPayload) => {
                     class="ai-asset-actions absolute top-4 right-4 z-10 flex items-center gap-2 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity duration-300"
                   >
                     <button
-                      class="w-10 h-10 flex items-center justify-center rounded-full bg-[var(--glass-bg)] border border-[var(--glass-border)] text-[var(--text-1)] hover:text-[var(--brand-blue)] transition-colors shadow-overlay backdrop-blur-md"
+                      class="w-10 h-10 flex items-center justify-center rounded-full bg-[var(--glass-bg)] border border-[var(--glass-border)] text-[var(--text-1)] hover:text-[var(--brand-blue)] shadow-overlay backdrop-blur-md"
                       title="下载视频"
                       @click.prevent="
                         void downloadAsset(msg.results?.[0]?.url || '', `ai-vid-${Date.now()}.mp4`)
@@ -1612,7 +1485,7 @@ const handleComposerSend = (payload: AiComposerSendPayload) => {
                     </button>
                     <button
                       v-if="showVideoSubmitAction"
-                      class="w-10 h-10 flex items-center justify-center rounded-full bg-[var(--glass-bg)] border border-[var(--glass-border)] text-[var(--text-1)] hover:text-[var(--brand-blue)] transition-colors shadow-overlay backdrop-blur-md"
+                      class="w-10 h-10 flex items-center justify-center rounded-full bg-[var(--glass-bg)] border border-[var(--glass-border)] text-[var(--text-1)] hover:text-[var(--brand-blue)] shadow-overlay backdrop-blur-md"
                       :disabled="
                         submissionBlocked ||
                         isAssetActionBusy(makeAssetActionKey(msg.id, 0, 'submit'))
@@ -1641,25 +1514,17 @@ const handleComposerSend = (payload: AiComposerSendPayload) => {
                 </div>
               </div>
             </div>
-
-            <!-- User Avatar Side -->
-            <div v-if="msg.role === 'user'" class="shrink-0 pt-1 hidden sm:block">
-              <AppAvatar
-                :src="authStore.user?.avatar"
-                :name="authStore.user?.username"
-                alt="user"
-                container-class="w-10 h-10 border border-[var(--border-color)] bg-[var(--bg-surface-1)] p-0.5 shadow-surface"
-                image-class="w-full h-full object-cover rounded-full"
-                text-class="text-sm font-bold"
-              />
-            </div>
           </div>
-          <!-- Bottom spacer -->
-          <div class="h-10 shrink-0"></div>
         </div>
 
+        <div v-if="hasConversation && !userPinnedToBottom" class="ai-jump-wrap">
+          <button type="button" class="ai-jump" @click="scrollToBottom(true)">
+            <ArrowDown :size="14" />回到最新消息
+          </button>
+        </div>
         <!-- v-memo：消息流式更新时不重绘底部命令栏；切模型状态在子组件内部 -->
         <AiChatComposer
+          ref="composerRef"
           v-memo="[
             isSending,
             isCoverPickerMode,
@@ -1692,38 +1557,472 @@ const handleComposerSend = (payload: AiComposerSendPayload) => {
           @send="handleComposerSend"
           @stop="stopRequest"
         />
-      </div>
-    </div>
-  </Teleport>
-  <ImageViewer v-model="showPreviewImage" :src="previewImageUrl" />
+      </DialogContent>
+    </DialogPortal>
+    <DialogRoot v-model:open="showPreviewImage">
+      <DialogPortal>
+        <DialogContent class="ai-preview-shell">
+          <DialogTitle class="sr-only">查看生成图片</DialogTitle>
+          <DialogDescription class="sr-only">支持缩放、旋转和下载前预览</DialogDescription>
+          <ImageViewer v-model="showPreviewImage" :src="previewImageUrl" teleport-disabled />
+        </DialogContent>
+      </DialogPortal>
+    </DialogRoot>
+  </DialogRoot>
 </template>
 
 <style scoped lang="scss">
-/* 布局隔离：消息行与滚动区变更不牵连整层 dialog 重算 */
-.ai-dialog-shell {
-  contain: layout style;
-  transform: translateZ(0);
+.ai-preview-shell {
+  position: fixed;
+  z-index: 100100;
+  inset: 0;
+}
+.ai-image-pending {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 18px;
+  overflow: hidden;
+  color: var(--text-2);
+  background: var(--bg-surface-1);
+  font-size: 12px;
+}
+.ai-image-pending__number {
+  position: absolute;
+  top: 14px;
+  left: 16px;
+  font-size: 10px;
+}
+.ai-image-pending__sheen {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, transparent, var(--skeleton-sheen), transparent);
+}
+.ai-dialog-shell[data-state='closed'] {
+  animation: ai-fade-out 140ms ease-in forwards;
+}
+.ai-dialog-overlay[data-state='closed'] {
+  animation: ai-fade-out 140ms ease-in forwards;
 }
 
-.ai-chat-scroll {
-  /* 不用 size/strict containment，避免 flex-1 滚动高度被算成 0 */
-  contain: layout style;
-  overscroll-behavior: contain;
-
-  &--streaming {
-    scroll-behavior: auto;
+@keyframes ai-fade-out {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
   }
 }
 
-.ai-msg-row {
-  content-visibility: auto;
-  contain-intrinsic-size: auto 140px;
-  contain: layout style;
+.ai-dialog-overlay {
+  position: fixed;
+  z-index: 99998;
+  inset: 0;
+  background: var(--scrim-overlay);
+  animation: ai-fade-in 180ms ease-out;
 }
 
+.ai-dialog-shell {
+  position: fixed;
+  z-index: 99999;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  width: min(880px, calc(100% - 48px));
+  height: min(820px, calc(100dvh - 64px));
+  margin: auto;
+  overflow: hidden;
+  color: var(--text-1);
+  background: var(--bg-surface-0);
+  border: 1px solid var(--border-color);
+  border-radius: 24px;
+  box-shadow: var(--shadow-cinematic-value);
+  contain: layout style;
+  animation: ai-panel-in 280ms var(--ease-out-quint);
+}
+
+.ai-dialog-header {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 21px 28px;
+  border-bottom: 1px solid color-mix(in oklch, var(--border-color) 65%, transparent);
+}
+
+.ai-dialog-identity,
+.ai-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.ai-dialog-mark {
+  display: grid;
+  width: 40px;
+  height: 40px;
+  place-items: center;
+  color: var(--brand-blue);
+  background: var(--accent-surface);
+  border: 1px solid color-mix(in oklch, var(--brand-blue) 20%, var(--border-color));
+  border-radius: 14px;
+}
+.ai-dialog-title {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+}
+.ai-dialog-title span,
+.ai-message-author span {
+  padding: 1px 5px;
+  color: var(--text-2);
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  font-size: 9px;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+}
+.ai-dialog-description {
+  margin-top: 4px;
+  color: var(--text-2);
+  font-size: 11px;
+}
+.ai-session-status {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-right: 9px;
+  color: var(--text-2);
+  font-size: 11px;
+}
+.ai-session-status i {
+  width: 5px;
+  height: 5px;
+  background: var(--text-2);
+  border-radius: 50%;
+}
+.ai-session-status .is-active {
+  background: var(--brand-blue);
+  animation: ai-breathe 1.4s ease-in-out infinite;
+}
+.ai-close {
+  display: grid;
+  width: 36px;
+  height: 36px;
+  place-items: center;
+  color: var(--text-2);
+  border-radius: 10px;
+}
+.ai-close:hover {
+  color: var(--text-1);
+  background: var(--bg-surface-2);
+}
+
+.ai-chat-scroll {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 28px;
+  min-height: 0;
+  padding: 26px clamp(20px, 5vw, 60px) 32px;
+  overflow: hidden auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  contain: layout style;
+}
+.ai-conversation-start {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin: 0 0 2px;
+  color: var(--text-2);
+  font-size: 10px;
+  letter-spacing: 0.1em;
+}
+.ai-conversation-start::before,
+.ai-conversation-start::after {
+  flex: 1;
+  height: 1px;
+  background: var(--border-color);
+  content: '';
+}
+.ai-msg-row {
+  display: flex;
+  flex-shrink: 0;
+  gap: 12px;
+  width: 100%;
+  animation: ai-message-in 240ms var(--ease-out-quart);
+}
+.ai-msg-row--user {
+  justify-content: flex-end;
+}
+.ai-message-avatar {
+  display: grid;
+  flex-shrink: 0;
+  width: 30px;
+  height: 30px;
+  place-items: center;
+  color: var(--brand-blue);
+  background: var(--accent-surface);
+  border-radius: 10px;
+}
+.ai-message-content {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+  max-width: calc(100% - 42px);
+}
+.ai-msg-row--assistant .ai-message-content {
+  flex: 1;
+}
+.ai-msg-row--user .ai-message-content {
+  max-width: 82%;
+}
+.ai-message-author {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 28px;
+  color: var(--text-2);
+  font-size: 11px;
+  font-weight: 500;
+}
+.ai-user-bubble {
+  padding: 12px 18px;
+  overflow-wrap: anywhere;
+  color: var(--text-1);
+  background: color-mix(in oklch, var(--brand-blue) 8%, var(--bg-surface-1));
+  border: 1px solid color-mix(in oklch, var(--brand-blue) 12%, var(--border-color));
+  border-radius: 18px 18px 5px;
+  font-size: 14px;
+  line-height: 1.85;
+  white-space: pre-wrap;
+}
+.ai-assistant-bubble {
+  width: 100%;
+  min-width: 0;
+  color: var(--text-1);
+  font-family: inherit;
+  font-size: 14px;
+  line-height: 1.9;
+  overflow-wrap: anywhere;
+}
+.ai-reasoning {
+  width: 100%;
+  color: var(--text-2);
+  background: var(--bg-surface-1);
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  font-size: 12px;
+}
+.ai-reasoning summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 11px 13px;
+  cursor: pointer;
+  list-style: none;
+}
+.ai-reasoning summary::-webkit-details-marker {
+  display: none;
+}
+.ai-reasoning-chevron {
+  margin-left: auto;
+  transition: transform 180ms var(--ease-out-quart);
+}
+.ai-reasoning[open] .ai-reasoning-chevron {
+  transform: rotate(180deg);
+}
+.ai-reasoning-content {
+  max-height: 220px;
+  padding: 12px 16px;
+  overflow: auto;
+  border-top: 1px solid var(--border-color);
+  line-height: 1.8;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.ai-waiting {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 32px;
+  color: var(--text-2);
+  font-size: 12px;
+}
+.ai-waiting-dots {
+  display: flex;
+  gap: 4px;
+}
+.ai-waiting-dots i {
+  width: 4px;
+  height: 4px;
+  background: var(--brand-blue);
+  border-radius: 50%;
+  animation: ai-breathe 1.2s ease-in-out infinite;
+}
+.ai-waiting-dots i:nth-child(2) {
+  animation-delay: 160ms;
+}
+.ai-waiting-dots i:nth-child(3) {
+  animation-delay: 320ms;
+}
+.ai-jump-wrap {
+  position: relative;
+  z-index: 21;
+  display: flex;
+  justify-content: center;
+  height: 0;
+}
+.ai-jump {
+  position: absolute;
+  bottom: 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 14px;
+  color: var(--text-1);
+  background: var(--bg-surface-0);
+  border: 1px solid var(--border-color);
+  border-radius: 99px;
+  box-shadow: var(--shadow-overlay-value);
+  font-size: 12px;
+}
 .ai-video-frame {
   width: min(38rem, 100%);
-  max-width: calc(100vw - 8rem);
+}
+:deep(.ai-stream-cursor) {
+  display: inline-block;
+  width: 5px;
+  height: 14px;
+  margin-left: 5px;
+  vertical-align: -2px;
+  background: var(--brand-blue);
+  border-radius: 2px;
+  animation: ai-breathe 900ms ease-in-out infinite;
+}
+:deep(.markdown-body > :first-child) {
+  margin-top: 0;
+}
+:deep(.markdown-body blockquote) {
+  margin: 16px 0;
+  padding: 4px 16px;
+  color: var(--text-2);
+  border-left: 2px solid var(--brand-blue);
+}
+:deep(.markdown-body table) {
+  display: block;
+  max-width: 100%;
+  margin: 16px 0;
+  overflow-x: auto;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+:deep(.markdown-body th),
+:deep(.markdown-body td) {
+  padding: 10px 14px;
+  border: 1px solid var(--border-color);
+  text-align: left;
+}
+:deep(.markdown-body th) {
+  background: var(--bg-surface-1);
+}
+:deep(.markdown-body img) {
+  max-width: 100%;
+  height: auto;
+  border-radius: 12px;
+}
+.animate-shimmer {
+  animation: ai-shimmer 2s ease-in-out infinite;
+}
+
+@keyframes ai-shimmer {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(100%);
+  }
+}
+
+@keyframes ai-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes ai-panel-in {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes ai-message-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes ai-breathe {
+  0%,
+  100% {
+    opacity: 0.35;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+@media (width <= 600px) {
+  .ai-dialog-shell {
+    width: 100%;
+    height: 100dvh;
+    border: 0;
+    border-radius: 0;
+  }
+  .ai-dialog-header {
+    padding: max(16px, env(safe-area-inset-top)) 18px 16px;
+  }
+  .ai-session-status {
+    display: none;
+  }
+  .ai-chat-scroll {
+    gap: 24px;
+    padding: 20px 18px 28px;
+  }
+  .ai-message-content {
+    max-width: calc(100% - 36px);
+  }
+  .ai-msg-row {
+    gap: 9px;
+  }
+  .ai-message-avatar {
+    width: 27px;
+    height: 27px;
+  }
+  .ai-msg-row--user .ai-message-content {
+    max-width: 90%;
+  }
 }
 
 @media (hover: none) {
@@ -1732,34 +2031,28 @@ const handleComposerSend = (payload: AiComposerSendPayload) => {
   }
 }
 
-.contain-content {
-  contain: content;
-}
-
-:deep(.markdown-body) {
-  font-family: inherit;
-  color: inherit;
-}
-
-:deep(.ai-assistant-bubble) {
-  border-radius: 1.5rem;
-  border: 1px solid var(--border-color);
-  background: var(--bg-surface-1);
-  box-shadow: var(--shadow-raised);
-  padding: 1.15rem 1.25rem;
-
-  /* v-html 高频更新时限制重绘范围 */
-  contain: content;
+@media (prefers-reduced-motion: reduce) {
+  .ai-dialog-overlay,
+  .ai-dialog-shell,
+  .ai-dialog-shell[data-state='closed'],
+  .ai-dialog-overlay[data-state='closed'],
+  .ai-msg-row,
+  .ai-session-status .is-active,
+  .ai-waiting-dots i,
+  .animate-shimmer,
+  :deep(.ai-stream-cursor),
+  :deep(.animate-spin) {
+    animation: none;
+  }
+  .ai-reasoning-chevron {
+    transition: none;
+  }
 }
 
 :deep(.markdown-body h1),
 :deep(.markdown-body h2),
 :deep(.markdown-body h3) {
-  font-family:
-    Inter,
-    system-ui,
-    -apple-system,
-    sans-serif;
+  font-family: inherit;
   font-weight: 700;
   letter-spacing: -0.02em;
   line-height: 1.2;
@@ -1785,11 +2078,7 @@ const handleComposerSend = (payload: AiComposerSendPayload) => {
   text-decoration: underline;
   text-decoration-color: transparent;
   text-underline-offset: 4px;
-  transition:
-    color var(--duration-fast) var(--ease-out-quart),
-    background-color var(--duration-fast) var(--ease-out-quart),
-    border-color var(--duration-fast) var(--ease-out-quart),
-    transform var(--duration-fast) var(--ease-out-quint);
+  transition: transform 180ms var(--ease-out-quart);
 }
 
 :deep(.markdown-body a:hover) {
@@ -1802,7 +2091,7 @@ const handleComposerSend = (payload: AiComposerSendPayload) => {
   border: 1px solid var(--border-color);
   background: var(--bg-surface-0);
   margin: 1.5em 0;
-  box-shadow: 0 24px 44px -36px rgb(15, 15, 15, 0.5);
+  box-shadow: var(--shadow-surface-value);
 }
 
 :deep(.markdown-body .ai-code-toolbar) {
@@ -1832,11 +2121,7 @@ const handleComposerSend = (payload: AiComposerSendPayload) => {
   font-size: 0.72rem;
   font-weight: 700;
   letter-spacing: 0.08em;
-  transition:
-    background-color 180ms ease,
-    border-color 180ms ease,
-    color 180ms ease,
-    transform 180ms ease;
+  transition: transform 180ms var(--ease-out-quart);
 }
 
 :deep(.markdown-body .ai-code-copy:hover) {
@@ -1886,7 +2171,7 @@ const handleComposerSend = (payload: AiComposerSendPayload) => {
 
 :deep(.markdown-body .hljs-comment),
 :deep(.markdown-body .hljs-quote) {
-  color: oklch(62% 0.02 250deg);
+  color: var(--text-2);
   font-style: italic;
 }
 
@@ -1895,7 +2180,7 @@ const handleComposerSend = (payload: AiComposerSendPayload) => {
 :deep(.markdown-body .hljs-literal),
 :deep(.markdown-body .hljs-section),
 :deep(.markdown-body .hljs-link) {
-  color: oklch(55% 0.18 290deg);
+  color: var(--brand-blue);
   font-weight: 600;
 }
 
@@ -1904,7 +2189,7 @@ const handleComposerSend = (payload: AiComposerSendPayload) => {
 :deep(.markdown-body .hljs-params),
 :deep(.markdown-body .hljs-class .hljs-title),
 :deep(.markdown-body .hljs-title.class_) {
-  color: oklch(58% 0.14 55deg);
+  color: var(--status-warning-ink);
 }
 
 :deep(.markdown-body .hljs-string),
@@ -1912,21 +2197,21 @@ const handleComposerSend = (payload: AiComposerSendPayload) => {
 :deep(.markdown-body .hljs-template-tag),
 :deep(.markdown-body .hljs-template-variable),
 :deep(.markdown-body .hljs-addition) {
-  color: oklch(52% 0.14 150deg);
+  color: var(--status-success-ink);
 }
 
 :deep(.markdown-body .hljs-number),
 :deep(.markdown-body .hljs-symbol),
 :deep(.markdown-body .hljs-bullet),
 :deep(.markdown-body .hljs-regexp) {
-  color: oklch(55% 0.16 25deg);
+  color: var(--status-danger-ink);
 }
 
 :deep(.markdown-body .hljs-title),
 :deep(.markdown-body .hljs-title.function_),
 :deep(.markdown-body .hljs-function .hljs-title),
 :deep(.markdown-body .hljs-attribute) {
-  color: oklch(52% 0.16 250deg);
+  color: var(--brand-blue);
 }
 
 :deep(.markdown-body .hljs-variable),
@@ -1934,17 +2219,17 @@ const handleComposerSend = (payload: AiComposerSendPayload) => {
 :deep(.markdown-body .hljs-tag),
 :deep(.markdown-body .hljs-selector-id),
 :deep(.markdown-body .hljs-selector-class) {
-  color: oklch(50% 0.15 350deg);
+  color: var(--status-warning-ink);
 }
 
 :deep(.markdown-body .hljs-meta),
 :deep(.markdown-body .hljs-doctag),
 :deep(.markdown-body .hljs-attr) {
-  color: oklch(50% 0.1 200deg);
+  color: var(--status-info-ink);
 }
 
 :deep(.markdown-body .hljs-deletion) {
-  color: oklch(55% 0.18 25deg);
+  color: var(--status-danger-ink);
 }
 
 :deep(.markdown-body .hljs-emphasis) {
@@ -1953,96 +2238,6 @@ const handleComposerSend = (payload: AiComposerSendPayload) => {
 
 :deep(.markdown-body .hljs-strong) {
   font-weight: 700;
-}
-
-:root.dark :deep(.markdown-body .hljs-comment),
-:root.dark :deep(.markdown-body .hljs-quote),
-.dark :deep(.markdown-body .hljs-comment),
-.dark :deep(.markdown-body .hljs-quote) {
-  color: oklch(68% 0.02 250deg);
-}
-
-:root.dark :deep(.markdown-body .hljs-keyword),
-:root.dark :deep(.markdown-body .hljs-selector-tag),
-:root.dark :deep(.markdown-body .hljs-literal),
-:root.dark :deep(.markdown-body .hljs-section),
-:root.dark :deep(.markdown-body .hljs-link),
-.dark :deep(.markdown-body .hljs-keyword),
-.dark :deep(.markdown-body .hljs-selector-tag),
-.dark :deep(.markdown-body .hljs-literal),
-.dark :deep(.markdown-body .hljs-section),
-.dark :deep(.markdown-body .hljs-link) {
-  color: oklch(78% 0.16 290deg);
-}
-
-:root.dark :deep(.markdown-body .hljs-built_in),
-:root.dark :deep(.markdown-body .hljs-type),
-:root.dark :deep(.markdown-body .hljs-params),
-:root.dark :deep(.markdown-body .hljs-class .hljs-title),
-:root.dark :deep(.markdown-body .hljs-title.class_),
-.dark :deep(.markdown-body .hljs-built_in),
-.dark :deep(.markdown-body .hljs-type),
-.dark :deep(.markdown-body .hljs-params),
-.dark :deep(.markdown-body .hljs-class .hljs-title),
-.dark :deep(.markdown-body .hljs-title.class_) {
-  color: oklch(82% 0.12 75deg);
-}
-
-:root.dark :deep(.markdown-body .hljs-string),
-:root.dark :deep(.markdown-body .hljs-meta-string),
-:root.dark :deep(.markdown-body .hljs-template-tag),
-:root.dark :deep(.markdown-body .hljs-template-variable),
-:root.dark :deep(.markdown-body .hljs-addition),
-.dark :deep(.markdown-body .hljs-string),
-.dark :deep(.markdown-body .hljs-meta-string),
-.dark :deep(.markdown-body .hljs-template-tag),
-.dark :deep(.markdown-body .hljs-template-variable),
-.dark :deep(.markdown-body .hljs-addition) {
-  color: oklch(80% 0.12 150deg);
-}
-
-:root.dark :deep(.markdown-body .hljs-number),
-:root.dark :deep(.markdown-body .hljs-symbol),
-:root.dark :deep(.markdown-body .hljs-bullet),
-:root.dark :deep(.markdown-body .hljs-regexp),
-.dark :deep(.markdown-body .hljs-number),
-.dark :deep(.markdown-body .hljs-symbol),
-.dark :deep(.markdown-body .hljs-bullet),
-.dark :deep(.markdown-body .hljs-regexp) {
-  color: oklch(78% 0.14 40deg);
-}
-
-:root.dark :deep(.markdown-body .hljs-title),
-:root.dark :deep(.markdown-body .hljs-title.function_),
-:root.dark :deep(.markdown-body .hljs-function .hljs-title),
-:root.dark :deep(.markdown-body .hljs-attribute),
-.dark :deep(.markdown-body .hljs-title),
-.dark :deep(.markdown-body .hljs-title.function_),
-.dark :deep(.markdown-body .hljs-function .hljs-title),
-.dark :deep(.markdown-body .hljs-attribute) {
-  color: oklch(80% 0.12 230deg);
-}
-
-:root.dark :deep(.markdown-body .hljs-variable),
-:root.dark :deep(.markdown-body .hljs-name),
-:root.dark :deep(.markdown-body .hljs-tag),
-:root.dark :deep(.markdown-body .hljs-selector-id),
-:root.dark :deep(.markdown-body .hljs-selector-class),
-.dark :deep(.markdown-body .hljs-variable),
-.dark :deep(.markdown-body .hljs-name),
-.dark :deep(.markdown-body .hljs-tag),
-.dark :deep(.markdown-body .hljs-selector-id),
-.dark :deep(.markdown-body .hljs-selector-class) {
-  color: oklch(82% 0.12 350deg);
-}
-
-:root.dark :deep(.markdown-body .hljs-meta),
-:root.dark :deep(.markdown-body .hljs-doctag),
-:root.dark :deep(.markdown-body .hljs-attr),
-.dark :deep(.markdown-body .hljs-meta),
-.dark :deep(.markdown-body .hljs-doctag),
-.dark :deep(.markdown-body .hljs-attr) {
-  color: oklch(78% 0.08 200deg);
 }
 
 :deep(.markdown-body p) {
@@ -2081,144 +2276,5 @@ const handleComposerSend = (payload: AiComposerSendPayload) => {
 
 .custom-scrollbar:hover::-webkit-scrollbar-thumb {
   background: var(--text-2);
-}
-
-.ease-out-expo {
-  transition-timing-function: cubic-bezier(0.16, 1, 0.3, 1);
-}
-
-.zen-modal-enter-active,
-.zen-modal-leave-active {
-  transition: opacity 0.16s linear;
-}
-
-.zen-modal-enter-from,
-.zen-modal-leave-to {
-  opacity: 0;
-}
-
-.animate-shimmer {
-  animation: shimmer 2.5s infinite linear;
-}
-
-.image-skeleton-shimmer {
-  position: absolute;
-  inset: -20%;
-  background: linear-gradient(
-    115deg,
-    transparent 22%,
-    color-mix(in oklab, var(--text-1) 10%, transparent) 48%,
-    transparent 72%
-  );
-  background-size: 220% 100%;
-  animation: shimmer 2.8s infinite linear;
-}
-
-.image-skeleton-grid {
-  opacity: 0.42;
-  background-image:
-    linear-gradient(color-mix(in oklab, var(--border-color) 72%, transparent) 1px, transparent 1px),
-    linear-gradient(
-      90deg,
-      color-mix(in oklab, var(--border-color) 72%, transparent) 1px,
-      transparent 1px
-    );
-  background-size: 28px 28px;
-}
-
-.image-skeleton-topfade {
-  background: linear-gradient(
-    180deg,
-    color-mix(in oklab, var(--bg-surface-0) 96%, transparent),
-    transparent
-  );
-}
-
-.image-skeleton-bottomfade {
-  background: linear-gradient(
-    0deg,
-    color-mix(in oklab, var(--bg-surface-0) 98%, transparent),
-    transparent
-  );
-}
-
-.image-skeleton-frame {
-  position: relative;
-  display: grid;
-  place-items: center;
-  aspect-ratio: 1 / 1;
-  border-radius: 1.1rem;
-  border: 1px solid color-mix(in oklab, var(--border-color) 88%, transparent);
-  background: linear-gradient(
-    180deg,
-    color-mix(in oklab, var(--bg-surface-1) 88%, transparent),
-    color-mix(in oklab, var(--bg-surface-2) 84%, transparent)
-  );
-  overflow: hidden;
-
-  &__inner {
-    width: 44%;
-    height: 44%;
-    border-radius: 999px;
-    border: 1px solid color-mix(in oklab, var(--text-2) 35%, transparent);
-    background: color-mix(in oklab, var(--bg-surface-0) 88%, transparent);
-    box-shadow: inset 0 0 0 10px color-mix(in oklab, var(--bg-surface-1) 90%, transparent);
-  }
-}
-
-.image-skeleton-line {
-  height: 0.7rem;
-  width: 100%;
-  border-radius: 999px;
-  background: linear-gradient(
-    90deg,
-    color-mix(in oklab, var(--bg-surface-2) 94%, transparent),
-    color-mix(in oklab, var(--text-1) 12%, transparent),
-    color-mix(in oklab, var(--bg-surface-2) 94%, transparent)
-  );
-  background-size: 200% 100%;
-  animation: shimmer 2.4s infinite linear;
-
-  &--short {
-    width: 5rem;
-  }
-
-  &--medium {
-    width: 72%;
-  }
-}
-
-/* Ultra Premium Typography Reset adapted for theme variables */
-
-/*
- * 语法高亮色板：必须有足够对比度，之前几乎全是 text-1/text-2 灰阶，
- * 看起来像“完全没有高亮”。
- */
-
-/* Scrollbar Minimalist */
-
-/* Animations — 仅 transform/opacity，时长缩短以降低打开卡顿 */
-
-/* 打开动画只做 opacity，避免 scale 触发大面积图层重绘 */
-@media (prefers-reduced-motion: reduce) {
-  .zen-modal-enter-active,
-  .zen-modal-leave-active,
-  .animate-shimmer,
-  .ai-wait-dot,
-  :deep(.animate-spin),
-  :deep(.animate-pulse) {
-    animation: none !important;
-    transition: none !important;
-  }
-}
-
-@keyframes shimmer {
-  0% {
-    background-position: -200% 0;
-  }
-
-  100% {
-    background-position: 200% 0;
-  }
 }
 </style>

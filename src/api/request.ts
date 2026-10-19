@@ -402,11 +402,12 @@ request.interceptors.response.use(
     }
 
     // Skip toast for silent requests / 用户取消
-    if (config?.silent || error.code === 'ERR_CANCELED') {
+    if (error.code === 'ERR_CANCELED') {
       return Promise.reject(error)
     }
 
-    toast.error(getTransportErrorMessage(error))
+    error.message = getTransportErrorMessage(error)
+    if (!config?.silent) toast.error(error.message)
     return Promise.reject(error)
   }
 )

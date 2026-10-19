@@ -16,7 +16,7 @@ import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { RefreshCw, Target } from 'lucide-vue-next'
 import { getClickCaptcha, type ClickCaptcha } from '@/api/captcha'
 import type { ClickCaptchaPoint } from '@/api/user'
-import { Button } from '@/components/ui/button'
+import { Button, buttonVariants } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog'
 import {
   CAPTCHA_RECOIL_DURATION,
@@ -349,10 +349,9 @@ defineExpose({
       class="cap-dialog max-w-[min(100vw-1.5rem,360px)] gap-0 overflow-hidden rounded-2xl border-border/60 bg-background p-0 shadow-cinematic sm:max-w-[400px]"
       overlay-class="cap-dialog-overlay"
       @after-leave="handleAfterLeave"
-      @keydown="handleUndoKey"
       @pointer-down-outside="(e: Event) => e.preventDefault()"
     >
-      <div class="cap-shell">
+      <div class="cap-shell" @keydown="handleUndoKey">
         <DialogTitle class="cap-shell__title">
           <Target class="cap-shell__title-icon" aria-hidden="true" />
           点选验证
@@ -488,16 +487,15 @@ defineExpose({
                     </div>
 
                     <div class="click-captcha__actions">
-                      <Button
+                      <button
                         type="button"
-                        variant="ghost"
-                        size="xs"
+                        :class="buttonVariants({ variant: 'ghost', size: 'xs' })"
                         :disabled="!canPick || points.length === 0"
                         aria-keyshortcuts="Backspace Delete"
                         @click="removeLastPoint"
                       >
                         撤销
-                      </Button>
+                      </button>
                       <Button
                         type="button"
                         size="xs"

@@ -69,6 +69,7 @@ const handleChatOpenChange = (open: boolean) => {
  * 切主题时只有 body 背景在过渡，卡片 / 文字 / 边框全部硬跳，整页像分两批变色。
  * 但常驻的 `*` 过渡会让之后每一次 hover / 滚动都拖尾，所以改成开一个短窗口：
  * 检测到 <html> 的 dark 类翻转时挂上 .theme-switching，动画跑完再摘掉。
+ * 手机端优先走 theme-revealing 快照扩散；此处兼顾桌面和旧浏览器的颜色渐变。
  * 真正的过渡声明在 main.scss 末尾（含 prefers-reduced-motion 降级与播放器豁免）。
  *
  * 用 MutationObserver 而不是 watch(themeStore.theme)：theme === 'system' 时
@@ -77,6 +78,7 @@ const handleChatOpenChange = (open: boolean) => {
  * .theme-switching 会落在同一次重算里，过渡才起得来。
  */
 const THEME_TRANSITION_WINDOW = 360
+const MOBILE_THEME_TRANSITION_WINDOW = 680
 let themeSwitchTimer: ReturnType<typeof setTimeout> | undefined
 let themeObserver: MutationObserver | undefined
 
@@ -89,12 +91,23 @@ const observeThemeSwitch = () => {
     if (isDark === wasDark) return
     wasDark = isDark
 
+    // 手机端由整页快照扩散接管；颜色补间会使新快照捕获到半亮半暗的状态。
+    if (root.classList.contains('theme-revealing')) {
+      if (themeSwitchTimer) clearTimeout(themeSwitchTimer)
+      themeSwitchTimer = undefined
+      root.classList.remove('theme-switching')
+      return
+    }
+
     root.classList.add('theme-switching')
     if (themeSwitchTimer) clearTimeout(themeSwitchTimer)
+    const transitionWindow = window.matchMedia('(max-width: 767px), (pointer: coarse)').matches
+      ? MOBILE_THEME_TRANSITION_WINDOW
+      : THEME_TRANSITION_WINDOW
     themeSwitchTimer = setTimeout(() => {
       root.classList.remove('theme-switching')
       themeSwitchTimer = undefined
-    }, THEME_TRANSITION_WINDOW)
+    }, transitionWindow)
   })
 
   themeObserver.observe(root, { attributes: true, attributeFilter: ['class'] })

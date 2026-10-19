@@ -98,10 +98,11 @@ export const fetchAiChatStream = async (
   onChunk: (text: string) => void,
   onReasoningChunk: (text: string) => void,
   onComplete: () => void,
-  onError: (err: Error) => void
+  onError: (err: Error) => void,
+  signal?: AbortSignal
 ) => {
   let completed = false
-  let receivedDelta = false
+  let reader: ReadableStreamDefaultReader<Uint8Array> | undefined
 
   const safeComplete = () => {
     if (completed) return
@@ -119,6 +120,7 @@ export const fetchAiChatStream = async (
         Authorization: token ? `Bearer ${token}` : '',
       },
       body: JSON.stringify(payload),
+      signal,
     })
 
     // HTTP 层失败（非本项目常见路径，但需兜底）
@@ -147,11 +149,14 @@ export const fetchAiChatStream = async (
       throw new Error('AI 响应为空，请稍后重试')
     }
 
-    const reader = response.body.getReader()
+    reader = response.body.getReader()
     const decoder = new TextDecoder('utf-8')
     let buffer = ''
+    let dataLines: string[] = []
+    let eventType = ''
 
     const handleDataPayload = (dataStr: string) => {
+      if (completed) return
       if (dataStr === '[DONE]') {
         safeComplete()
         return
@@ -161,88 +166,98 @@ export const fetchAiChatStream = async (
       try {
         dataObj = JSON.parse(dataStr) as Record<string, unknown> & AiBusinessResponse
       } catch {
-        // 半包 / 非 JSON：忽略，等后续完整行
-        return
+        throw new Error('AI 响应格式异常，请稍后重试')
       }
+      if (!dataObj || typeof dataObj !== 'object') return
+      const type = dataObj.type || eventType
 
       // 部分上游会在 SSE data 里塞业务错误 JSON
       const bizErr = parseBusinessJsonError(dataObj)
       if (bizErr) throw bizErr
 
-      if (dataObj.type === 'response.output_text.delta') {
+      if (type === 'response.output_text.delta') {
         const text = asDeltaText(dataObj.delta)
         if (text !== null) {
-          receivedDelta = true
           onChunk(text)
         }
         return
       }
 
-      if (dataObj.type === 'response.reasoning_summary_text.delta') {
+      if (type === 'response.reasoning_summary_text.delta') {
         const text = asDeltaText(dataObj.delta)
         if (text !== null) {
-          receivedDelta = true
           onReasoningChunk(text)
         }
         return
       }
 
-      if (dataObj.type === 'response.completed' || dataObj.type === 'response.done') {
+      if (type === 'response.completed' || type === 'response.done') {
         safeComplete()
         return
       }
 
-      if (dataObj.type === 'error' || dataObj.type === 'response.failed') {
+      if (type === 'error' || type === 'response.failed' || type === 'response.incomplete') {
+        const responseData = dataObj.response as { error?: { message?: string } } | undefined
+        const errorData = dataObj.error as { message?: string } | undefined
         const errMsg =
           (typeof dataObj.message === 'string' && dataObj.message) ||
           (typeof dataObj.msg === 'string' && dataObj.msg) ||
+          responseData?.error?.message ||
+          errorData?.message ||
           DEFAULT_AI_ERROR
-        throw new Error(errMsg)
+        throw new Error(formatAiErrorMessage(errMsg))
       }
     }
 
-    while (true) {
+    const handleLine = (rawLine: string) => {
+      const line = rawLine.endsWith('\r') ? rawLine.slice(0, -1) : rawLine
+      if (!line) {
+        if (dataLines.length) handleDataPayload(dataLines.join('\n'))
+        dataLines = []
+        eventType = ''
+      } else if (line.startsWith('data:')) {
+        dataLines.push(line.slice(5).replace(/^ /, ''))
+      } else if (line.startsWith('event:')) {
+        eventType = line.slice(6).trim()
+      }
+    }
+
+    while (!completed) {
       const { value, done } = await reader.read()
       if (done) break
       buffer += decoder.decode(value, { stream: true })
 
-      const lines = buffer.split('\n')
-      buffer = lines.pop() || ''
-
-      for (const line of lines) {
-        if (line.trim() === '') continue
-        if (line.startsWith('data: ')) {
-          handleDataPayload(line.slice(6))
-        }
+      let newline: number
+      while (!completed && (newline = buffer.indexOf('\n')) !== -1) {
+        const line = buffer.slice(0, newline)
+        buffer = buffer.slice(newline + 1)
+        handleLine(line)
       }
     }
 
-    // final buffer check
-    if (buffer.trim()) {
-      const line = buffer.trim()
-      if (line.startsWith('data: ')) {
-        handleDataPayload(line.slice(6))
-      } else if (line.startsWith('{')) {
-        // 偶发：整段 JSON 错误体被当成 stream 读完（content-type 未标明 json）
-        try {
-          const body = JSON.parse(line) as AiBusinessResponse
-          const bizErr = parseBusinessJsonError(body)
-          if (bizErr) throw bizErr
-        } catch (err) {
-          if (err instanceof Error && !(err instanceof SyntaxError)) throw err
-        }
+    if (!completed) {
+      buffer += decoder.decode()
+      if (buffer.trim().startsWith('{')) {
+        const body = JSON.parse(buffer) as AiBusinessResponse
+        const bizErr = parseBusinessJsonError(body)
+        if (bizErr) throw bizErr
+      } else {
+        if (buffer) handleLine(buffer)
+        handleLine('')
       }
     }
 
-    // 流正常结束但没有任何内容：按失败处理，避免前端一直转圈
-    if (!completed && !receivedDelta) {
-      throw new Error(DEFAULT_AI_ERROR)
+    // 缺少终止事件的 EOF 可能是代理断线，保留部分回答并提示中断。
+    if (!completed) {
+      throw new Error('AI 回答中断，请稍后重试')
     }
-
-    // 有内容但未收到 completed 事件：仍收尾，避免 isLoading 卡住
-    safeComplete()
   } catch (err) {
     onError(err instanceof Error ? err : new Error(String(err)))
+  } finally {
+    if (reader) {
+      await reader.cancel().catch(() => {})
+      reader.releaseLock()
+    }
   }
 }
 
@@ -278,8 +293,8 @@ export interface AiImageGenParams {
   size?: string
 }
 
-export const aiGenerateImage = (data: AiImageGenParams) => {
-  return request.post('/common/ai/images/generations', data, { timeout: 120000 })
+export const aiGenerateImage = (data: AiImageGenParams, signal?: AbortSignal) => {
+  return request.post('/common/ai/images/generations', data, { timeout: 120000, signal })
 }
 
 export interface AiImageEditParams {
@@ -293,8 +308,8 @@ export interface AiImageEditParams {
   size?: string
 }
 
-export const aiEditImage = (data: AiImageEditParams) => {
-  return request.post('/common/ai/images/edits', data, { timeout: 120000 })
+export const aiEditImage = (data: AiImageEditParams, signal?: AbortSignal) => {
+  return request.post('/common/ai/images/edits', data, { timeout: 120000, signal })
 }
 
 export interface AiVideoGenParams {
@@ -309,12 +324,12 @@ export interface AiVideoGenParams {
   watermark?: boolean
 }
 
-export const aiGenerateVideo = (data: AiVideoGenParams) => {
-  return request.post('/common/ai/videos/generations', data, { timeout: 120000 })
+export const aiGenerateVideo = (data: AiVideoGenParams, signal?: AbortSignal) => {
+  return request.post('/common/ai/videos/generations', data, { timeout: 120000, signal })
 }
 
-export const aiGetVideoStatus = (requestId: string) => {
-  return request.get('/common/ai/videos/status', { params: { requestID: requestId } })
+export const aiGetVideoStatus = (requestId: string, signal?: AbortSignal) => {
+  return request.get('/common/ai/videos/status', { params: { requestID: requestId }, signal })
 }
 
 const AI_PROXY_PATHS = new Set(['/v1/common/ai/assets', '/common/ai/assets'])

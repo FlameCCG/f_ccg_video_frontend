@@ -24,18 +24,20 @@ import {
 } from '@/api/dynamic'
 import { toggleVideoLike } from '@/api/video'
 import { uploadImage } from '@/api/upload'
-import { getHotSearchKeywords, type HotKeywordItem } from '@/api/video'
+import HotSearchCard from '@/components/search/HotSearchCard.vue'
+import DynamicIntroCard from '@/components/dynamic/DynamicIntroCard.vue'
 import { resolveMediaUrl } from '@/utils/media'
 import CommentSection from '@/components/comment/CommentSection.vue'
 import AppAvatar from '@/components/common/AppAvatar.vue'
+import EmptyState from '@/components/common/EmptyState.vue'
 import { toast } from 'vue-sonner'
+import { PopoverRoot, PopoverTrigger, PopoverContent, PopoverPortal } from 'reka-ui'
 import {
   ImagePlus,
   SmilePlus,
   MessageSquare,
   Share2,
   ThumbsUp,
-  Eye,
   ChevronLeft,
   ChevronRight,
   Loader2,
@@ -79,7 +81,6 @@ const feedInitLoaded = ref(false)
 
 const followUsers = ref<FollowUserItem[]>([])
 const followUsersLoading = ref(false)
-const hotKeywords = ref<HotKeywordItem[]>([])
 
 // null = "全部动态"（本人 + 关注用户聚合流），否则为选中的具体作者
 const selectedUserId = ref<number | null>(null)
@@ -394,14 +395,6 @@ const insertEmoji = (emoji: string) => {
   }
 }
 
-const toggleEmojiPicker = () => {
-  showEmojiPicker.value = !showEmojiPicker.value
-}
-
-const closeEmojiOnOutsideClick = () => {
-  showEmojiPicker.value = false
-}
-
 const expandedComments = ref<Set<string>>(new Set())
 const savedCommentId = ref<number | undefined>()
 
@@ -496,23 +489,12 @@ const goUserTab = (id: number, tab: string) =>
 
 const unreadFollowUsers = computed(() => followUsers.value.filter((u) => u.isUnread))
 
-const fetchHotKeywords = async () => {
-  try {
-    hotKeywords.value = await getHotSearchKeywords()
-  } catch {
-    /* noop */
-  }
-}
-
 onMounted(() => {
-  document.addEventListener('click', closeEmojiOnOutsideClick)
   void fetchFeed(1)
   void fetchFollowUsers()
-  void fetchHotKeywords()
 })
 
 onBeforeUnmount(() => {
-  document.removeEventListener('click', closeEmojiOnOutsideClick)
   feedItemRefs.clear()
   if (clearFeedHighlightTimer) clearTimeout(clearFeedHighlightTimer)
   if (restoreFeedScrollFrame !== null) window.cancelAnimationFrame(restoreFeedScrollFrame)
@@ -640,7 +622,7 @@ watch(
               <textarea
                 ref="editorRef"
                 v-model="newContent"
-                class="dyn-editor-input"
+                class="dyn-editor-input field-control"
                 rows="2"
                 placeholder="好的标题更容易获得支持，建议20字"
                 @focus="showEmojiPicker = false"
@@ -660,23 +642,40 @@ watch(
                       @change="handleImageUpload"
                     />
                   </label>
-                  <div class="relative">
-                    <button class="dyn-tool-btn" title="表情" @click.stop="toggleEmojiPicker">
-                      <SmilePlus :size="18" />
-                    </button>
-                    <div v-if="showEmojiPicker" class="dyn-emoji-panel" @click.stop>
-                      <div class="dyn-emoji-grid">
-                        <button
-                          v-for="emoji in emojiList"
-                          :key="emoji"
-                          class="dyn-emoji-item"
-                          @click="insertEmoji(emoji)"
-                        >
-                          {{ emoji }}
-                        </button>
-                      </div>
-                    </div>
-                  </div>
+                  <PopoverRoot v-model:open="showEmojiPicker">
+                    <PopoverTrigger as-child>
+                      <button type="button" class="dyn-tool-btn" title="表情" aria-label="选择表情">
+                        <SmilePlus :size="18" />
+                      </button>
+                    </PopoverTrigger>
+                    <PopoverPortal>
+                      <PopoverContent
+                        as-child
+                        side="bottom"
+                        align="start"
+                        :side-offset="8"
+                        :collision-padding="12"
+                        :avoid-collisions="true"
+                        sticky="always"
+                        @close-auto-focus.prevent
+                      >
+                        <div class="dyn-emoji-panel" role="dialog" aria-label="选择表情">
+                          <div class="dyn-emoji-grid">
+                            <button
+                              v-for="emoji in emojiList"
+                              :key="emoji"
+                              type="button"
+                              class="dyn-emoji-item"
+                              :aria-label="emoji"
+                              @click="insertEmoji(emoji)"
+                            >
+                              {{ emoji }}
+                            </button>
+                          </div>
+                        </div>
+                      </PopoverContent>
+                    </PopoverPortal>
+                  </PopoverRoot>
                 </div>
                 <div class="dyn-editor-actions">
                   <span class="dyn-char-count">{{ newContent.length }}</span>
@@ -905,10 +904,26 @@ watch(
             </div>
           </TransitionGroup>
 
-          <div v-if="feedItems.length === 0 && !feedLoading && feedInitLoaded" class="dyn-empty">
-            <Eye :size="48" class="text-muted-foreground" />
-            <p>还没有动态，关注更多UP主吧</p>
-          </div>
+          <EmptyState
+            v-if="feedItems.length === 0 && !feedLoading && feedInitLoaded"
+            variant="profile-feed"
+            :title="
+              activeTab === 'video'
+                ? '还没有视频动态'
+                : activeTab === 'image'
+                  ? '还没有图文动态'
+                  : '还没有新的动态'
+            "
+            :description="
+              selectedUserId
+                ? '这位 UP 主还没有相关更新，精彩值得等待。'
+                : '关注喜欢的 UP 主，让新的故事循着热爱抵达。'
+            "
+          >
+            <RouterLink to="/" class="inline-flex min-h-9 items-center gap-2 text-sm text-primary">
+              去首页发现精彩 <ChevronRight :size="14" />
+            </RouterLink>
+          </EmptyState>
 
           <div v-if="feedLoading && feedItems.length === 0" class="dyn-loading">
             <Loader2 :size="24" class="animate-spin text-primary" />
@@ -925,15 +940,7 @@ watch(
 
       <!-- ====== Right Sidebar ====== -->
       <aside class="dyn-sidebar-right">
-        <div class="dyn-right-card dyn-tips-card">
-          <div class="dyn-tips-icon">
-            <Zap :size="20" class="text-primary" />
-          </div>
-          <div class="dyn-tips-body">
-            <div class="dyn-tips-title">动态</div>
-            <p class="dyn-tips-desc">关注的UP主发布的最新内容都会出现在这里</p>
-          </div>
-        </div>
+        <DynamicIntroCard />
 
         <div v-if="unreadFollowUsers.length > 0" class="dyn-right-card">
           <div class="dyn-right-card-header">
@@ -962,28 +969,7 @@ watch(
           </div>
         </div>
 
-        <!-- Hot Search Card -->
-        <div v-if="hotKeywords.length > 0" class="dyn-right-card">
-          <div class="dyn-right-card-header">
-            <span>CCG热搜</span>
-          </div>
-          <div class="dyn-hot-list">
-            <div
-              v-for="(kw, idx) in hotKeywords.slice(0, 10)"
-              :key="kw.keyword"
-              class="dyn-hot-item"
-              @click="router.push({ name: 'search', query: { keyword: kw.keyword } })"
-            >
-              <span class="dyn-hot-rank" :class="idx < 3 ? 'dyn-hot-rank-top' : ''">
-                {{ idx + 1 }}
-              </span>
-              <span class="dyn-hot-keyword">{{ kw.keyword }}</span>
-              <span v-if="idx < 3" class="dyn-hot-badge">
-                {{ idx === 0 ? '🔥' : idx === 1 ? '🔥' : '热' }}
-              </span>
-            </div>
-          </div>
-        </div>
+        <HotSearchCard />
       </aside>
     </div>
   </div>
@@ -1217,22 +1203,11 @@ watch(
 
   &-input {
     width: 100%;
-    border: 1px solid var(--color-border);
     border-radius: 8px;
     padding: 10px 12px;
     font-size: 13px;
-    color: var(--color-foreground);
     resize: none;
-    transition: border-color var(--duration-fast) var(--ease-out-quart);
     line-height: 1.6;
-
-    &:focus {
-      border-color: var(--color-primary);
-    }
-
-    &::placeholder {
-      color: var(--color-muted-foreground);
-    }
   }
 
   &-preview {
@@ -1305,21 +1280,22 @@ watch(
 }
 
 .dyn-emoji-panel {
-  position: absolute;
-  bottom: calc(100% + 8px);
-  left: 0;
-  width: 320px;
-  background-color: var(--color-card);
+  z-index: 100;
+  width: min(320px, calc(100vw - 24px));
+  max-height: min(280px, var(--reka-popover-content-available-height));
+  padding: 10px;
+  overflow: auto;
+  overscroll-behavior: contain;
+  color: var(--text-1);
+  background: var(--bg-surface-1);
   border: 1px solid var(--color-border);
   border-radius: 8px;
   box-shadow: var(--shadow-overlay);
-  padding: 10px;
-  z-index: 100;
 }
 
 .dyn-emoji-grid {
   display: grid;
-  grid-template-columns: repeat(8, 1fr);
+  grid-template-columns: repeat(8, minmax(0, 1fr));
   gap: 2px;
 }
 
@@ -1327,7 +1303,8 @@ watch(
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 34px;
+  min-width: 0;
+  width: 100%;
   height: 34px;
   font-size: 20px;
   border-radius: 6px;
@@ -1885,20 +1862,6 @@ watch(
   }
 }
 
-.dyn-empty {
-  padding: 60px 0;
-  text-align: center;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 12px;
-
-  p {
-    font-size: 13px;
-    color: var(--color-muted-foreground);
-  }
-}
-
 .dyn-loading {
   padding: 40px 0;
   text-align: center;
@@ -1943,7 +1906,7 @@ watch(
   top: 20px;
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 16px;
 }
 
 .dyn-right-card {
@@ -1963,43 +1926,6 @@ watch(
     font-weight: 600;
     color: var(--color-foreground);
   }
-}
-
-.dyn-tips-card {
-  display: flex;
-  align-items: flex-start;
-  gap: 12px;
-  background: oklch(var(--primary) / 0.05);
-  border: 1px solid oklch(var(--primary) / 0.1);
-}
-
-.dyn-tips-icon {
-  width: 36px;
-  height: 36px;
-  border-radius: 8px;
-  background-color: var(--color-card);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-}
-
-.dyn-tips-body {
-  flex: 1;
-  min-width: 0;
-}
-
-.dyn-tips-title {
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--color-primary);
-  margin-bottom: 4px;
-}
-
-.dyn-tips-desc {
-  font-size: 12px;
-  color: var(--color-muted-foreground);
-  line-height: 1.5;
 }
 
 .dyn-recent-list {
@@ -2051,59 +1977,6 @@ watch(
   padding: 2px 6px;
   background: oklch(var(--primary) / 0.08);
   border-radius: 4px;
-}
-
-.dyn-hot-list {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.dyn-hot-item {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 7px 4px;
-  border-radius: 6px;
-  cursor: pointer;
-  transition: background 0.12s;
-
-  &:hover {
-    background-color: var(--color-secondary);
-  }
-}
-
-.dyn-hot-rank {
-  width: 18px;
-  height: 18px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 12px;
-  font-weight: 700;
-  color: var(--color-muted-foreground);
-  flex-shrink: 0;
-  border-radius: 4px;
-
-  &-top {
-    background-color: var(--color-primary);
-    color: var(--color-primary-foreground);
-  }
-}
-
-.dyn-hot-keyword {
-  flex: 1;
-  min-width: 0;
-  font-size: 13px;
-  color: var(--color-foreground);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.dyn-hot-badge {
-  font-size: 11px;
-  flex-shrink: 0;
 }
 
 /* ===================== Left Sidebar ===================== */

@@ -25,6 +25,14 @@ $motion-exempt: '.artplayer-app, .artplayer-app *, [data-is-danmu-clone], .motio
     --text-1: oklch(25% 0.02 240deg);
     --text-2: oklch(51% 0.018 238deg);
     --border-color: oklch(89% 0.014 232deg);
+    --partition-art-blend: normal;
+
+    // 输入区域统一使用实体底色；深浅主题通过基础变量自动换色。
+    --field-bg: color-mix(in oklch, var(--bg-surface-1) 70%, var(--bg-surface-0));
+    --field-border: color-mix(in oklch, var(--text-2) 20%, var(--border-color));
+    --field-border-hover: color-mix(in oklch, var(--text-2) 40%, var(--border-color));
+    --field-border-focus: color-mix(in oklch, var(--brand-blue) 75%, var(--text-2));
+    --field-focus-ring: color-mix(in oklch, var(--brand-blue) 14%, transparent);
 
     --glass-bg: oklch(98.5% 0.008 228deg / 0.78);
     --glass-border: oklch(87% 0.015 232deg / 0.55);
@@ -127,6 +135,7 @@ $motion-exempt: '.artplayer-app, .artplayer-app *, [data-is-danmu-clone], .motio
     --text-1: oklch(95% 0.008 225deg);
     --text-2: oklch(73% 0.014 230deg);
     --border-color: oklch(31% 0.015 240deg);
+    --partition-art-blend: screen;
 
     --glass-bg: oklch(19% 0.012 240deg / 0.74);
     --glass-border: oklch(34% 0.015 234deg / 0.5);
@@ -276,6 +285,46 @@ $motion-exempt: '.artplayer-app, .artplayer-app *, [data-is-danmu-clone], .motio
 }
 
 @layer components {
+  // 单行输入与复合输入共用状态配色，聚焦时保持底色不变。
+  .field-control,
+  .field-surface {
+    color: var(--text-1);
+    background: var(--field-bg);
+    border: 1px solid var(--field-border);
+    caret-color: var(--brand-blue);
+  }
+
+  .field-control::placeholder {
+    color: var(--text-2);
+    opacity: 1;
+  }
+
+  @media (hover: hover) {
+    .field-control:not(:disabled, [readonly], :focus, [aria-invalid='true']):hover,
+    .field-surface:not(:focus-within):hover {
+      border-color: var(--field-border-hover);
+    }
+  }
+
+  .field-control:focus,
+  .field-surface:focus-within {
+    border-color: var(--field-border-focus);
+    outline: none;
+    box-shadow: 0 0 0 3px var(--field-focus-ring);
+  }
+
+  .field-control[aria-invalid='true'] {
+    border-color: var(--status-danger);
+    --field-border-focus: var(--status-danger);
+    --field-focus-ring: color-mix(in oklch, var(--status-danger) 14%, transparent);
+  }
+
+  .field-control:disabled {
+    color: var(--text-2);
+    background: var(--bg-surface-2);
+    cursor: not-allowed;
+  }
+
   /* ============================================================
    * 弹层动效通道（reka-ui 的 data-state 驱动）
    *
@@ -829,18 +878,67 @@ $motion-exempt: '.artplayer-app, .artplayer-app *, [data-is-danmu-clone], .motio
  *
  * 只有 body 背景在过渡时，卡片 / 文字 / 边框全部硬跳，420ms 内整页处于
  * 「半亮半暗」的撕裂状态 —— 比干脆瞬切还差。这里改成：切换瞬间由 App.vue
- * 给 <html> 挂 .theme-switching，~360ms 后摘掉，只在这个窗口内让全站颜色一起走。
+ * 给 <html> 挂 .theme-switching，只在这个窗口内让全站颜色一起走。
+ * 手机端优先使用快照扩散，不支持快照的浏览器使用更舒展的 560ms 渐变。
  * 不做常驻 `*` 过渡：那会让每一次 hover / 滚动都拖尾。
  * 播放器整体排除，避免打断弹幕的 inline transition。
  * 未包在 @layer 里：普通声明下未分层样式优先于所有 layer。
  * ------------------------------------------------------------------ */
-html.theme-switching :not(:where(#{$motion-exempt})),
-html.theme-switching :not(:where(#{$motion-exempt}))::before,
-html.theme-switching :not(:where(#{$motion-exempt}))::after {
+html.theme-switching:not(.theme-revealing) :not(:where(#{$motion-exempt})),
+html.theme-switching:not(.theme-revealing) :not(:where(#{$motion-exempt}))::before,
+html.theme-switching:not(.theme-revealing) :not(:where(#{$motion-exempt}))::after {
   transition-property:
     color, background-color, border-color, outline-color, box-shadow, fill, stroke !important;
-  transition-duration: var(--duration-normal) !important;
+  transition-duration: var(--theme-fade-duration, var(--duration-normal)) !important;
   transition-timing-function: var(--ease-out-quart) !important;
+}
+
+@media (width <= 767px), (pointer: coarse) {
+  html.theme-switching {
+    --theme-fade-duration: 560ms;
+  }
+}
+
+/* 手机端圆形揭幕：只动画快照的裁剪边界，文字与布局保持原始比例和清晰度。 */
+html.theme-revealing :not(:where(#{$motion-exempt})),
+html.theme-revealing :not(:where(#{$motion-exempt}))::before,
+html.theme-revealing :not(:where(#{$motion-exempt}))::after {
+  transition: none !important;
+}
+
+/* 已关闭的菜单不应被旧快照留住，直到整个揭幕结束才突然消失。 */
+html.theme-revealing .motion-pop[data-state='closed'] {
+  display: none;
+}
+
+html.theme-revealing::view-transition,
+html.theme-revealing::view-transition-group(root) {
+  pointer-events: none;
+}
+
+html.theme-revealing::view-transition-group(root) {
+  animation: none;
+}
+
+html.theme-revealing::view-transition-image-pair(root) {
+  isolation: isolate;
+  pointer-events: none;
+}
+
+html.theme-revealing::view-transition-old(root),
+html.theme-revealing::view-transition-new(root) {
+  animation: none;
+  mix-blend-mode: normal;
+  pointer-events: none;
+}
+
+html.theme-revealing::view-transition-old(root) {
+  z-index: 1;
+}
+
+html.theme-revealing::view-transition-new(root) {
+  z-index: 2;
+  will-change: clip-path;
 }
 
 /* ------------------------------------------------------------------
@@ -880,10 +978,10 @@ html.theme-switching :not(:where(#{$motion-exempt}))::after {
     transform: none !important;
   }
 
-  /* 主题切换窗口特异度(0,1,1)高于上面的通配 guard，必须显式压掉 */
-  html.theme-switching :not(:where(#{$motion-exempt})),
-  html.theme-switching :not(:where(#{$motion-exempt}))::before,
-  html.theme-switching :not(:where(#{$motion-exempt}))::after {
+  /* 主题切换窗口的特异度高于上面的通配 guard，必须显式压掉 */
+  html.theme-switching:not(.theme-revealing) :not(:where(#{$motion-exempt})),
+  html.theme-switching:not(.theme-revealing) :not(:where(#{$motion-exempt}))::before,
+  html.theme-switching:not(.theme-revealing) :not(:where(#{$motion-exempt}))::after {
     transition-duration: 0.001ms !important;
   }
 }

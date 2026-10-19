@@ -8,6 +8,8 @@ import DOMPurify from 'dompurify'
 import VideoCard from '@/components/video/VideoCard.vue'
 import VideoCardSkeleton from '@/components/common/VideoCardSkeleton.vue'
 import InfiniteScroll from '@/components/common/InfiniteScroll.vue'
+import FeedError from '@/components/common/FeedError.vue'
+import EmptyState from '@/components/common/EmptyState.vue'
 import Carousel from '@/components/common/Carousel.vue'
 import { BannerDisplay } from '@/constants/banner'
 
@@ -19,6 +21,7 @@ const banners = ref<BannerItem[]>([])
 const videos = ref<FeedItem[]>([])
 const bannerLoading = ref(true)
 const loading = ref(false)
+const feedError = ref('')
 const finished = ref(false)
 const page = ref(1)
 const pageSize = 20
@@ -42,14 +45,6 @@ const featuredVideos = computed(() => {
     return []
   }
   return videos.value.slice(0, FEATURED_COUNT)
-})
-
-// Computed: Remaining videos (after featured)
-const remainingVideos = computed(() => {
-  if (!shouldShowHero.value) {
-    return videos.value
-  }
-  return videos.value.slice(FEATURED_COUNT)
 })
 
 // Partition icons are server-supplied SVG markup; sanitize before v-html.
@@ -91,16 +86,20 @@ const fetchVideos = async () => {
   if (loading.value || finished.value) return
 
   loading.value = true
+  feedError.value = ''
   try {
     const partitionId = route.params.id ? Number(route.params.id) : 0
-    const result = await getHomeVideos({ page: page.value, pageSize, partitionId })
+    const result = await getHomeVideos(
+      { page: page.value, pageSize, partitionId },
+      { silent: true }
+    )
     if (result.list.length < pageSize) {
       finished.value = true
     }
     videos.value = [...videos.value, ...result.list]
     page.value++
   } catch (error) {
-    console.error('Failed to fetch videos:', error)
+    feedError.value = error instanceof Error ? error.message : '请稍后重试'
   } finally {
     loading.value = false
     initialLoading.value = false
@@ -118,6 +117,7 @@ const siteTouchOnce = async () => {
 
 // Load more handler
 const handleLoadMore = () => {
+  if (feedError.value) return
   void fetchVideos()
 }
 
@@ -154,7 +154,8 @@ onMounted(async () => {
     <div v-if="activePartition && !initialLoading" class="mb-8 flex items-center gap-3 sm:gap-4">
       <div class="flex items-center justify-center text-primary">
         <div
-          class="h-10 w-10 sm:h-12 sm:w-12 [&>svg]:h-full [&>svg]:w-full [&>svg]:fill-current"
+          class="partition-icon h-10 w-10 sm:h-12 sm:w-12 [&>svg]:h-full [&>svg]:w-full [&>svg]:fill-current"
+          :class="{ 'partition-icon--art': activePartition.name === '艺术' }"
           v-html="sanitizedPartitionIcon"
         />
       </div>
@@ -197,7 +198,14 @@ onMounted(async () => {
     </div>
 
     <!-- Video Grid -->
-    <InfiniteScroll :loading="loading" :finished="finished" @load-more="handleLoadMore">
+    <InfiniteScroll
+      :disabled="!!feedError"
+      :initial-loading="initialLoading"
+      :loading="loading"
+      :finished="finished"
+      :show-status="videos.length > 0 || loading"
+      @load-more="handleLoadMore"
+    >
       <!-- Skeleton Loading -->
       <div
         v-if="initialLoading"
@@ -208,13 +216,37 @@ onMounted(async () => {
 
       <!-- Video Cards -->
       <div v-else class="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
-        <VideoCard v-for="video in remainingVideos" :key="video.id" :video="video" />
+        <VideoCard
+          v-for="(video, index) in videos"
+          :key="video.id"
+          :video="video"
+          :class="shouldShowHero && index < FEATURED_COUNT ? 'lg:hidden' : ''"
+        />
       </div>
+      <FeedError
+        v-if="feedError && !initialLoading"
+        :message="feedError"
+        :has-items="videos.length > 0"
+        @retry="fetchVideos"
+      />
+      <EmptyState
+        v-else-if="!initialLoading && !loading && videos.length === 0"
+        variant="channel"
+        size="lg"
+        eyebrow="发现同好，从这里开始"
+        title="这个分区，等一部好作品"
+        description="这里暂时还没有视频。属于这个分区的故事，会从第一部作品开始。"
+      />
     </InfiniteScroll>
   </div>
 </template>
 
 <style scoped lang="scss">
+// 后端艺术 SVG 用 screen 叠色；浅色背景会把渐变漂白。主题变量负责切换。
+.partition-icon--art :deep(svg :is(.art-blob1, .art-blob2, .art-blob3)) {
+  mix-blend-mode: var(--partition-art-blend);
+}
+
 @media (width >= 1024px) {
   .home-hero-carousel :deep(.group) {
     height: 100%;

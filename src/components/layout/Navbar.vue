@@ -2,33 +2,14 @@
 import { ref, onMounted, computed, onBeforeUnmount, defineAsyncComponent } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useRouter, useRoute } from 'vue-router'
-import {
-  Search,
-  Mail,
-  Upload,
-  Crown,
-  Zap,
-  Star,
-  History,
-  Lightbulb,
-  X,
-  Trash2,
-} from 'lucide-vue-next'
+import { Menu, Mail, Upload, Crown, Zap, Star, History, Lightbulb } from 'lucide-vue-next'
 import { Button } from '@/components/ui/button'
-import {
-  getSearchSuggest,
-  getHotSearchKeywords,
-  type SearchSuggestItem,
-  type HotKeywordItem,
-} from '@/api/video'
 import { getDynamicCounts } from '@/api/dynamic'
 import { useSubmissionAccess, SUBMISSION_DISABLED_MESSAGE } from '@/composables/useSubmissionAccess'
 import { useNotificationStore } from '@/stores/notification'
-import { useSearchHistory } from '@/composables/useSearchHistory'
-import { useDebounceFn } from '@vueuse/core'
+import SearchBox from '@/components/search/SearchBox.vue'
 import UserHoverPanel from '@/components/layout/UserHoverPanel.vue'
 import AppAvatar from '@/components/common/AppAvatar.vue'
-import DOMPurify from 'dompurify'
 import { toast } from 'vue-sonner'
 
 /** 登录 Dialog 按需加载，避免首屏同步打包 Lain/验证码等重依赖 */
@@ -53,15 +34,12 @@ const avatarBorderClass = computed(() =>
     : 'border-[color-mix(in_oklch,var(--media-overlay-text)_50%,transparent)] group-hover:border-[var(--media-overlay-text)]'
 )
 
-const searchContainerClass = computed(() => (props.light ? 'search-bar-solid' : 'search-bar-glass'))
-
 const router = useRouter()
 const route = useRoute()
 const { authStore, submissionBlocked } = useSubmissionAccess()
 const isSearchPage = computed(() => route.name === 'search')
 const notificationStore = useNotificationStore()
 const { counts } = storeToRefs(notificationStore)
-const { history, addHistory, removeHistoryItem, clearHistory } = useSearchHistory()
 
 // Auth dialog state — 首次打开后再挂载，关闭保留实例以便二次打开即时
 const authDialogOpen = ref(false)
@@ -78,9 +56,6 @@ const openLoginDialog = () => openAuthDialog('login')
 
 // State
 const searchQuery = ref('')
-const searchSuggestions = ref<SearchSuggestItem[]>([])
-const showSuggestions = ref(false)
-const hotKeywords = ref<HotKeywordItem[]>([])
 const dynamicUnreadCount = ref(0)
 const totalMessageUnread = computed(() => {
   const c = counts.value
@@ -102,20 +77,8 @@ const scheduleCloseMessagePanel = () => {
   }, 200)
 }
 
-// Fetch hot keywords on mount (no auth required)
-const fetchHotKeywords = async () => {
-  try {
-    hotKeywords.value = await getHotSearchKeywords()
-  } catch {
-    /* noop */
-  }
-}
-
 // Fetch Data
 onMounted(async () => {
-  // Hot keywords (public, no auth needed)
-  void fetchHotKeywords()
-
   if (!authStore.isLoggedIn) return
   try {
     const [, dynResult] = await Promise.allSettled([
@@ -130,77 +93,9 @@ onMounted(async () => {
   }
 })
 
-// Search Logic
-// 短防抖：输入即联想，同时合并连打请求；用序号丢弃过期响应
-let suggestSeq = 0
-const fetchSuggestions = useDebounceFn(async (prefix: string) => {
-  const q = prefix.trim()
-  if (!q) {
-    searchSuggestions.value = []
-    return
-  }
-  const seq = ++suggestSeq
-  try {
-    const list = await getSearchSuggest({ prefix: q })
-    if (seq !== suggestSeq) return
-    // 按 value 去重：下拉用 value 作 key 做 FLIP（同一个词继续输入时条目原地保留），
-    // 重复 value 会撞 key。
-    const seen = new Set<string>()
-    searchSuggestions.value = list
-      .filter((item) => {
-        if (!item.value || seen.has(item.value)) return false
-        seen.add(item.value)
-        return true
-      })
-      .map((item) => ({
-        ...item,
-        highlight: ensureSuggestHighlight(item, q),
-      }))
-  } catch (error) {
-    if (seq !== suggestSeq) return
-    console.error('Failed to fetch suggestions:', error)
-  }
-}, 100)
-
-/** 后端未返回 <em> 时前端兜底高亮字面匹配段 */
-const ensureSuggestHighlight = (item: SearchSuggestItem, query: string) => {
-  if (item.highlight?.includes('<em>')) return item.highlight
-  const value = item.value || ''
-  if (!query || !value) return value
-  const idx = value.toLowerCase().indexOf(query.toLowerCase())
-  if (idx < 0) return value
-  return (
-    value.slice(0, idx) +
-    '<em>' +
-    value.slice(idx, idx + query.length) +
-    '</em>' +
-    value.slice(idx + query.length)
-  )
-}
-
-const handleSearchInput = () => {
-  showSuggestions.value = true
-  const q = searchQuery.value.trim()
-  // 单字也实时联想（中文「毛」、英/数「c」）
-  if (!q) {
-    searchSuggestions.value = []
-    return
-  }
-  void fetchSuggestions(searchQuery.value)
-}
-
 const handleSearch = (query: string) => {
-  if (!query.trim()) return
-  addHistory(query)
-  showSuggestions.value = false
   searchQuery.value = query
   void router.push({ name: 'search', query: { keyword: query } })
-}
-
-const handleBlur = () => {
-  setTimeout(() => {
-    showSuggestions.value = false
-  }, 200)
 }
 
 // Avatar hover panel
@@ -236,14 +131,8 @@ onMounted(() => {
 onBeforeUnmount(() => {
   document.removeEventListener('click', handleClickOutside)
   if (hoverTimer) clearTimeout(hoverTimer)
+  if (messageHoverTimer) clearTimeout(messageHoverTimer)
 })
-
-const sanitizeHighlight = (html: string) => {
-  return DOMPurify.sanitize(html, {
-    ALLOWED_TAGS: ['em'],
-    ALLOWED_ATTR: [],
-  })
-}
 
 // Nav action items
 const navActions = [
@@ -260,6 +149,24 @@ const handleNavActionClick = (action: (typeof navActions)[number], e?: MouseEven
   if (!action.comingSoon) return
   e?.preventDefault()
   toast.info(`${action.name}功能即将上线`)
+}
+const closeMobileMenu = (event: MouseEvent) => {
+  ;(event.currentTarget as HTMLElement).closest('details')?.removeAttribute('open')
+}
+const handleMobileAction = (action: (typeof navActions)[number], event: MouseEvent) => {
+  closeMobileMenu(event)
+  // 未登录时这组入口一律先弹登录框，包括尚未开放的大会员
+  if (!authStore.isLoggedIn) {
+    openLoginDialog()
+    return
+  }
+  if (action.comingSoon) handleNavActionClick(action)
+  else void router.push(action.path)
+}
+const handleMobileUpload = (event: MouseEvent) => {
+  closeMobileMenu(event)
+  if (authStore.isLoggedIn) void router.push('/upload')
+  else openLoginDialog()
 }
 </script>
 
@@ -278,126 +185,22 @@ const handleNavActionClick = (action: (typeof navActions)[number], e?: MouseEven
     ≤1526px 的视口都会撞。改成 flex item 后空间不够时搜索框自己收窄，撞不了。
   -->
   <nav
-    class="relative mx-auto flex h-14 w-full max-w-[var(--container-page,1800px)] items-center gap-2 px-4 sm:px-6 lg:px-8"
+    class="app-navbar relative mx-auto flex h-14 w-full max-w-[var(--container-page,1800px)] items-center gap-2 px-4 sm:px-6 lg:px-8"
   >
     <!-- Left: Logo -->
-    <div class="flex min-w-max flex-1 items-center gap-3 sm:gap-6">
+    <div class="navbar-logo flex min-w-0 flex-1 items-center gap-3 sm:gap-6">
       <router-link to="/" class="flex shrink-0 items-center gap-2">
         <img src="/logo.png" alt="Logo" class="h-10 w-auto object-contain drop-shadow-md" />
       </router-link>
     </div>
 
-    <!-- Center: Search (hidden on search result page) -->
-    <div
+    <SearchBox
       v-if="!isSearchPage"
-      class="relative z-20 w-full min-w-0 max-w-[500px] shrink px-2 sm:px-4"
-    >
-      <div class="relative w-full group">
-        <div
-          class="t-tint pointer-events-none absolute inset-y-0 left-0 z-10 flex items-center pl-4"
-        >
-          <Search
-            class="h-4 w-4"
-            :class="[
-              searchQuery
-                ? 'text-primary'
-                : props.light
-                  ? 'text-muted-foreground/80'
-                  : 'text-[color-mix(in_oklch,var(--media-overlay-text)_80%,transparent)] group-focus-within:text-muted-foreground/80',
-            ]"
-          />
-        </div>
-        <input
-          v-model="searchQuery"
-          type="text"
-          class="search-input-base flex h-10 w-full rounded-full px-4 py-2 pl-10 pr-4 text-sm"
-          :class="searchContainerClass"
-          placeholder="搜索视频、UP主..."
-          @input="handleSearchInput"
-          @keydown.enter="handleSearch(searchQuery)"
-          @blur="handleBlur"
-          @focus="handleSearchInput"
-        />
-        <!-- Suggestions / History / Hot Search Dropdown -->
-        <Transition name="panel-fade">
-          <div
-            v-if="
-              showSuggestions &&
-              (searchSuggestions.length > 0 ||
-                (!searchQuery.trim() && (history.length > 0 || hotKeywords.length > 0)))
-            "
-            class="absolute left-0 right-0 top-full z-[100] mt-1 max-h-[480px] overflow-y-auto overflow-x-hidden rounded-lg border bg-popover text-popover-foreground shadow-overlay"
-          >
-            <!-- Suggestions (when typing)：靠 key=value 的 TransitionGroup 做 FLIP，
-                 同一个词继续输入时未变化的条目原地保留，不再整块闪一次 -->
-            <TransitionGroup v-if="searchQuery.trim() && searchSuggestions.length > 0" name="sug">
-              <div
-                v-for="(item, index) in searchSuggestions"
-                :key="item.value"
-                class="search-suggestion-item flex cursor-pointer items-center gap-2 px-4 py-2.5 text-sm hover:bg-accent hover:text-accent-foreground"
-                :style="{ '--sug-i': index }"
-                @mousedown.prevent="handleSearch(item.value)"
-              >
-                <span class="truncate" v-html="sanitizeHighlight(item.highlight)"></span>
-              </div>
-            </TransitionGroup>
-
-            <!-- History + Hot Search (when empty) -->
-            <template v-else-if="!searchQuery.trim()">
-              <!-- Search History -->
-              <template v-if="history.length > 0">
-                <div
-                  class="flex items-center justify-between px-4 pb-2 pt-3 text-sm text-muted-foreground"
-                >
-                  <span class="font-medium">搜索历史</span>
-                  <button
-                    class="t-tint flex items-center gap-1 hover:text-primary"
-                    @mousedown.prevent="clearHistory"
-                  >
-                    <Trash2 class="h-3.5 w-3.5" />清空
-                  </button>
-                </div>
-                <div class="flex flex-wrap gap-2 px-4 pb-3">
-                  <div
-                    v-for="item in history"
-                    :key="item"
-                    class="t-tint group flex cursor-pointer items-center gap-1 rounded-md bg-secondary px-2.5 py-1.5 text-xs text-secondary-foreground hover:bg-accent hover:text-accent-foreground"
-                    @mousedown.prevent="handleSearch(item)"
-                  >
-                    <span class="max-w-[140px] truncate">{{ item }}</span>
-                    <X
-                      class="history-chip-close h-3.5 w-3.5 rounded-full p-0.5 text-muted-foreground group-hover:opacity-100"
-                      @mousedown.prevent.stop="removeHistoryItem(item)"
-                    />
-                  </div>
-                </div>
-              </template>
-
-              <!-- Hot Search Keywords -->
-              <template v-if="hotKeywords.length > 0">
-                <div class="px-4 pb-2 pt-3 text-sm font-medium text-muted-foreground">CCG热搜</div>
-                <div class="grid grid-cols-2 gap-x-2 px-2 pb-3">
-                  <div
-                    v-for="(kw, idx) in hotKeywords.slice(0, 10)"
-                    :key="kw.keyword"
-                    class="hot-keyword-item t-tint flex cursor-pointer items-center gap-2.5 rounded-md px-2 py-2 text-sm hover:bg-accent"
-                    @mousedown.prevent="handleSearch(kw.keyword)"
-                  >
-                    <span
-                      class="hot-rank tabular inline-flex h-[18px] w-[18px] flex-shrink-0 items-center justify-center rounded text-xs font-bold"
-                      :class="idx < 3 ? 'bg-primary/10 text-primary' : 'text-muted-foreground'"
-                    >
-                      {{ idx + 1 }}
-                    </span>
-                    <span class="truncate text-foreground">{{ kw.keyword }}</span>
-                  </div>
-                </div>
-              </template>
-            </template>
-          </div>
-        </Transition>
-      </div>
-    </div>
+      v-model="searchQuery"
+      class="navbar-search"
+      :overlay="!props.light"
+      @submit="handleSearch"
+    />
 
     <!-- Right: User Actions -->
     <div class="flex min-w-max flex-1 items-center justify-end gap-0.5 sm:gap-1">
@@ -452,12 +255,15 @@ const handleNavActionClick = (action: (typeof navActions)[number], e?: MouseEven
           <div
             v-if="authStore.isLoggedIn"
             class="relative"
-            :class="action.mobileHidden ? 'hidden lg:flex' : 'flex'"
+            :class="
+              action.mobileHidden ? 'hidden lg:flex' : action.isMessage ? 'flex' : 'hidden sm:flex'
+            "
             @mouseenter="action.isMessage ? openMessagePanel() : undefined"
             @mouseleave="action.isMessage ? scheduleCloseMessagePanel() : undefined"
           >
             <router-link
               :to="action.path"
+              :aria-label="action.name"
               class="group relative flex cursor-pointer flex-col items-center justify-center px-2 py-1 sm:px-3"
               :class="navActionTextClass"
               @click="handleNavActionClick(action, $event)"
@@ -550,17 +356,22 @@ const handleNavActionClick = (action: (typeof navActions)[number], e?: MouseEven
             </Transition>
           </div>
           <!-- Not logged in items -->
-          <div
+          <button
             v-else
+            type="button"
+            :aria-label="action.name"
             class="group relative cursor-pointer flex-col items-center justify-center px-1 py-1 sm:px-3"
-            :class="[navActionTextClass, action.mobileHidden ? 'hidden lg:flex' : 'flex']"
-            @click="action.comingSoon ? handleNavActionClick(action) : openLoginDialog"
+            :class="[
+              navActionTextClass,
+              action.mobileHidden ? 'hidden lg:flex' : action.isMessage ? 'flex' : 'hidden sm:flex',
+            ]"
+            @click="openLoginDialog"
           >
             <div class="relative">
               <component :is="action.icon" class="h-5 w-5" />
             </div>
             <span class="mt-0.5 hidden text-2xs font-medium sm:block">{{ action.name }}</span>
-          </div>
+          </button>
         </template>
       </div>
 
@@ -571,7 +382,7 @@ const handleNavActionClick = (action: (typeof navActions)[number], e?: MouseEven
         v-if="authStore.isLoggedIn"
         as-child
         size="sm"
-        class="ml-1 h-8 rounded-lg border-0 bg-primary px-2 text-primary-foreground shadow-raised hover:bg-primary/90 sm:ml-3 sm:px-4"
+        class="ml-1 hidden h-8 rounded-lg sm:flex border-0 bg-primary px-2 text-primary-foreground shadow-raised hover:bg-primary/90 sm:ml-3 sm:px-4"
       >
         <router-link
           to="/upload"
@@ -585,12 +396,43 @@ const handleNavActionClick = (action: (typeof navActions)[number], e?: MouseEven
       <Button
         v-else
         size="sm"
-        class="ml-1 h-8 cursor-pointer rounded-lg border-0 bg-primary px-2 text-primary-foreground shadow-raised hover:bg-primary/90 sm:ml-3 sm:px-4"
+        class="ml-1 hidden h-8 cursor-pointer rounded-lg sm:flex border-0 bg-primary px-2 text-primary-foreground shadow-raised hover:bg-primary/90 sm:ml-3 sm:px-4"
         @click="openLoginDialog"
       >
         <Upload class="h-4 w-4" />
         <span class="hidden sm:inline">{{ submissionBlocked ? '投稿已暂停' : '投稿' }}</span>
       </Button>
+      <details class="navbar-more relative ml-1 sm:ml-2 lg:hidden">
+        <summary
+          class="flex h-11 w-11 cursor-pointer list-none items-center justify-center rounded-lg"
+          :class="navActionTextClass"
+          aria-label="更多导航"
+        >
+          <Menu class="h-5 w-5" aria-hidden="true" />
+        </summary>
+        <div
+          class="absolute right-0 top-full z-[220] mt-2 w-44 rounded-xl border border-border bg-popover p-2 text-popover-foreground shadow-overlay"
+        >
+          <button
+            v-for="action in navActions"
+            :key="action.name"
+            type="button"
+            class="flex min-h-11 w-full items-center gap-3 rounded-lg px-3 text-sm hover:bg-accent"
+            @click="handleMobileAction(action, $event)"
+          >
+            <component :is="action.icon" class="h-4 w-4" aria-hidden="true" />{{ action.name }}
+          </button>
+          <button
+            type="button"
+            class="flex min-h-11 w-full items-center gap-3 rounded-lg px-3 text-sm hover:bg-accent"
+            @click="handleMobileUpload"
+          >
+            <Upload class="h-4 w-4" aria-hidden="true" />{{
+              submissionBlocked ? '投稿已暂停' : '投稿'
+            }}
+          </button>
+        </div>
+      </details>
     </div>
   </nav>
 
@@ -603,6 +445,33 @@ const handleNavActionClick = (action: (typeof navActions)[number], e?: MouseEven
 </template>
 
 <style scoped lang="scss">
+.navbar-search {
+  width: 100%;
+  min-width: 0;
+  max-width: 500px;
+  margin-inline: 8px;
+}
+
+@media (width < 1024px) {
+  .app-navbar {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 8px;
+    height: auto;
+    padding-block: 8px;
+  }
+  .navbar-logo img {
+    width: clamp(84px, 26vw, 134px);
+    height: 34px;
+  }
+  .navbar-search {
+    grid-row: 2;
+    grid-column: 1 / -1;
+    max-width: none;
+    margin-inline: 0;
+  }
+}
+
 /* Search suggestion highlight */
 .search-suggestion-item :deep(em) {
   color: var(--color-primary, var(--brand-blue));

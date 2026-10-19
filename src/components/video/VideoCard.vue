@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { computed } from 'vue'
+import AppImage from '@/components/common/AppImage.vue'
 import type { FeedItem } from '@/api/video'
 import { formatCount, formatDuration } from '@/utils/format'
-import { resolveMediaUrl } from '@/utils/media'
 import DOMPurify from 'dompurify'
 
 interface Props {
@@ -89,12 +89,12 @@ const formattedTime = computed(() => {
       class="video-card__cover relative overflow-hidden rounded-t-xl"
       :class="[variant === 'compact' ? 'aspect-[16/10] flex-1' : 'aspect-video']"
     >
-      <img
-        :src="resolveMediaUrl(video.cover)"
+      <AppImage
+        :src="video.cover"
         :alt="video.title"
-        class="video-card__img h-full w-full object-cover"
-        loading="lazy"
-        decoding="async"
+        aspect="auto"
+        img-class="video-card__img"
+        fallback-text="封面暂不可用"
       />
 
       <!-- 底部压暗：统计数字与时长胶囊在浅色封面上也要可读 -->
@@ -198,7 +198,7 @@ const formattedTime = computed(() => {
           <span class="truncate">{{ video.author.username }}</span>
         </span>
         <span class="shrink-0 text-muted-foreground/60">·</span>
-        <span class="tabular shrink-0 text-muted-foreground/60">{{ formattedTime }}</span>
+        <span class="tabular shrink-0 text-muted-foreground">{{ formattedTime }}</span>
       </div>
     </div>
   </router-link>
@@ -256,7 +256,7 @@ const formattedTime = computed(() => {
   text-shadow: 0 1px 2px color-mix(in oklch, var(--media-overlay) 70%, transparent);
 }
 
-.video-card__img {
+:deep(.video-card__img) {
   transition: transform var(--duration-slow) var(--ease-out-expo);
 }
 
@@ -281,7 +281,7 @@ const formattedTime = computed(() => {
     opacity: 1;
   }
 
-  .video-card:hover .video-card__img {
+  .video-card:hover :deep(.video-card__img) {
     /* 全站封面/头像统一 1.04，不再 1.05 / 1.10 / 1.15 各说各话 */
     transform: scale(1.04);
   }
@@ -297,7 +297,7 @@ const formattedTime = computed(() => {
     transform: none;
   }
 
-  .video-card:hover .video-card__img {
+  .video-card:hover :deep(.video-card__img) {
     transform: none;
   }
 }

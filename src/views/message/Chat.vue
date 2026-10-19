@@ -134,7 +134,8 @@ const preloadPeerProfiles = (peerIds: number[]) => {
 }
 
 const resolvePeerName = (peerId: number) => peerProfiles.value[peerId]?.username ?? `UID ${peerId}`
-const resolvePeerAvatar = (peerId: number) => resolveMediaUrl(peerProfiles.value[peerId]?.avatar ?? '')
+const resolvePeerAvatar = (peerId: number) =>
+  resolveMediaUrl(peerProfiles.value[peerId]?.avatar ?? '')
 const resolveMessageName = (message: ChatTimelineMessage) =>
   message.senderId === currentUserId.value
     ? authStore.user?.username || '我'

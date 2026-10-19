@@ -6,6 +6,7 @@ import { useThemeStore } from '@/stores/theme'
 import { User, LogOut, FileVideo, Sun, Moon } from 'lucide-vue-next'
 import AppAvatar from '@/components/common/AppAvatar.vue'
 import { levelColor, formatCount } from '@/utils/format'
+import { getThemeTransitionOrigin } from '@/utils/theme-transition'
 
 const emit = defineEmits<{
   (e: 'close'): void
@@ -15,7 +16,7 @@ const router = useRouter()
 const authStore = useAuthStore()
 const themeStore = useThemeStore()
 
-const isDark = computed(() => themeStore.theme === 'dark')
+const isDark = computed(() => themeStore.isDark)
 
 const navigate = (target: RouteLocationRaw) => {
   emit('close')
@@ -35,8 +36,8 @@ const handleLogout = () => {
   void router.push('/')
 }
 
-const toggleTheme = () => {
-  themeStore.setTheme(isDark.value ? 'light' : 'dark')
+const toggleTheme = (event: MouseEvent) => {
+  themeStore.toggleTheme(getThemeTransitionOrigin(event))
 }
 </script>
 

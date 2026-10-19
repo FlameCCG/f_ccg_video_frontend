@@ -263,6 +263,11 @@ const routes: RouteRecordRaw[] = [
     path: '/auth/x/callback',
     redirect: '/oauth/x',
   },
+  {
+    path: '/:pathMatch(.*)*',
+    component: VideoLayout,
+    children: [{ path: '', name: 'not-found', component: () => import('@/views/NotFound.vue') }],
+  },
 ]
 
 const router = createRouter({
@@ -305,6 +310,25 @@ router.beforeEach((to, _from, next) => {
   }
 
   next()
+})
+
+router.afterEach((to) => {
+  const titles: Record<string, string> = {
+    home: '首页',
+    hot: '热门视频',
+    rank: '排行榜',
+    partition: '分区',
+    search: '搜索',
+    'video-detail': '视频',
+    'user-home': '用户空间',
+    settings: '设置',
+    history: '观看历史',
+    dynamic: '动态',
+    'not-found': '页面未找到',
+  }
+  const keyword = typeof to.query.keyword === 'string' ? to.query.keyword.trim() : ''
+  const title = to.name === 'search' && keyword ? `${keyword} - 搜索` : titles[String(to.name)]
+  document.title = title ? `${title} | CCG 视频` : 'CCG 视频'
 })
 
 export default router

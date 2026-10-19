@@ -1,0 +1,320 @@
+/* JS 下载前和首个路由解析期间共用的品牌开场，避免两段加载视觉割裂。 */
+:root {
+  --boot-background: oklch(98.5% 0.006 230deg);
+  --boot-surface: oklch(96.8% 0.009 230deg);
+  --boot-brand: oklch(64% 0.12 238deg);
+  --boot-ink: oklch(25% 0.02 240deg);
+  --boot-text: oklch(51% 0.018 238deg);
+  --boot-border: oklch(89% 0.014 232deg);
+}
+
+html.dark {
+  --boot-background: oklch(17% 0.01 250deg);
+  --boot-surface: oklch(22% 0.012 250deg);
+  --boot-brand: oklch(72% 0.11 238deg);
+  --boot-ink: oklch(94% 0.012 238deg);
+  --boot-text: oklch(68% 0.018 238deg);
+  --boot-border: oklch(31% 0.014 238deg);
+}
+
+html,
+body,
+#app {
+  min-height: 100%;
+  margin: 0;
+}
+body:has(> #app > .app-boot) {
+  background: var(--boot-background);
+}
+
+.page-opening {
+  --opening-bg: var(--color-background, var(--boot-background));
+  --opening-surface: var(--color-card, var(--boot-surface));
+  --opening-accent: var(--color-primary, var(--boot-brand));
+  --opening-ink: var(--color-foreground, var(--boot-ink));
+  --opening-muted: var(--color-muted-foreground, var(--boot-text));
+  --opening-border: var(--color-border, var(--boot-border));
+  display: grid;
+  width: 100%;
+  min-height: 100svh;
+  overflow: hidden;
+  place-items: center;
+  background: var(--opening-bg);
+  color: var(--opening-ink);
+  font-family: var(
+    --font-sans,
+    'Segoe UI Variable Text',
+    'Segoe UI',
+    'PingFang SC',
+    'Microsoft YaHei UI',
+    sans-serif
+  );
+}
+
+.page-opening__composition {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 32px 24px;
+  animation: opening-enter 650ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.app-boot .page-opening__composition {
+  animation-delay: 180ms;
+}
+
+.page-opening__stage {
+  position: relative;
+  width: 280px;
+  height: 220px;
+  margin-bottom: 10px;
+  color: var(--opening-accent);
+}
+
+.page-opening__orbit {
+  position: absolute;
+  border: 1px solid color-mix(in oklch, var(--opening-accent) 14%, transparent);
+  border-radius: 50%;
+}
+
+.page-opening__orbit--outer {
+  inset: 8px 38px;
+  border-style: dashed;
+  animation: opening-orbit 40s linear infinite;
+}
+
+.page-opening__orbit--inner {
+  inset: 28px 58px;
+  border-right-color: color-mix(in oklch, var(--opening-accent) 55%, transparent);
+  border-bottom-color: transparent;
+  animation: opening-orbit 12s linear infinite reverse;
+}
+
+.page-opening__frames {
+  position: absolute;
+  inset: 55px 81px;
+}
+
+.page-opening__frame {
+  position: absolute;
+  inset: 0;
+  border: 1px solid var(--opening-border);
+  border-radius: 20px;
+  background: var(--opening-surface);
+}
+
+.page-opening__frame--back {
+  transform: translate(-22px, 9px) rotate(-18deg);
+  opacity: 0.55;
+  animation: opening-back 4.8s ease-in-out infinite;
+}
+
+.page-opening__frame--middle {
+  transform: translate(21px, -8px) rotate(14deg);
+  opacity: 0.8;
+  animation: opening-middle 4.8s ease-in-out infinite;
+}
+
+.page-opening__frame--front {
+  display: grid;
+  place-items: center;
+  border-color: color-mix(in oklch, var(--opening-accent) 48%, var(--opening-border));
+  background: color-mix(in oklch, var(--opening-accent) 6%, var(--opening-surface));
+  box-shadow: 0 16px 40px -24px color-mix(in oklch, var(--opening-ink) 20%, transparent);
+  animation: opening-front 4.8s ease-in-out infinite;
+}
+
+.page-opening__frame svg {
+  width: 42px;
+  height: 42px;
+  transform: translateX(-3px);
+}
+.page-opening__frame i {
+  position: absolute;
+  bottom: 12px;
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: currentcolor;
+  opacity: 0.3;
+}
+.page-opening__frame i:nth-of-type(1) {
+  left: 43%;
+}
+.page-opening__frame i:nth-of-type(2) {
+  left: 49%;
+  opacity: 0.7;
+}
+.page-opening__frame i:nth-of-type(3) {
+  left: 55%;
+}
+
+.page-opening__tick {
+  position: absolute;
+  width: 12px;
+  height: 1px;
+  background: currentcolor;
+  opacity: 0.4;
+}
+.page-opening__tick--one {
+  left: 28px;
+  top: 110px;
+}
+.page-opening__tick--two {
+  right: 28px;
+  top: 110px;
+}
+.page-opening__spark {
+  position: absolute;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: currentcolor;
+  animation: opening-breathe 3s ease-in-out infinite;
+}
+.page-opening__spark--one {
+  left: 71px;
+  top: 33px;
+}
+.page-opening__spark--two {
+  right: 62px;
+  bottom: 40px;
+  animation-delay: -1.5s;
+}
+
+.page-opening__identity {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+}
+.page-opening__wordmark {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  font-size: 27px;
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: -0.06em;
+}
+.page-opening__wordmark > span {
+  font-size: 16px;
+  font-weight: 500;
+  letter-spacing: 0.12em;
+}
+.page-opening__caption {
+  font-size: 12px;
+  line-height: 1.6;
+  letter-spacing: 0.28em;
+  color: var(--opening-muted);
+}
+.page-opening__status {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 38px;
+  color: var(--opening-muted);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+}
+.page-opening__pulse {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  height: 12px;
+  color: var(--opening-accent);
+}
+.page-opening__pulse i {
+  width: 2px;
+  height: 10px;
+  border-radius: 2px;
+  background: currentcolor;
+  animation: opening-pulse 1.3s ease-in-out infinite;
+}
+.page-opening__pulse i:nth-child(2) {
+  animation-delay: 150ms;
+}
+.page-opening__pulse i:nth-child(3) {
+  animation-delay: 300ms;
+}
+
+@keyframes opening-enter {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+@keyframes opening-orbit {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@keyframes opening-back {
+  0%,
+  100% {
+    transform: translate(-22px, 9px) rotate(-18deg);
+  }
+  50% {
+    transform: translate(-28px, 4px) rotate(-22deg);
+  }
+}
+@keyframes opening-middle {
+  0%,
+  100% {
+    transform: translate(21px, -8px) rotate(14deg);
+  }
+  50% {
+    transform: translate(27px, -13px) rotate(19deg);
+  }
+}
+@keyframes opening-front {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-5px);
+  }
+}
+@keyframes opening-breathe {
+  0%,
+  100% {
+    opacity: 0.2;
+    transform: scale(0.8);
+  }
+  50% {
+    opacity: 0.8;
+    transform: scale(1);
+  }
+}
+@keyframes opening-pulse {
+  0%,
+  100% {
+    transform: scaleY(0.35);
+    opacity: 0.4;
+  }
+  50% {
+    transform: scaleY(1);
+    opacity: 1;
+  }
+}
+
+@media (max-width: 480px) {
+  .page-opening__stage {
+    transform: scale(0.85);
+    margin: -12px 0 -4px;
+  }
+  .page-opening__status {
+    margin-top: 30px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .page-opening *,
+  .app-boot .page-opening__composition {
+    animation: none;
+  }
+}

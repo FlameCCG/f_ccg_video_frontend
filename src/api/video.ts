@@ -1,4 +1,11 @@
-import type { AuthorBrief, PaginatedResult, PaginationParams, SearchHighlight, Tag } from './types'
+import type {
+  ApiRequestOptions,
+  AuthorBrief,
+  PaginatedResult,
+  PaginationParams,
+  SearchHighlight,
+  Tag,
+} from './types'
 import request from './request'
 
 export type { AuthorBrief, PaginatedResult, PaginationParams, SearchHighlight, Tag } from './types'
@@ -352,9 +359,10 @@ export interface FolderVideoItem {
  * 接口说明: 获取首页视频推荐流，登录用户优先按历史偏好推荐
  */
 export const getHomeVideos = (
-  params?: VideoListPaginationParams
+  params?: VideoListPaginationParams,
+  options?: ApiRequestOptions
 ): Promise<PaginatedResult<FeedItem>> => {
-  return request.get('/common/video/home', { params })
+  return request.get('/common/video/home', { params, ...options })
 }
 
 /**
@@ -365,9 +373,10 @@ export const getHomeVideos = (
  * 接口说明: 获取综合热门视频列表（时间衰减热度，最多保留 Top200）
  */
 export const getHotVideos = (
-  params?: VideoListPaginationParams
+  params?: VideoListPaginationParams,
+  options?: ApiRequestOptions
 ): Promise<PaginatedResult<FeedItem>> => {
-  return request.get('/common/video/hot', { params })
+  return request.get('/common/video/hot', { params, ...options })
 }
 
 /**
@@ -378,9 +387,10 @@ export const getHotVideos = (
  * 接口说明: 获取综合排行榜视频列表（仅 Top100）
  */
 export const getRankVideos = (
-  params?: VideoListPaginationParams
+  params?: VideoListPaginationParams,
+  options?: ApiRequestOptions
 ): Promise<PaginatedResult<FeedItem>> => {
-  return request.get('/common/video/rank', { params })
+  return request.get('/common/video/rank', { params, ...options })
 }
 
 /**
@@ -390,8 +400,11 @@ export const getRankVideos = (
  * 依赖接口: 无
  * 接口说明: 根据关键词搜索视频
  */
-export const searchVideos = (params: SearchVideoParams): Promise<VideoSearchResult> => {
-  return request.get('/common/video/search', { params })
+export const searchVideos = (
+  params: SearchVideoParams,
+  options?: ApiRequestOptions
+): Promise<VideoSearchResult> => {
+  return request.get('/common/video/search', { params, ...options })
 }
 
 /**
@@ -401,8 +414,11 @@ export const searchVideos = (params: SearchVideoParams): Promise<VideoSearchResu
  * 依赖接口: 无
  * 接口说明: 根据前缀获取搜索建议
  */
-export const getSearchSuggest = (params: SearchSuggestParams): Promise<SearchSuggestItem[]> => {
-  return request.get('/common/video/search/suggest', { params })
+export const getSearchSuggest = (
+  params: SearchSuggestParams,
+  options?: ApiRequestOptions
+): Promise<SearchSuggestItem[]> => {
+  return request.get('/common/video/search/suggest', { params, ...options })
 }
 
 /**
@@ -412,8 +428,8 @@ export const getSearchSuggest = (params: SearchSuggestParams): Promise<SearchSug
  * 依赖接口: GET /common/video/search（搜索成功后累计关键词热度）
  * 接口说明: 获取首页搜索关键词前十列表，用于展示热搜；当暂无搜索热度时，会回退为热门视频标题推荐
  */
-export const getHotSearchKeywords = (): Promise<HotKeywordItem[]> => {
-  return request.get('/common/video/home/search/top')
+export const getHotSearchKeywords = (options?: ApiRequestOptions): Promise<HotKeywordItem[]> => {
+  return request.get('/common/video/home/search/top', options)
 }
 
 /**

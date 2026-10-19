@@ -3,8 +3,8 @@
  * 底部命令栏独立组件：模型切换 / 参数 / 输入 全部在此本地状态中。
  * 切换 TEXT/IMAGE/VIDEO 时不会触发父级消息列表重渲染。
  */
-import { computed, ref, watch } from 'vue'
-import { Loader2, Send, Settings2, X } from 'lucide-vue-next'
+import { computed, ref, watch, onBeforeUnmount, onMounted } from 'vue'
+import { Send, Square, Settings2, X } from 'lucide-vue-next'
 import { toast } from 'vue-sonner'
 import type { AiModelOption } from '@/api/ai'
 import type { AiComposerSendPayload, AiModelType, AiPastedImage } from '@/components/ai/ai-types'
@@ -12,6 +12,8 @@ import type { AiComposerSendPayload, AiModelType, AiPastedImage } from '@/compon
 const props = withDefaults(
   defineProps<{
     isSending: boolean
+    /** 发送前校验；返回 false 时保留输入和附件。 */
+    beforeSend?: () => boolean
     coverPickerMode?: boolean
     initialModel?: AiModelType
     initialPrompt?: string
@@ -44,10 +46,20 @@ const props = withDefaults(
 
 const emit = defineEmits<{
   send: [payload: AiComposerSendPayload]
+  stop: []
 }>()
 
 const activeModel = ref<AiModelType>(props.coverPickerMode ? 'image' : props.initialModel)
 const inputContent = ref(props.initialPrompt || '')
+const textareaRef = ref<HTMLTextAreaElement | null>(null)
+const resizeInput = () => {
+  const textarea = textareaRef.value
+  if (!textarea) return
+  textarea.style.height = 'auto'
+  textarea.style.height = `${Math.min(textarea.scrollHeight, 160)}px`
+}
+watch(inputContent, resizeInput, { flush: 'post' })
+onMounted(resizeInput)
 const pastedImages = ref<AiPastedImage[]>([])
 const showSettings = ref(false)
 
@@ -201,6 +213,7 @@ const removePastedImage = (index: number) => {
 
 const handleSend = () => {
   if (!canSend.value) return
+  if (props.beforeSend && !props.beforeSend()) return
   const text = inputContent.value.trim()
   const images = [...pastedImages.value]
   inputContent.value = ''
@@ -230,6 +243,18 @@ const handleSend = () => {
     },
   })
 }
+
+const handleKeydown = (event: KeyboardEvent) => {
+  if (event.key !== 'Enter' || event.shiftKey || event.ctrlKey || event.altKey || event.metaKey)
+    return
+  if (event.isComposing || event.keyCode === 229) return
+  event.preventDefault()
+  handleSend()
+}
+
+onBeforeUnmount(() => {
+  for (const image of pastedImages.value) URL.revokeObjectURL(image.url)
+})
 </script>
 
 <template>
@@ -239,9 +264,7 @@ const handleSend = () => {
     ></div>
 
     <div class="max-w-4xl mx-auto px-6 pb-6 w-full">
-      <div
-        class="flex flex-col rounded-[24px] bg-[var(--bg-surface-1)] shadow-overlay border border-[var(--border-color)] p-2 focus-within:ring-1 focus-within:ring-[var(--brand-blue)]"
-      >
+      <div class="field-surface flex flex-col rounded-[24px] p-2">
         <div class="flex items-center justify-between px-3 py-2 mb-1">
           <div
             class="flex items-center gap-1 p-1 bg-[var(--bg-surface-2)] rounded-xl border border-[var(--border-color)]"
@@ -250,6 +273,7 @@ const handleSend = () => {
             <button
               type="button"
               role="tab"
+              :aria-selected="activeModel === 'text'"
               class="ai-model-tab"
               :class="activeModel === 'text' ? 'ai-model-tab--active' : ''"
               :disabled="coverPickerMode"
@@ -260,6 +284,7 @@ const handleSend = () => {
             <button
               type="button"
               role="tab"
+              :aria-selected="activeModel === 'image'"
               class="ai-model-tab"
               :class="activeModel === 'image' ? 'ai-model-tab--active' : ''"
               @click="setModel('image')"
@@ -269,6 +294,7 @@ const handleSend = () => {
             <button
               type="button"
               role="tab"
+              :aria-selected="activeModel === 'video'"
               class="ai-model-tab"
               :class="activeModel === 'video' ? 'ai-model-tab--active' : ''"
               :disabled="coverPickerMode"
@@ -501,28 +527,30 @@ const handleSend = () => {
 
           <div class="flex items-end gap-3 mt-1 px-1">
             <textarea
+              ref="textareaRef"
               v-model="inputContent"
-              class="flex-1 max-h-[160px] min-h-[44px] bg-transparent resize-none outline-none py-2 px-2 text-[16px] leading-[1.6] text-[var(--text-1)] placeholder:text-[var(--text-2)] custom-scrollbar font-normal"
-              :placeholder="
-                activeModel === 'text' ? 'Type a message...' : 'Describe what you want to create...'
-              "
+              class="ai-composer__input flex-1 max-h-[160px] min-h-[44px] bg-transparent resize-none outline-none py-2 px-2 text-[16px] leading-[1.6] text-[var(--text-1)] placeholder:text-[var(--text-2)] custom-scrollbar font-normal"
+              :placeholder="activeModel === 'text' ? '输入消息…' : '描述你想创作的内容…'"
               rows="1"
+              aria-label="AI 消息"
               @paste="handlePaste"
-              @keydown.enter.exact.prevent="handleSend"
+              @keydown="handleKeydown"
             ></textarea>
 
             <button
               type="button"
               class="shrink-0 w-11 h-11 flex items-center justify-center rounded-2xl shadow-raised"
               :class="
-                !canSend
+                !canSend && !isSending
                   ? 'bg-[var(--bg-surface-2)] text-[var(--text-2)] cursor-not-allowed shadow-none border border-[var(--border-color)]'
                   : 'bg-[var(--brand-blue)] text-[var(--signal-foreground)] hover:opacity-90 active:scale-95'
               "
-              :disabled="!canSend"
-              @click="handleSend"
+              :disabled="!canSend && !isSending"
+              :aria-label="isSending ? '停止生成' : '发送消息'"
+              :title="isSending ? '停止等待本次生成' : '发送消息（Shift + Enter 换行）'"
+              @click="isSending ? emit('stop') : handleSend()"
             >
-              <Loader2 v-if="isSending" class="w-5 h-5 animate-spin" />
+              <Square v-if="isSending" class="w-4 h-4" />
               <Send v-else class="w-4 h-4 ml-0.5" />
             </button>
           </div>
@@ -542,6 +570,14 @@ const handleSend = () => {
 <style scoped lang="scss">
 .ai-composer {
   contain: layout style;
+}
+
+.ai-composer__input {
+  caret-color: var(--brand-blue);
+
+  &::placeholder {
+    opacity: 1;
+  }
 }
 
 .ai-model-tab {

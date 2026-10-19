@@ -1,9 +1,8 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import { useRouter } from 'vue-router'
 import type { FeedItem } from '@/api/video'
 import { formatCount, formatDuration } from '@/utils/format'
-import { resolveMediaUrl } from '@/utils/media'
+import AppImage from '@/components/common/AppImage.vue'
 
 interface Props {
   video: FeedItem
@@ -11,7 +10,6 @@ interface Props {
 }
 
 const props = defineProps<Props>()
-const router = useRouter()
 
 // Format duration from seconds to mm:ss
 const formattedDuration = computed(() => formatDuration(props.video.duration))
@@ -22,10 +20,6 @@ const formattedViews = computed(() => formatCount(props.video.views))
 // Format danmu count
 const formattedDanmu = computed(() => formatCount(props.video.danmuCount))
 
-const handleClick = () => {
-  void router.push(`/video/${props.video.id}`)
-}
-
 const rankBadgeStyle = computed(() => {
   if (props.rank === 1) return 'rank-badge-1'
   if (props.rank === 2) return 'rank-badge-2'
@@ -35,16 +29,14 @@ const rankBadgeStyle = computed(() => {
 </script>
 
 <template>
-  <div
+  <router-link
+    :to="`/video/${video.id}`"
     class="group flex cursor-pointer gap-4 rounded-lg p-2 transition-colors hover:bg-muted/50"
-    @click="handleClick"
   >
     <!-- Left side: Cover & Rank -->
-    <div class="relative flex w-[220px] shrink-0 sm:w-[260px]">
+    <div class="relative flex w-[44%] max-w-[260px] shrink-0 sm:w-[260px]">
       <!-- Cover Image -->
-      <div
-        class="relative aspect-video w-full overflow-hidden rounded-md bg-muted shadow-[0_4px_12px_rgba(0,0,0,0.06)]"
-      >
+      <div class="relative aspect-video w-full overflow-hidden rounded-md bg-muted shadow-raised">
         <!-- Rank Badge -->
         <div
           class="absolute left-0 top-0 z-20 flex min-h-[30px] min-w-[36px] items-center justify-center rounded-br-[12px] px-2.5 py-1 text-2xl font-black italic leading-none md:min-h-[36px] md:min-w-[42px] md:text-3xl"
@@ -52,11 +44,12 @@ const rankBadgeStyle = computed(() => {
         >
           {{ rank }}
         </div>
-        <img
-          :src="resolveMediaUrl(video.cover)"
+        <AppImage
+          :src="video.cover"
           :alt="video.title"
-          class="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
-          loading="lazy"
+          aspect="auto"
+          img-class="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
+          fallback-text="封面暂不可用"
         />
         <!-- Duration Badge -->
         <div class="media-chip absolute bottom-1 right-1 rounded px-1.5 py-0.5 text-xs font-medium">
@@ -128,5 +121,5 @@ const rankBadgeStyle = computed(() => {
         </div>
       </div>
     </div>
-  </div>
+  </router-link>
 </template>

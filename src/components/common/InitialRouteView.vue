@@ -3,18 +3,20 @@
  * 初始异步路由的唯一收口点。
  *
  * Vue 先挂载并替换 index.html 的静态启动提示，再由本组件等待首个 layout / view
- * 分包解析。快速加载不显示任何占位；较慢时只显示轻量进度；失败时给出明确重试入口。
+ * 分包解析。快速加载不显示任何占位；较慢时显示品牌开场动画；失败时给出明确重试入口。
  */
 import { onBeforeUnmount, shallowRef } from 'vue'
 import { RouterView, useRouter } from 'vue-router'
 import { AlertTriangle, RotateCcw } from 'lucide-vue-next'
+import PageOpening from './PageOpening.vue'
 
 type InitialRouteState = 'pending' | 'ready' | 'error'
 
 const router = useRouter()
 const initialRouteState = shallowRef<InitialRouteState>('pending')
-const showPending = shallowRef(false)
 const PENDING_DELAY = 180
+// 从导航开始计时，慢速下载后 Vue 接管时不再重复等待。
+const showPending = shallowRef(performance.now() >= PENDING_DELAY)
 let pendingTimer: ReturnType<typeof setTimeout> | undefined
 
 const settle = (state: Exclude<InitialRouteState, 'pending'>) => {
@@ -26,9 +28,12 @@ const settle = (state: Exclude<InitialRouteState, 'pending'>) => {
   initialRouteState.value = state
 }
 
-pendingTimer = setTimeout(() => {
-  showPending.value = true
-}, PENDING_DELAY)
+pendingTimer = setTimeout(
+  () => {
+    showPending.value = true
+  },
+  Math.max(0, PENDING_DELAY - performance.now())
+)
 
 void router
   .isReady()
@@ -51,7 +56,7 @@ onBeforeUnmount(() => {
   <RouterView v-if="initialRouteState === 'ready'" />
 
   <main
-    v-else-if="initialRouteState === 'error'"
+    v-if="initialRouteState === 'error'"
     class="initial-route-state"
     aria-labelledby="initial-route-error-title"
   >
@@ -70,14 +75,16 @@ onBeforeUnmount(() => {
     </div>
   </main>
 
-  <main v-else class="initial-route-state" aria-busy="true" aria-label="页面加载中">
-    <div v-if="showPending" class="initial-route-state__pending" role="status">
-      <span>正在打开页面</span>
-      <span class="initial-route-state__track" aria-hidden="true">
-        <span></span>
-      </span>
-    </div>
-  </main>
+  <Transition name="initial-opening">
+    <main
+      v-if="initialRouteState === 'pending'"
+      class="initial-route-state initial-route-state--pending"
+      aria-busy="true"
+      aria-label="页面加载中"
+    >
+      <PageOpening v-if="showPending" />
+    </main>
+  </Transition>
 </template>
 
 <style scoped lang="scss">
@@ -89,34 +96,25 @@ onBeforeUnmount(() => {
   background-color: var(--color-background);
 }
 
-.initial-route-state__pending {
-  display: flex;
-  width: min(11.25rem, 100%);
-  flex-direction: column;
-  gap: 0.625rem;
-  align-items: center;
-  color: var(--color-muted-foreground);
-  font-size: 0.8125rem;
-  animation: initial-route-reveal var(--duration-fast) var(--ease-out-quart) both;
+.initial-route-state--pending {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  padding: 0;
 }
 
-.initial-route-state__track {
-  display: block;
-  position: relative;
-  width: 100%;
-  height: 0.1875rem;
-  overflow: hidden;
-  border-radius: 999px;
-  background-color: var(--color-muted);
+.initial-opening-leave-active {
+  pointer-events: none;
+  transition: opacity 240ms var(--ease-out-quart);
+}
 
-  > span {
-    position: absolute;
-    inset: 0;
-    border-radius: inherit;
-    background-color: var(--color-primary);
-    transform: translate3d(-72%, 0, 0) scaleX(0.28);
-    transform-origin: left center;
-    animation: initial-route-progress 1.1s ease-in-out infinite;
+.initial-opening-leave-to {
+  opacity: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .initial-opening-leave-active {
+    transition: none;
   }
 }
 
@@ -184,39 +182,6 @@ onBeforeUnmount(() => {
   .initial-route-state__retry:hover {
     border-color: color-mix(in oklch, var(--color-primary) 50%, var(--color-border));
     background-color: color-mix(in oklch, var(--color-primary) 6%, var(--color-card));
-  }
-}
-
-@keyframes initial-route-reveal {
-  from {
-    opacity: 0;
-    transform: translate3d(0, 0.25rem, 0);
-  }
-
-  to {
-    opacity: 1;
-    transform: translate3d(0, 0, 0);
-  }
-}
-
-@keyframes initial-route-progress {
-  50% {
-    transform: translate3d(72%, 0, 0) scaleX(0.52);
-  }
-
-  100% {
-    transform: translate3d(260%, 0, 0) scaleX(0.28);
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .initial-route-state__pending {
-    animation: none;
-  }
-
-  .initial-route-state__track > span {
-    transform: scaleX(0.42);
-    animation: none;
   }
 }
 </style>

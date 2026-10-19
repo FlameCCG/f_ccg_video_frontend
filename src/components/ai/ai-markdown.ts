@@ -1,4 +1,4 @@
-import { marked, type MarkedOptions, type Tokens } from 'marked'
+import { Marked, type Tokens } from 'marked'
 import DOMPurify from 'dompurify'
 import hljs from 'highlight.js'
 import { resolveAiAssetUrl } from '@/api/ai'
@@ -71,6 +71,10 @@ const normalizeLangId = (lang?: string | null): string => {
 const highlightCode = (text: string, lang?: string | null) => {
   const resolved = normalizeLangId(lang)
 
+  if (resolved === 'plaintext' || text.length > 12000) {
+    return { html: escapeHtml(text), language: resolved || 'plaintext' }
+  }
+
   if (resolved && resolved !== 'plaintext' && hljs.getLanguage(resolved)) {
     try {
       return {
@@ -97,22 +101,19 @@ const highlightCode = (text: string, lang?: string | null) => {
   return { html: escapeHtml(text), language: resolved || 'plaintext' }
 }
 
-let markedConfigured = false
-
-const configureMarked = () => {
-  if (markedConfigured) return
-  markedConfigured = true
-
-  marked.setOptions({
+const createMarkdownParser = (streaming: boolean) => {
+  const parser = new Marked({
     breaks: true,
     gfm: true,
-  } satisfies MarkedOptions)
+  })
 
-  marked.use({
+  parser.use({
     renderer: {
       code(token: Tokens.Code) {
         const { text, lang } = token
-        const { html: highlighted, language } = highlightCode(text, lang)
+        const { html: highlighted, language } = streaming
+          ? { html: escapeHtml(text), language: normalizeLangId(lang) }
+          : highlightCode(text, lang)
         const safeLanguage = (language || 'plaintext').replace(/[^\w-]/g, '') || 'plaintext'
         const languageLabel = safeLanguage === 'plaintext' ? 'TEXT' : safeLanguage.toUpperCase()
         const encodedPayload = encodeCopyPayload(text)
@@ -136,23 +137,26 @@ const configureMarked = () => {
       image(token: Tokens.Image) {
         const { href, title, text } = token
         const resolved = resolveAiAssetUrl(href || '')
-        let out = `<img src="${resolved}" alt="${text || ''}"`
+        let out = `<img src="${escapeHtml(resolved)}" alt="${escapeHtml(text || '')}"`
         if (title) {
-          out += ` title="${title}"`
+          out += ` title="${escapeHtml(title)}"`
         }
         out += ` referrerpolicy="no-referrer" loading="lazy" decoding="async" />`
         return out
       },
     },
   })
+  return parser
 }
 
-export const renderMarkdownHtml = (text: string, _options?: { streaming?: boolean }): string => {
+const streamingParser = createMarkdownParser(true)
+const completeParser = createMarkdownParser(false)
+
+export const renderMarkdownHtml = (text: string, options?: { streaming?: boolean }): string => {
   if (!text) return ''
-  configureMarked()
 
   try {
-    const rawHtml = marked.parse(text)
+    const rawHtml = (options?.streaming ? streamingParser : completeParser).parse(text)
     return DOMPurify.sanitize(rawHtml as string, markdownSanitizeOptions)
   } catch {
     return escapeHtml(text).replace(/\n/g, '<br>')

@@ -1189,13 +1189,12 @@ onUnmounted(() => {
     height: 1.05rem;
     width: 1.05rem;
     transform: translateY(-50%);
-    color: color-mix(in oklch, var(--text-2) 72%, transparent);
-    transition: color var(--duration-fast) linear;
+    color: var(--text-2);
     pointer-events: none;
   }
 
   &:focus-within .auth-field-icon {
-    color: var(--brand-blue);
+    color: var(--field-border-focus);
   }
 
   &-meta {
@@ -1208,15 +1207,9 @@ onUnmounted(() => {
   height: 2.75rem;
   width: 100%;
   border-radius: 0.85rem;
-  border: 1px solid transparent;
-  background: color-mix(in oklch, var(--bg-surface-2) 70%, transparent);
   padding-left: 2.65rem;
   padding-right: 0.95rem;
   font-size: 0.875rem;
-  transition:
-    border-color var(--duration-fast) linear,
-    background-color var(--duration-fast) linear,
-    box-shadow var(--duration-fast) var(--ease-out-quart);
 }
 
 :deep(.auth-input--trailing) {
@@ -1225,17 +1218,6 @@ onUnmounted(() => {
 
 :deep(.auth-input--plain) {
   padding-left: 0.95rem;
-}
-
-:deep(.auth-input::placeholder) {
-  color: color-mix(in oklch, var(--text-2) 70%, transparent);
-}
-
-:deep(.auth-input:focus-visible) {
-  border-color: color-mix(in oklch, var(--brand-blue) 32%, transparent);
-  background: color-mix(in oklch, var(--bg-surface-0) 88%, transparent);
-  box-shadow: 0 0 0 3px color-mix(in oklch, var(--brand-blue) 12%, transparent);
-  outline: none;
 }
 
 :deep(.auth-input--invalid) {

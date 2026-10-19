@@ -2,107 +2,12 @@
 <html lang="zh-CN">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+    <link rel="icon" type="image/png" href="/logo.png" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Bilibili Video Platform</title>
+    <title>CCG 视频</title>
+    <meta name="description" content="发现喜欢的视频，分享创作，与感兴趣的 UP 主相遇。" />
     <link rel="stylesheet" href="/iconfront.css" />
-    <style>
-      /* Vue 接管页面前只保留克制的启动提示，不再伪造一整页内容骨架。 */
-      :root {
-        --boot-background: oklch(98.5% 0.004 240deg);
-        --boot-surface: oklch(94.5% 0.009 240deg);
-        --boot-brand: oklch(62% 0.17 230deg);
-        --boot-text: oklch(42% 0.018 240deg);
-      }
-
-      html.dark {
-        --boot-background: oklch(17% 0.01 250deg);
-        --boot-surface: oklch(24% 0.012 250deg);
-        --boot-brand: oklch(70% 0.14 230deg);
-        --boot-text: oklch(78% 0.015 250deg);
-      }
-
-      html,
-      body,
-      #app {
-        min-height: 100%;
-        margin: 0;
-      }
-
-      body:has(> #app > .app-boot) {
-        background: var(--boot-background);
-      }
-
-      .app-boot {
-        display: grid;
-        min-height: 100vh;
-        place-items: center;
-        overflow: hidden;
-        background: var(--boot-background);
-      }
-
-      .app-boot__indicator {
-        display: flex;
-        width: min(180px, calc(100% - 48px));
-        flex-direction: column;
-        gap: 10px;
-        align-items: center;
-        color: var(--boot-text);
-        font:
-          13px/1.4 system-ui,
-          sans-serif;
-        opacity: 0;
-        animation: app-boot-reveal 160ms ease-out 180ms forwards;
-      }
-
-      .app-boot__track {
-        position: relative;
-        width: 100%;
-        height: 3px;
-        overflow: hidden;
-        border-radius: 999px;
-        background: var(--boot-surface);
-      }
-
-      .app-boot__track::after {
-        position: absolute;
-        inset: 0;
-        content: '';
-        border-radius: inherit;
-        background: var(--boot-brand);
-        transform: translate3d(-72%, 0, 0) scaleX(0.28);
-        transform-origin: left center;
-        animation: app-boot-progress 1.1s ease-in-out infinite;
-      }
-
-      @keyframes app-boot-reveal {
-        to {
-          opacity: 1;
-        }
-      }
-
-      @keyframes app-boot-progress {
-        50% {
-          transform: translate3d(72%, 0, 0) scaleX(0.52);
-        }
-
-        100% {
-          transform: translate3d(260%, 0, 0) scaleX(0.28);
-        }
-      }
-
-      @media (prefers-reduced-motion: reduce) {
-        .app-boot__indicator {
-          opacity: 1;
-          animation: none;
-        }
-
-        .app-boot__track::after {
-          transform: scaleX(0.42);
-          animation: none;
-        }
-      }
-    </style>
+    <link rel="stylesheet" href="/page-opening.css" />
     <script>
       /*
        * 主题预置：在首次绘制之前把 html.dark 定下来。
@@ -127,10 +32,37 @@
   </head>
   <body>
     <div id="app">
-      <div class="app-boot" role="status" aria-label="页面加载中">
-        <div class="app-boot__indicator">
-          <span>正在打开页面</span>
-          <span class="app-boot__track" aria-hidden="true"></span>
+      <div class="app-boot page-opening" aria-busy="true" aria-label="页面加载中">
+        <div class="page-opening__composition">
+          <div class="page-opening__stage" aria-hidden="true">
+            <span class="page-opening__orbit page-opening__orbit--outer"></span>
+            <span class="page-opening__orbit page-opening__orbit--inner"></span>
+            <span class="page-opening__tick page-opening__tick--one"></span>
+            <span class="page-opening__tick page-opening__tick--two"></span>
+            <div class="page-opening__frames">
+              <span class="page-opening__frame page-opening__frame--back"></span>
+              <span class="page-opening__frame page-opening__frame--middle"></span>
+              <span class="page-opening__frame page-opening__frame--front">
+                <svg viewBox="0 0 48 48" fill="none">
+                  <path
+                    d="M18 12.5a2 2 0 0 1 3-1.7l19 11.5a2 2 0 0 1 0 3.4L21 37.2a2 2 0 0 1-3-1.7Z"
+                    fill="currentColor"
+                  />
+                </svg>
+                <i></i><i></i><i></i>
+              </span>
+            </div>
+            <span class="page-opening__spark page-opening__spark--one"></span>
+            <span class="page-opening__spark page-opening__spark--two"></span>
+          </div>
+          <div class="page-opening__identity" aria-hidden="true">
+            <span class="page-opening__wordmark">CCG<span>视频</span></span>
+            <span class="page-opening__caption">每一帧，都有热爱</span>
+          </div>
+          <div class="page-opening__status" role="status">
+            <span class="page-opening__pulse" aria-hidden="true"><i></i><i></i><i></i></span>
+            <span>正在载入你的视界</span>
+          </div>
         </div>
       </div>
     </div>

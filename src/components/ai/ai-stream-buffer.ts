@@ -27,6 +27,7 @@ export const createStreamBuffer = (options: StreamBufferOptions) => {
   let reasoningDirty = false
   let timer: number | null = null
   let disposed = false
+  let finalized = false
 
   const clearTimer = () => {
     if (timer !== null) {
@@ -36,7 +37,7 @@ export const createStreamBuffer = (options: StreamBufferOptions) => {
   }
 
   const flush = (final = false) => {
-    if (disposed || !msgId) return
+    if (disposed || finalized || !msgId) return
     if (!contentDirty && !reasoningDirty && !final) return
 
     const payload: StreamFlushPayload = {
@@ -50,6 +51,7 @@ export const createStreamBuffer = (options: StreamBufferOptions) => {
 
     contentDirty = false
     reasoningDirty = false
+    finalized = final
     clearTimer()
     options.onFlush(payload)
   }
@@ -64,7 +66,9 @@ export const createStreamBuffer = (options: StreamBufferOptions) => {
 
   return {
     start(id: string) {
+      if (disposed) return
       msgId = id
+      finalized = false
       content = ''
       reasoning = ''
       contentDirty = false
@@ -73,14 +77,14 @@ export const createStreamBuffer = (options: StreamBufferOptions) => {
     },
 
     appendContent(chunk: string) {
-      if (!msgId || !chunk) return
+      if (disposed || finalized || !msgId || !chunk) return
       content += chunk
       contentDirty = true
       schedule()
     },
 
     appendReasoning(chunk: string) {
-      if (!msgId || !chunk) return
+      if (disposed || finalized || !msgId || !chunk) return
       reasoning += chunk
       reasoningDirty = true
       schedule()

@@ -1,18 +1,13 @@
-# 普通用户 API 文档
+# Client 接口与联调
 
-- Base URL: /v1
-- 说明:
-  - 视频平台后端 API 文档，包含用户、视频、评论、社交、通知、动态等模块。
-  - 所有接口统一返回 HTTP 200，业务成功/失败请以响应体 code 判断（0=成功，1=失败），错误信息在 msg。
+当前后端为 `../../f_ccg_video_back_ddd`。接口路径保持 `/v1/common/*`，业务成功以响应体 `code === 0` 为准。
 
-## 模块目录
-1. [用户管理](01-user-management.md) - 注册登录、用户信息、设置、记录
-2. [验证码管理](02-captcha-management.md) - 图形/滑块/点击/邮箱验证码获取与校验
-3. [站点管理](03-site-management.md) - 站点配置与统计、心跳/打点
-4. [轮播图管理](04-banner-management.md) - 轮播图获取与展示
-5. [视频管理](05-video-management.md) - 视频浏览、搜索、互动、投稿、上传、弹幕、收藏/历史
-6. [评论管理](06-comment-management.md) - 评论、回复与互动
-7. [社交管理](07-social-management.md) - 关注/粉丝/关系链
-8. [通知管理](08-notification-management.md) - 通知与消息
-9. [私信管理](09-chat-management.md) - 私信/聊天相关
-10. [动态管理](10-dynamic-management.md) - 动态发布与列表
+接口说明统一维护在 [DDD 后端用户 API 文档](../../f_ccg_video_back_ddd/docs/openapi-md/user/index.md)，完整定义见 [OpenAPI](../../f_ccg_video_back_ddd/docs/openapi.yaml)。本目录不再保留重复的分模块文档。
+
+开发时在 `f_ccg_video_back_ddd` 目录运行 `go run ./cmd/server -f config_dev.yaml`，在 client 目录运行 `pnpm dev`。后端依赖及配置见 [DDD 架构说明](../../f_ccg_video_back_ddd/docs/architecture.md)与 [配置示例](../../f_ccg_video_back_ddd/config.example.yaml)。
+
+Vite 默认将 `/v1`、`/uploads` 转发到 `http://127.0.0.1:8080`，将 `/user_files`、`/images`、`/covers` 转发到 MinIO 桶 `http://127.0.0.1:9002/videos`（保留对象路径）。如 DDD 后端使用其他地址，在 `.env.development.local` 中设置 `VITE_DEV_PROXY_TARGET` 并重启 Vite；MinIO 代理可通过 `VITE_MEDIA_MINIO_TARGET` 调整。`VITE_API_BASE` 默认使用同源 `/v1`，直接连接后端时需配置后端 CORS。生产网关也需转发这些公开媒体前缀，或设置 `VITE_MEDIA_BASE` 指向媒体服务。
+
+接口连通性可检查 `GET /v1/common/site/config`、`GET /v1/common/video/home?page=1&pageSize=20`、`GET /v1/common/video/partitions`、`GET /v1/common/banner/list` 和 `POST /v1/common/site/stat/touch`。需要同时检查 HTTP 状态及响应体业务码。
+
+2026-10-18 核查时，本机 8080 端口没有后端服务监听；当前 DDD 路由源码已注册上述接口。历史 `issue.md` 中的 404/403 记录不能作为当前运行结论，真实登录与视频播放仍需启动后端及其依赖后联调。

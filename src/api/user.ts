@@ -1,5 +1,11 @@
 import type { BannerItem } from './banner'
-import type { PaginatedResult, PaginationParams, SearchHighlight, Tag } from './types'
+import type {
+  ApiRequestOptions,
+  PaginatedResult,
+  PaginationParams,
+  SearchHighlight,
+  Tag,
+} from './types'
 import request from './request'
 
 export type { PaginatedResult, PaginationParams, SearchHighlight, Tag } from './types'
@@ -484,8 +490,11 @@ export const getUserDetail = (id: number): Promise<UserDetail> => {
  * 依赖接口: 无
  * 接口说明: 根据关键词搜索用户
  */
-export const searchUsers = (params: SearchUserParams): Promise<UserSearchResult> => {
-  return request.get('/common/user/search', { params })
+export const searchUsers = (
+  params: SearchUserParams,
+  options?: ApiRequestOptions
+): Promise<UserSearchResult> => {
+  return request.get('/common/user/search', { params, ...options })
 }
 
 /**

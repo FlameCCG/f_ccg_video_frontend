@@ -7,6 +7,8 @@ import VideoCard from '@/components/video/VideoCard.vue'
 import VideoCardSkeleton from '@/components/common/VideoCardSkeleton.vue'
 import SkeletonGroup from '@/components/common/SkeletonGroup.vue'
 import InfiniteScroll from '@/components/common/InfiniteScroll.vue'
+import FeedError from '@/components/common/FeedError.vue'
+import EmptyState from '@/components/common/EmptyState.vue'
 import Carousel from '@/components/common/Carousel.vue'
 import { BannerDisplay } from '@/constants/banner'
 
@@ -14,6 +16,7 @@ import { BannerDisplay } from '@/constants/banner'
 const banners = ref<BannerItem[]>([])
 const videos = ref<FeedItem[]>([])
 const loading = ref(false)
+const feedError = ref('')
 const finished = ref(false)
 const page = ref(1)
 const pageSize = 20
@@ -40,14 +43,6 @@ const featuredVideos = computed(() => {
     return []
   }
   return videos.value.slice(0, FEATURED_COUNT)
-})
-
-// Computed: Remaining videos (after featured)
-const remainingVideos = computed(() => {
-  if (!showHero.value) {
-    return videos.value
-  }
-  return videos.value.slice(FEATURED_COUNT)
 })
 
 /**
@@ -80,15 +75,19 @@ const fetchVideos = async () => {
   if (loading.value || finished.value) return
 
   loading.value = true
+  feedError.value = ''
   try {
-    const result = await getHomeVideos({ page: page.value, pageSize })
-    if (result.list.length < pageSize) {
+    const result = await getHomeVideos({ page: page.value, pageSize }, { silent: true })
+    if (
+      result.list.length < pageSize ||
+      (typeof result.total === 'number' && videos.value.length + result.list.length >= result.total)
+    ) {
       finished.value = true
     }
     videos.value = [...videos.value, ...result.list]
     page.value++
   } catch (error) {
-    console.error('Failed to fetch videos:', error)
+    feedError.value = error instanceof Error ? error.message : '请稍后重试'
   } finally {
     loading.value = false
   }
@@ -105,6 +104,7 @@ const siteTouchOnce = async () => {
 
 // Load more handler
 const handleLoadMore = () => {
+  if (feedError.value) return
   void fetchVideos()
 }
 
@@ -163,19 +163,36 @@ onMounted(async () => {
         </SkeletonGroup>
 
         <div
-          v-else
+          v-else-if="featuredVideos.length > 0"
           key="featured"
           class="mt-4 hidden lg:mt-0 lg:grid lg:min-w-0 lg:grid-cols-3 lg:gap-4 lg:content-start"
         >
           <VideoCard v-for="video in featuredVideos" :key="video.id" :video="video" />
+        </div>
+        <div
+          v-else
+          key="feed-status"
+          class="flex min-w-0 items-center justify-center lg:self-stretch"
+        >
+          <FeedError v-if="feedError" :message="feedError" @retry="fetchVideos" />
+          <EmptyState
+            v-else
+            variant="home"
+            eyebrow="属于你的放映室"
+            title="第一场精彩，还未开映"
+            description="推荐列表暂时为空。等作品发布后，就会在这里与你见面。"
+          />
         </div>
       </Transition>
     </div>
 
     <!-- Video Grid -->
     <InfiniteScroll
+      v-if="initialLoading || videos.length > 0 || !showHero"
+      :disabled="!!feedError"
       :loading="loading"
       :finished="finished"
+      :show-status="videos.length > 0 || loading"
       :initial-loading="initialLoading"
       @load-more="handleLoadMore"
     >
@@ -195,8 +212,26 @@ onMounted(async () => {
 
       <!-- Video Cards -->
       <div class="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
-        <VideoCard v-for="video in remainingVideos" :key="video.id" :video="video" />
+        <VideoCard
+          v-for="(video, index) in videos"
+          :key="video.id"
+          :video="video"
+          :class="showHero && index < FEATURED_COUNT ? 'lg:hidden' : ''"
+        />
       </div>
+      <FeedError
+        v-if="feedError && !initialLoading"
+        :message="feedError"
+        :has-items="videos.length > 0"
+        @retry="fetchVideos"
+      />
+      <EmptyState
+        v-else-if="!initialLoading && !loading && videos.length === 0"
+        variant="home"
+        eyebrow="属于你的放映室"
+        title="第一场精彩，还未开映"
+        description="推荐列表暂时为空。等作品发布后，就会在这里与你见面。"
+      />
     </InfiniteScroll>
   </div>
 </template>

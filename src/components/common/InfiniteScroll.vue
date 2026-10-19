@@ -27,6 +27,7 @@ interface Props {
   initialLoading?: boolean
   loadingText?: string
   finishedText?: string
+  showStatus?: boolean
 }
 
 const props = withDefaults(defineProps<Props>(), {
@@ -37,6 +38,7 @@ const props = withDefaults(defineProps<Props>(), {
   initialLoading: false,
   loadingText: '正在加载…',
   finishedText: '没有更多内容了',
+  showStatus: true,
 })
 
 const emit = defineEmits<{
@@ -161,7 +163,7 @@ defineExpose({
     <div ref="sentinelRef" class="is-sentinel" aria-hidden="true"></div>
 
     <!-- 高度恒定的状态区：内部绝对定位切换，容器高度不变 → 哨兵位置不动 -->
-    <div v-if="!initialLoading" class="is-foot" role="status" aria-live="polite">
+    <div v-if="!initialLoading && showStatus" class="is-foot" role="status" aria-live="polite">
       <Transition name="is-foot-swap">
         <div v-if="loading" key="loading" class="is-foot__slot">
           <slot name="loading">

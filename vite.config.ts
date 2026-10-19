@@ -1,6 +1,6 @@
 import http from 'node:http'
 import { fileURLToPath, URL } from 'node:url'
-import { defineConfig } from 'vite'
+import { defineConfig, loadEnv } from 'vite'
 import vue from '@vitejs/plugin-vue'
 import tailwindcss from '@tailwindcss/vite'
 
@@ -12,13 +12,6 @@ const backendAgent = new http.Agent({
   maxFreeSockets: 16,
   scheduling: 'lifo',
 })
-
-const backendTarget = process.env.VITE_DEV_PROXY_TARGET || 'http://127.0.0.1:8080'
-
-// 媒体同源代理（VITE_MEDIA_BASE 为空时浏览器走这里）：
-//  - /user_files/* → MinIO（对象路径含 bucket 前缀，target 直接带桶名）
-//  - /uploads/*    → 后端本地静态目录（本地存储模式）
-const mediaMinioTarget = process.env.VITE_MEDIA_MINIO_TARGET || 'http://127.0.0.1:9002/videos'
 
 /** 规范化 Node remoteAddress（可能是 :ffff:x.x.x.x 或带 zone 的 IPv6） */
 function normalizeProxyClientIP(raw: string | undefined): string {
@@ -36,120 +29,127 @@ function normalizeProxyClientIP(raw: string | undefined): string {
 }
 
 // https://vite.dev/config/
-export default defineConfig({
-  plugins: [vue(), tailwindcss()],
-  resolve: {
-    alias: {
-      '@': fileURLToPath(new URL('./src', import.meta.url)),
+export default defineConfig(({ mode }) => {
+  // 配置求值时 Vite 尚未自动读取 .env，代理目标需按当前 mode 显式加载。
+  const env = loadEnv(mode, fileURLToPath(new URL('.', import.meta.url)))
+  const backendTarget = env.VITE_DEV_PROXY_TARGET || 'http://127.0.0.1:8080'
+  const mediaMinioTarget = env.VITE_MEDIA_MINIO_TARGET || 'http://127.0.0.1:9002/videos'
+
+  return {
+    plugins: [vue(), tailwindcss()],
+    resolve: {
+      alias: {
+        '@': fileURLToPath(new URL('./src', import.meta.url)),
+      },
     },
-  },
-  server: {
-    port: 3000,
-    host: true,
-    proxy: {
-      // 媒体资源（同源方案）：/user_files → MinIO，/uploads → 后端本地静态目录
-      '/user_files': {
-        target: mediaMinioTarget,
-        changeOrigin: true,
-        secure: false,
-      },
-      '/uploads': {
-        target: backendTarget,
-        changeOrigin: true,
-        secure: false,
-      },
-      '/v1': {
-        target: backendTarget,
-        changeOrigin: true,
-        secure: false,
-        // 向后端透传 X-Forwarded-*，便于记录真实客户端 IP（而非 Vite 的 127.0.0.1）
-        xfwd: true,
-        // 后端慢查询（如审核稿详情）时避免代理过早断开
-        timeout: 60_000,
-        proxyTimeout: 60_000,
-        agent: backendAgent,
-        configure: (proxy) => {
-          proxy.on('error', (err, _req, res) => {
-            const message = err instanceof Error ? err.message : String(err)
-            console.error(`[vite proxy → ${backendTarget}]`, message)
+    server: {
+      port: 3000,
+      host: true,
+      proxy: {
+        // MinIO 的公开对象前缀包含用户文件、初始化图片和封面；保留对象 key 转发到桶。
+        '^/(user_files|images|covers)(/|$)': {
+          target: mediaMinioTarget,
+          changeOrigin: true,
+          secure: false,
+        },
+        '/uploads': {
+          target: backendTarget,
+          changeOrigin: true,
+          secure: false,
+        },
+        '/v1': {
+          target: backendTarget,
+          changeOrigin: true,
+          secure: false,
+          // 向后端透传 X-Forwarded-*，便于记录真实客户端 IP（而非 Vite 的 127.0.0.1）
+          xfwd: true,
+          // 后端慢查询（如审核稿详情）时避免代理过早断开
+          timeout: 60_000,
+          proxyTimeout: 60_000,
+          agent: backendAgent,
+          configure: (proxy) => {
+            proxy.on('error', (err, _req, res) => {
+              const message = err instanceof Error ? err.message : String(err)
+              console.error(`[vite proxy → ${backendTarget}]`, message)
 
-            // 把“连不上后端”变成明确 JSON，而不是空 body 的 500 text/plain
-            if (
-              res &&
-              'writeHead' in res &&
-              typeof res.writeHead === 'function' &&
-              !('headersSent' in res && res.headersSent)
-            ) {
-              const body = JSON.stringify({
-                code: 1,
-                data: {},
-                msg: `开发代理无法连接后端(${backendTarget})，请确认后端已启动后刷新`,
-              })
-              res.writeHead(502, {
-                'Content-Type': 'application/json; charset=utf-8',
-                'X-Vite-Proxy-Error': '1',
-              })
-              res.end(body)
-            }
-          })
-
-          proxy.on('proxyReq', (proxyReq, req) => {
-            // 避免上游 keep-alive 半开连接导致偶发失败
-            proxyReq.setHeader('Connection', 'keep-alive')
-
-            // 显式写入真实客户端 IP，避免登录记录全部落成 127.0.0.1/内网
-            const remote =
-              req.socket?.remoteAddress ||
-              // Node 旧字段兼容
-              (req as { connection?: { remoteAddress?: string } }).connection?.remoteAddress ||
-              ''
-            const clientIP = normalizeProxyClientIP(remote)
-            if (clientIP) {
-              proxyReq.setHeader('X-Real-IP', clientIP)
-              const existingForwarded = req.headers['x-forwarded-for']
-              if (!existingForwarded) {
-                proxyReq.setHeader('X-Forwarded-For', clientIP)
-              } else if (Array.isArray(existingForwarded)) {
-                proxyReq.setHeader('X-Forwarded-For', existingForwarded.join(', '))
-              } else {
-                proxyReq.setHeader('X-Forwarded-For', existingForwarded)
+              // 把“连不上后端”变成明确 JSON，而不是空 body 的 500 text/plain
+              if (
+                res &&
+                'writeHead' in res &&
+                typeof res.writeHead === 'function' &&
+                !('headersSent' in res && res.headersSent)
+              ) {
+                const body = JSON.stringify({
+                  code: 1,
+                  data: {},
+                  msg: `开发代理无法连接后端(${backendTarget})，请确认后端已启动后刷新`,
+                })
+                res.writeHead(502, {
+                  'Content-Type': 'application/json; charset=utf-8',
+                  'X-Vite-Proxy-Error': '1',
+                })
+                res.end(body)
               }
+            })
+
+            proxy.on('proxyReq', (proxyReq, req) => {
+              // 避免上游 keep-alive 半开连接导致偶发失败
+              proxyReq.setHeader('Connection', 'keep-alive')
+
+              // 显式写入真实客户端 IP，避免登录记录全部落成 127.0.0.1/内网
+              const remote =
+                req.socket?.remoteAddress ||
+                // Node 旧字段兼容
+                (req as { connection?: { remoteAddress?: string } }).connection?.remoteAddress ||
+                ''
+              const clientIP = normalizeProxyClientIP(remote)
+              if (clientIP) {
+                proxyReq.setHeader('X-Real-IP', clientIP)
+                const existingForwarded = req.headers['x-forwarded-for']
+                if (!existingForwarded) {
+                  proxyReq.setHeader('X-Forwarded-For', clientIP)
+                } else if (Array.isArray(existingForwarded)) {
+                  proxyReq.setHeader('X-Forwarded-For', existingForwarded.join(', '))
+                } else {
+                  proxyReq.setHeader('X-Forwarded-For', existingForwarded)
+                }
+              }
+            })
+          },
+        },
+      },
+    },
+    dev: {
+      sourcemap: {
+        js: false,
+        css: false,
+      },
+    },
+    build: {
+      target: 'esnext',
+      minify: 'esbuild',
+      sourcemap: false,
+      chunkSizeWarningLimit: 1500,
+      rollupOptions: {
+        output: {
+          // Split the heavy leaf libraries into their own chunks so they are
+          // fetched only by the routes/features that need them and cache well.
+          manualChunks(id) {
+            if (id.includes('node_modules')) {
+              if (id.includes('echarts') || id.includes('zrender')) return 'echarts'
+              if (id.includes('dashjs')) return 'dashjs'
+              if (id.includes('highlight.js')) return 'highlight'
+              // dompurify 与 marked 必须分家：Navbar/VideoCard/SearchResult/Partition
+              // 只需要 dompurify 做搜索高亮转义，而 Navbar 在每个 layout 里都渲染。
+              // 合并成一个 chunk 会让 marked(~40KB) 跟着上首屏关键路径，
+              // 而 marked 实际只有异步的 AiChatDialog 用得到。
+              if (id.includes('dompurify')) return 'sanitize'
+              if (id.includes('marked')) return 'markdown'
+              if (id.includes('artplayer')) return 'artplayer'
             }
-          })
+          },
         },
       },
     },
-  },
-  dev: {
-    sourcemap: {
-      js: false,
-      css: false,
-    },
-  },
-  build: {
-    target: 'esnext',
-    minify: 'esbuild',
-    sourcemap: false,
-    chunkSizeWarningLimit: 1500,
-    rollupOptions: {
-      output: {
-        // Split the heavy leaf libraries into their own chunks so they are
-        // fetched only by the routes/features that need them and cache well.
-        manualChunks(id) {
-          if (id.includes('node_modules')) {
-            if (id.includes('echarts') || id.includes('zrender')) return 'echarts'
-            if (id.includes('dashjs')) return 'dashjs'
-            if (id.includes('highlight.js')) return 'highlight'
-            // dompurify 与 marked 必须分家：Navbar/VideoCard/SearchResult/Partition
-            // 只需要 dompurify 做搜索高亮转义，而 Navbar 在每个 layout 里都渲染。
-            // 合并成一个 chunk 会让 marked(~40KB) 跟着上首屏关键路径，
-            // 而 marked 实际只有异步的 AiChatDialog 用得到。
-            if (id.includes('dompurify')) return 'sanitize'
-            if (id.includes('marked')) return 'markdown'
-            if (id.includes('artplayer')) return 'artplayer'
-          }
-        },
-      },
-    },
-  },
+  }
 })

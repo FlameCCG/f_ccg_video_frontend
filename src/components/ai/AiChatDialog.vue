@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, reactive, nextTick, watch, onBeforeUnmount, computed, shallowRef } from 'vue'
 import { useRouter } from 'vue-router'
+import { getAccessToken } from '@/api/request'
 import { X, Download, Loader2, Bot, UploadCloud } from 'lucide-vue-next'
 import {
   fetchAiChatStream,
@@ -73,6 +74,7 @@ export interface ChatMessage {
   status?: string // for video task status
   results?: { url: string; mime_type?: string; duration?: number; error?: string }[]
   error?: string
+  notice?: string
 }
 
 interface VideoResultItem {
@@ -92,6 +94,8 @@ const messages = ref<ChatMessage[]>([
 ])
 
 const isSending = ref(false)
+let activeRequest: AbortController | null = null
+const stopRequest = () => activeRequest?.abort()
 /** 流式输出中：关闭 scroll-smooth，减少强制布局抖动 */
 const isStreamingUi = ref(false)
 const chatScrollRef = ref<HTMLElement | null>(null)
@@ -197,9 +201,9 @@ const scheduleScroll = (force = false) => {
   })
 }
 
-const scrollToBottom = async (force = true) => {
+const scrollToBottom = async (force = false) => {
   await nextTick()
-  userPinnedToBottom = true
+  if (force) userPinnedToBottom = true
   scheduleScroll(force)
 }
 
@@ -306,6 +310,8 @@ const scheduleRender = (msgId: string, rawContent: string, streaming = false) =>
       window.clearTimeout(existing)
       pendingRenderTimers.delete(msgId)
     }
+    delete pendingRenderRaw[msgId]
+    delete pendingRenderStreaming[msgId]
     flushMarkdownRender(msgId, rawContent, false)
     scheduleScroll()
     return
@@ -374,6 +380,14 @@ const streamInitialGreeting = () => {
   if (hasStreamedIntro.value) return
   const introMessage = messages.value.find((msg) => msg.id === 'init-1')
   if (!introMessage) return
+
+  if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    introMessage.content = INITIAL_GREETING
+    introMessage.isLoading = false
+    hasStreamedIntro.value = true
+    scheduleRender(introMessage.id, INITIAL_GREETING)
+    return
+  }
 
   const chars = Array.from(INITIAL_GREETING)
   let cursor = 0
@@ -455,6 +469,7 @@ const handleAssistantMarkupClick = async (event: MouseEvent) => {
 }
 
 onBeforeUnmount(() => {
+  stopRequest()
   if (scrollRafId !== null) cancelAnimationFrame(scrollRafId)
   clearIntroStream()
   textStreamBuffer.dispose()
@@ -462,6 +477,9 @@ onBeforeUnmount(() => {
     window.clearTimeout(timer)
   }
   pendingRenderTimers.clear()
+  for (const message of messages.value) {
+    for (const url of message.images ?? []) URL.revokeObjectURL(url)
+  }
   if (live2dPausedByDialog) {
     setLive2dPaused(false)
     live2dPausedByDialog = false
@@ -486,6 +504,7 @@ watch(
       }
       void scrollToBottom(true)
     } else {
+      stopRequest()
       showPreviewImage.value = false
       previewImageUrl.value = ''
       isStreamingUi.value = false
@@ -597,7 +616,19 @@ const downloadAsset = async (url: string, filename: string) => {
   }
 }
 
-const sleep = (ms: number) => new Promise((res) => setTimeout(res, ms))
+const sleep = (ms: number, signal: AbortSignal) =>
+  new Promise<void>((resolve, reject) => {
+    signal.throwIfAborted()
+    const onAbort = () => {
+      clearTimeout(timer)
+      reject(signal.reason)
+    }
+    const timer = setTimeout(() => {
+      signal.removeEventListener('abort', onAbort)
+      resolve()
+    }, ms)
+    signal.addEventListener('abort', onAbort, { once: true })
+  })
 
 const openExternal = (url: string) => {
   if (!url) return
@@ -864,17 +895,28 @@ const extractVideoErrorMessage = (payload: unknown): string => {
 }
 
 const markMediaResultError = (message: ChatMessage, index: number, fallbackText: string) => {
-  const item = message.results?.[index]
-  if (!item) return
-  item.error = fallbackText
+  message.results = message.results?.map((item, i) =>
+    i === index ? { ...item, error: fallbackText } : item
+  )
+}
+
+const ensureLoggedIn = () => {
+  if (authStore.isLoggedIn && getAccessToken()) return true
+  window.dispatchEvent(new CustomEvent('auth:login-required'))
+  return false
 }
 
 const sendRequest = async (payload: AiComposerSendPayload) => {
   if (isSending.value) return
   if (!payload.text.trim() && payload.images.length === 0) return
+  if (!ensureLoggedIn()) return
 
   const userText = payload.text.trim()
   const currentImages = payload.images
+  const controller = new AbortController()
+  const { signal } = controller
+  activeRequest = controller
+  let assistantMessage: ChatMessage | undefined
   isSending.value = true
 
   // 先快照历史，再 push 本轮消息，避免把当前这一轮重复带进上下文
@@ -904,6 +946,9 @@ const sendRequest = async (payload: AiComposerSendPayload) => {
       messages.value.push(asstMsg)
       // Retrieve the reactive proxy from the array to ensure Vue tracks mutations
       const reactiveAsstMsg = messages.value[messages.value.length - 1]!
+      assistantMessage = reactiveAsstMsg
+      textStreamBuffer.start(assistantMsgId)
+      void scrollToBottom(true)
 
       // 只有当前这一轮才带真实图片数据：后端用多模态向量模型把「文本+图片」融合成
       // 同一个向量，去站内作品库做 RAG 召回，从而支持「以图搜视频」。
@@ -935,7 +980,7 @@ const sendRequest = async (payload: AiComposerSendPayload) => {
 
       isStreamingUi.value = true
       userPinnedToBottom = true
-      textStreamBuffer.start(assistantMsgId)
+      signal.throwIfAborted()
       applyRenderedHtml(assistantMsgId, LOADING_CURSOR_HTML)
 
       await fetchAiChatStream(
@@ -952,18 +997,21 @@ const sendRequest = async (payload: AiComposerSendPayload) => {
           textStreamBuffer.flushFinal()
           reactiveAsstMsg.isLoading = false
           isStreamingUi.value = false
-          void scrollToBottom(true)
+          void scrollToBottom()
         },
         (err) => {
           textStreamBuffer.flushFinal()
           // 必须收尾 loading，否则 API Key 未配置等业务错误会让界面一直转圈
           reactiveAsstMsg.isLoading = false
           isStreamingUi.value = false
+          if (signal.aborted) return
           const message = formatAiErrorMessage(err.message)
           reactiveAsstMsg.error = message
           toast.error(message)
-        }
+        },
+        signal
       )
+      signal.throwIfAborted()
     } else if (payload.mode === 'image') {
       // Image generation / edit
       const assistantMsgId = `img-${Date.now()}`
@@ -982,6 +1030,8 @@ const sendRequest = async (payload: AiComposerSendPayload) => {
       messages.value.push(asstMsg)
       // Retrieve the reactive proxy from the array to ensure Vue tracks mutations
       const reactiveImgMsg = messages.value[messages.value.length - 1]!
+      assistantMessage = reactiveImgMsg
+      void scrollToBottom(true)
 
       try {
         let res
@@ -1009,7 +1059,7 @@ const sendRequest = async (payload: AiComposerSendPayload) => {
                   aspect_ratio: payload.image.ratio,
                   resolution: payload.image.resolution,
                 }
-          res = await aiEditImage(reqData)
+          res = await aiEditImage(reqData, signal)
         } else {
           const reqData: AiImageGenParams = {
             model: payload.image.model,
@@ -1018,7 +1068,7 @@ const sendRequest = async (payload: AiComposerSendPayload) => {
             aspect_ratio: payload.image.ratio,
             resolution: payload.image.resolution,
           }
-          res = await aiGenerateImage(reqData)
+          res = await aiGenerateImage(reqData, signal)
         }
         // Flexible data mapping to handle different or unexpected AI response structures
         const resObj = res as unknown
@@ -1032,6 +1082,7 @@ const sendRequest = async (payload: AiComposerSendPayload) => {
           reactiveImgMsg.results!.splice(0, reactiveImgMsg.results!.length)
         }
       } catch (err: unknown) {
+        if (signal.aborted) throw err
         // axios 拦截器已 toast，此处只更新气泡内错误态，避免重复提示
         reactiveImgMsg.error = formatAiErrorMessage(
           err instanceof Error ? err.message : String(err),
@@ -1039,6 +1090,9 @@ const sendRequest = async (payload: AiComposerSendPayload) => {
         )
       } finally {
         reactiveImgMsg.isLoading = false
+        if (reactiveImgMsg.error) {
+          reactiveImgMsg.results = reactiveImgMsg.results?.filter((result) => result.url)
+        }
       }
     } else if (payload.mode === 'video') {
       // Video generation
@@ -1055,6 +1109,8 @@ const sendRequest = async (payload: AiComposerSendPayload) => {
       messages.value.push(asstMsg)
       // Retrieve the reactive proxy from the array to ensure Vue tracks mutations
       const reactiveVidMsg = messages.value[messages.value.length - 1]!
+      assistantMessage = reactiveVidMsg
+      void scrollToBottom(true)
 
       try {
         const reqData: AiVideoGenParams = {
@@ -1080,17 +1136,21 @@ const sendRequest = async (payload: AiComposerSendPayload) => {
           reqData.aspect_ratio = payload.video.ratio
         }
 
-        const res = await aiGenerateVideo(reqData)
+        const res = await aiGenerateVideo(reqData, signal)
         // Interceptor already unwraps { code, data, msg } → data
         const requestId = extractRequestId(res)
         if (!requestId) throw new Error('未获取到任务ID')
         reactiveVidMsg.status = extractVideoStatus(res) || 'queued'
 
         // Polling loop
+        const pollingDeadline = Date.now() + 10 * 60 * 1000
         let polling = true
         while (polling) {
-          await sleep(3000)
-          const statusRes = await aiGetVideoStatus(requestId)
+          await sleep(3000, signal)
+          if (Date.now() >= pollingDeadline) {
+            throw new Error('视频生成等待超时，请稍后重试')
+          }
+          const statusRes = await aiGetVideoStatus(requestId, signal)
           const statusData = statusRes as unknown
           if (statusData) {
             const currentStatus = extractVideoStatus(statusData)
@@ -1113,6 +1173,7 @@ const sendRequest = async (payload: AiComposerSendPayload) => {
           }
         }
       } catch (err: unknown) {
+        if (signal.aborted) throw err
         // axios 拦截器已 toast，此处只更新气泡内错误态，避免重复提示
         reactiveVidMsg.error = formatAiErrorMessage(
           err instanceof Error ? err.message : String(err),
@@ -1122,7 +1183,24 @@ const sendRequest = async (payload: AiComposerSendPayload) => {
         reactiveVidMsg.isLoading = false
       }
     }
+  } catch (err: unknown) {
+    if (assistantMessage) {
+      assistantMessage.isLoading = false
+      if (signal.aborted) {
+        assistantMessage.notice =
+          payload.mode === 'text' ? '已停止生成' : '已停止等待，已创建的生成任务可能仍在处理'
+        if (payload.mode === 'image') {
+          assistantMessage.results = assistantMessage.results?.filter((result) => result.url)
+        }
+      } else {
+        const message = formatAiErrorMessage(err instanceof Error ? err.message : String(err))
+        assistantMessage.error = message
+        toast.error(message)
+      }
+    }
   } finally {
+    if (payload.mode === 'text') textStreamBuffer.flushFinal()
+    if (activeRequest === controller) activeRequest = null
     isSending.value = false
     void scrollToBottom()
   }
@@ -1137,7 +1215,7 @@ const handleComposerSend = (payload: AiComposerSendPayload) => {
   <Teleport to="body">
     <div
       v-if="open"
-      class="fixed inset-0 z-[99999] flex items-center justify-center p-4 sm:p-6"
+      class="fixed inset-0 z-[99998] flex items-center justify-center p-4 sm:p-6"
       @click.self="handleClose"
     >
       <!-- 无 backdrop-filter：全屏 blur 与 Live2D 画布叠加时极卡 -->
@@ -1162,6 +1240,7 @@ const handleComposerSend = (payload: AiComposerSendPayload) => {
             </h2>
           </div>
           <button
+            aria-label="关闭 AI 助手"
             class="group w-10 h-10 flex items-center justify-center rounded-full bg-[var(--bg-surface-1)] hover:bg-[var(--bg-surface-2)] border border-transparent hover:border-[var(--border-color)] text-[var(--text-2)] hover:text-[var(--text-1)] t-tint ui-button"
             @click="handleClose"
           >
@@ -1187,6 +1266,7 @@ const handleComposerSend = (payload: AiComposerSendPayload) => {
               msg.reasoningContent,
               msg.isLoading,
               msg.error,
+              msg.notice,
               msg.status,
               msg.results,
               renderedHtmlMap[msg.id],
@@ -1212,8 +1292,11 @@ const handleComposerSend = (payload: AiComposerSendPayload) => {
 
             <!-- Content Area -->
             <div
-              class="flex flex-col gap-4 max-w-[85%]"
-              :class="msg.role === 'user' ? 'items-end' : 'items-start'"
+              class="flex flex-col gap-4 max-w-[85%] min-w-0"
+              :class="[
+                msg.role === 'user' ? 'items-end' : 'items-start',
+                msg.type === 'video_gen' ? 'w-full' : '',
+              ]"
             >
               <!-- User Attached Images -->
               <div
@@ -1258,19 +1341,15 @@ const handleComposerSend = (payload: AiComposerSendPayload) => {
 
               <!-- Markdown Content -->
               <div
-                v-if="
-                  msg.role === 'user'
-                    ? msg.content !== undefined
-                    : primaryContentMap[msg.id] || msg.content
-                "
-                class="leading-[1.7] break-words text-[15px] contain-content"
-                :class="[
-                  msg.role === 'user'
-                    ? 'px-6 py-4 bg-[var(--bg-surface-2)] text-[var(--text-1)] rounded-[24px] rounded-br-sm border border-[var(--border-color)] shadow-raised font-medium'
-                    : 'markdown-body ai-assistant-bubble text-[var(--text-1)] w-full',
-                ]"
-                @click="msg.role === 'assistant' ? handleAssistantMarkupClick($event) : undefined"
-                v-html="msg.role === 'assistant' ? getRenderedHtml(msg) : msg.content"
+                v-if="msg.role === 'user' && msg.content"
+                class="leading-[1.7] break-words text-[15px] contain-content px-6 py-4 bg-[var(--bg-surface-2)] text-[var(--text-1)] rounded-[24px] rounded-br-sm border border-[var(--border-color)] shadow-raised font-medium whitespace-pre-wrap"
+                v-text="msg.content"
+              ></div>
+              <div
+                v-else-if="msg.role === 'assistant' && (primaryContentMap[msg.id] || msg.content)"
+                class="leading-[1.7] break-words text-[15px] contain-content markdown-body ai-assistant-bubble text-[var(--text-1)] w-full"
+                @click="handleAssistantMarkupClick"
+                v-html="getRenderedHtml(msg)"
               ></div>
 
               <div
@@ -1326,15 +1405,19 @@ const handleComposerSend = (payload: AiComposerSendPayload) => {
                 class="flex items-center gap-1.5 py-2 px-1"
               >
                 <div
-                  class="w-1.5 h-1.5 rounded-full bg-[var(--brand-blue)] animate-[pulse_1s_infinite]"
+                  class="ai-wait-dot w-1.5 h-1.5 rounded-full bg-[var(--brand-blue)] animate-[pulse_1s_infinite]"
                 ></div>
                 <div
-                  class="w-1.5 h-1.5 rounded-full bg-[var(--brand-blue)] animate-[pulse_1s_infinite_0.2s]"
+                  class="ai-wait-dot w-1.5 h-1.5 rounded-full bg-[var(--brand-blue)] animate-[pulse_1s_infinite_0.2s]"
                 ></div>
                 <div
-                  class="w-1.5 h-1.5 rounded-full bg-[var(--brand-blue)] animate-[pulse_1s_infinite_0.4s]"
+                  class="ai-wait-dot w-1.5 h-1.5 rounded-full bg-[var(--brand-blue)] animate-[pulse_1s_infinite_0.4s]"
                 ></div>
               </div>
+
+              <p v-if="msg.notice" role="status" class="text-sm text-muted-foreground">
+                {{ msg.notice }}
+              </p>
 
               <!-- Error Toast -->
               <div
@@ -1425,7 +1508,7 @@ const handleComposerSend = (payload: AiComposerSendPayload) => {
                   </div>
                   <template v-else>
                     <div
-                      class="absolute top-4 right-4 z-10 flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity duration-300"
+                      class="ai-asset-actions absolute top-4 right-4 z-10 flex items-center gap-2 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity duration-300"
                     >
                       <button
                         class="w-10 h-10 flex items-center justify-center rounded-full bg-[var(--glass-bg)] border border-[var(--glass-border)] text-[var(--text-1)] hover:text-[var(--brand-blue)] transition-colors shadow-overlay backdrop-blur-md"
@@ -1463,28 +1546,28 @@ const handleComposerSend = (payload: AiComposerSendPayload) => {
                       decoding="async"
                       class="w-full h-full object-cover transition-transform duration-500 ease-out-expo group-hover:scale-105"
                       @click.stop="openImagePreview(res.url)"
-                      @error="markMediaResultError(msg, idx, 'Failed to load')"
+                      @error="markMediaResultError(msg, idx, '图片加载失败，请重新生成')"
                     />
                   </template>
                 </div>
               </div>
 
               <!-- Epic Video Container -->
-              <div v-if="msg.type === 'video_gen'" class="mt-4">
+              <div v-if="msg.type === 'video_gen'" class="mt-4 w-full">
                 <div
                   v-if="msg.isLoading"
-                  class="relative w-[28rem] sm:w-[38rem] aspect-video rounded-[1.5rem] overflow-hidden bg-[var(--bg-surface-1)] border border-[var(--border-color)] flex flex-col items-center justify-center gap-5 shadow-surface"
+                  class="ai-video-frame relative aspect-video rounded-[1.5rem] overflow-hidden bg-[var(--bg-surface-1)] border border-[var(--border-color)] flex flex-col items-center justify-center gap-2 sm:gap-5 shadow-surface"
                 >
                   <div
                     class="absolute inset-0 bg-gradient-to-r from-transparent via-[var(--brand-blue)]/10 to-transparent animate-shimmer"
                     style="background-size: 200% 100%"
                   ></div>
                   <div
-                    class="relative z-10 flex h-16 w-16 items-center justify-center rounded-2xl border border-[var(--border-color)] bg-[var(--bg-surface-0)]/80 shadow-surface"
+                    class="relative z-10 flex h-9 w-9 sm:h-16 sm:w-16 shrink-0 items-center justify-center rounded-2xl border border-[var(--border-color)] bg-[var(--bg-surface-0)]/80 shadow-surface"
                   >
-                    <Loader2 class="h-7 w-7 animate-spin text-[var(--brand-blue)]" />
+                    <Loader2 class="h-4 w-4 sm:h-7 sm:w-7 animate-spin text-[var(--brand-blue)]" />
                   </div>
-                  <div class="relative z-10 flex flex-col items-center gap-2 text-center">
+                  <div class="relative z-10 flex flex-col items-center gap-1 sm:gap-2 text-center">
                     <span
                       class="text-[10px] font-mono tracking-[0.3em] font-bold text-[var(--brand-blue)]"
                     >
@@ -1496,8 +1579,15 @@ const handleComposerSend = (payload: AiComposerSendPayload) => {
                   </div>
                 </div>
                 <div
+                  v-else-if="msg.results?.[0]?.error"
+                  role="alert"
+                  class="ai-video-frame aspect-video flex items-center justify-center rounded-2xl border border-border p-6 text-sm text-muted-foreground"
+                >
+                  {{ msg.results[0].error }}
+                </div>
+                <div
                   v-else-if="msg.results?.length"
-                  class="relative group w-[28rem] sm:w-[38rem] aspect-video rounded-[1.5rem] overflow-hidden bg-black shadow-cinematic ring-1 ring-[var(--border-color)]"
+                  class="ai-video-frame relative group aspect-video rounded-[1.5rem] overflow-hidden bg-[var(--bg-surface-0)] shadow-cinematic ring-1 ring-[var(--border-color)]"
                 >
                   <video
                     :src="msg.results?.[0]?.url"
@@ -1506,10 +1596,10 @@ const handleComposerSend = (payload: AiComposerSendPayload) => {
                     preload="metadata"
                     playsinline
                     muted
-                    @error="markMediaResultError(msg, 0, 'Failed')"
+                    @error="markMediaResultError(msg, 0, '视频加载失败，请重新生成')"
                   />
                   <div
-                    class="absolute top-4 right-4 z-10 flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity duration-300"
+                    class="ai-asset-actions absolute top-4 right-4 z-10 flex items-center gap-2 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity duration-300"
                   >
                     <button
                       class="w-10 h-10 flex items-center justify-center rounded-full bg-[var(--glass-bg)] border border-[var(--glass-border)] text-[var(--text-1)] hover:text-[var(--brand-blue)] transition-colors shadow-overlay backdrop-blur-md"
@@ -1586,6 +1676,7 @@ const handleComposerSend = (payload: AiComposerSendPayload) => {
             defaultThinkingEffort,
           ]"
           :is-sending="isSending"
+          :before-send="ensureLoggedIn"
           :cover-picker-mode="isCoverPickerMode"
           :initial-model="initialModel"
           :initial-prompt="initialPrompt"
@@ -1599,6 +1690,7 @@ const handleComposerSend = (payload: AiComposerSendPayload) => {
           :default-video-model="defaultVideoModel"
           :default-thinking-effort="defaultThinkingEffort"
           @send="handleComposerSend"
+          @stop="stopRequest"
         />
       </div>
     </div>
@@ -1627,6 +1719,17 @@ const handleComposerSend = (payload: AiComposerSendPayload) => {
   content-visibility: auto;
   contain-intrinsic-size: auto 140px;
   contain: layout style;
+}
+
+.ai-video-frame {
+  width: min(38rem, 100%);
+  max-width: calc(100vw - 8rem);
+}
+
+@media (hover: none) {
+  .ai-asset-actions {
+    opacity: 1;
+  }
 }
 
 .contain-content {
@@ -2100,7 +2203,10 @@ const handleComposerSend = (payload: AiComposerSendPayload) => {
 @media (prefers-reduced-motion: reduce) {
   .zen-modal-enter-active,
   .zen-modal-leave-active,
-  .animate-shimmer {
+  .animate-shimmer,
+  .ai-wait-dot,
+  :deep(.animate-spin),
+  :deep(.animate-pulse) {
     animation: none !important;
     transition: none !important;
   }

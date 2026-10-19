@@ -1718,11 +1718,14 @@ const handlePublish = async () => {
     @drop="onDrop"
   >
     <input
+      id="upload-initial-video-file"
       ref="initialFileInputRef"
       type="file"
       :accept="VIDEO_INPUT_ACCEPT"
       multiple
-      class="hidden"
+      class="sr-only"
+      tabindex="-1"
+      aria-label="选择视频文件"
       @change="onFileChange"
     />
     <input
@@ -1730,7 +1733,8 @@ const handlePublish = async () => {
       type="file"
       :accept="VIDEO_INPUT_ACCEPT"
       multiple
-      class="hidden"
+      class="sr-only"
+      tabindex="-1"
       @change="onFileChange"
     />
     <input
@@ -1738,14 +1742,16 @@ const handlePublish = async () => {
       type="file"
       :accept="VIDEO_INPUT_ACCEPT"
       multiple
-      class="hidden"
+      class="sr-only"
+      tabindex="-1"
       @change="onAddWorkFileChange"
     />
     <input
       ref="replaceFileInputRef"
       type="file"
       :accept="VIDEO_INPUT_ACCEPT"
-      class="hidden"
+      class="sr-only"
+      tabindex="-1"
       @change="onReplaceFileChange"
     />
 
@@ -1799,13 +1805,16 @@ const handlePublish = async () => {
       外面（aria-describedby 关联），标题与副标题则用 aria-label 收成一句话。
     -->
     <section v-if="works.length === 0">
-      <button
-        type="button"
+      <label
+        for="upload-initial-video-file"
+        role="button"
+        tabindex="0"
         class="upload-empty"
         aria-label="把视频拖到这里，或点击选择文件"
         aria-describedby="upload-empty-facts"
         v-bind="dataAttrs({ 'data-dragging': isDragging ? 'true' : 'false' })"
-        @click="openVideoPicker('initial')"
+        @keydown.enter.prevent="openVideoPicker('initial')"
+        @keydown.space.prevent="openVideoPicker('initial')"
       >
         <span class="upload-empty__icon">
           <UploadCloud class="h-7 w-7" aria-hidden="true" />
@@ -1820,7 +1829,7 @@ const handlePublish = async () => {
           <UploadCloud class="h-4 w-4" />
           选择视频文件
         </span>
-      </button>
+      </label>
 
       <ul id="upload-empty-facts" class="upload-empty__facts">
         <li v-for="fact in uploadFacts" :key="fact.title" class="upload-empty__fact">

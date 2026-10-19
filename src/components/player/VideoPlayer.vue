@@ -1395,9 +1395,7 @@ const destroyPlayer = () => {
 // 视频 / 分P / 弹幕开关 / VIP 可见性 / 资源清单变化时，销毁旧实例并按选流策略重建。
 const rebuildKey = computed(() => {
   const dashUrl = resolveMediaUrl(dashResource.value?.fileUrl ?? '')
-  const mp4Sig = mp4Resources.value
-    .map((r) => `${r.id}:${resolveMediaUrl(r.fileUrl)}`)
-    .join('|')
+  const mp4Sig = mp4Resources.value.map((r) => `${r.id}:${resolveMediaUrl(r.fileUrl)}`).join('|')
   return [
     videoStore.currentVideo?.id ?? 0,
     props.partId ?? 0,

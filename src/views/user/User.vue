@@ -48,6 +48,7 @@ import { resolveMediaUrl } from '@/utils/media'
 import { toast } from 'vue-sonner'
 import Navbar from '@/components/layout/Navbar.vue'
 import AppAvatar from '@/components/common/AppAvatar.vue'
+import EmptyState from '@/components/common/EmptyState.vue'
 import CommentSection from '@/components/comment/CommentSection.vue'
 import UserBannerPicker from '@/components/user/UserBannerPicker.vue'
 import { BannerDisplay } from '@/constants/banner'
@@ -107,6 +108,7 @@ const homeVideosLoading = ref(false)
 const likedVideos = ref<UserVideoItem[]>([])
 const coinedVideos = ref<UserVideoItem[]>([])
 const folders = ref<FolderItem[]>([])
+const foldersLoaded = ref(false)
 const folderCovers = ref<Record<number, string>>({})
 
 // Dynamic Tab Data
@@ -386,6 +388,7 @@ const fetchFolders = async () => {
   try {
     const r = await getFolderList()
     folders.value = r.list
+    foldersLoaded.value = true
     if (!selectedFolderId.value || !r.list.some((f) => f.id === selectedFolderId.value)) {
       if (r.list.length > 0) {
         selectFolder(r.list[0]!.id)
@@ -936,6 +939,7 @@ const switchTab = (tab: TabKey, syncQuery = true) => {
     if (!folders.value.length) {
       void getFolderList().then((r) => {
         folders.value = r.list
+        foldersLoaded.value = true
         void fetchFolderCovers()
         const toSelect = pickFolderId()
         if (toSelect != null) selectFolder(toSelect)
@@ -1033,6 +1037,7 @@ watch(userId, () => {
   likedVideos.value = []
   coinedVideos.value = []
   folders.value = []
+  foldersLoaded.value = false
   folderCovers.value = {}
   selectedFolderId.value = null
   folderVideos.value = []
@@ -1325,12 +1330,24 @@ const privacySettings = [
                     <div class="uvc-time">{{ fmtTime(v.createdAt) }}</div>
                   </div>
                 </div>
-                <div
+                <EmptyState
                   v-else-if="!homeVideosLoading"
-                  class="py-10 text-center text-sm-plus text-muted-foreground/80"
+                  variant="profile-video"
+                  title="还没有投稿视频"
+                  :description="
+                    isSelf
+                      ? '把灵感变成画面，从你的第一部作品开始。'
+                      : 'TA 的故事还在酝酿，新作品会在这里与你相遇。'
+                  "
                 >
-                  暂无投稿视频
-                </div>
+                  <RouterLink
+                    v-if="isSelf"
+                    to="/creator/upload"
+                    class="inline-flex min-h-9 items-center gap-2 text-sm text-primary"
+                  >
+                    发布第一部作品 <ChevronRight :size="14" />
+                  </RouterLink>
+                </EmptyState>
               </div>
             </div>
 
@@ -1761,12 +1778,22 @@ const privacySettings = [
               </div>
             </TransitionGroup>
 
-            <div
+            <EmptyState
               v-if="filteredDynamics.length === 0 && !dynamicsLoading"
-              class="py-16 text-center text-muted-foreground/80 text-sm-plus"
-            >
-              还没有发布过动态
-            </div>
+              variant="profile-activity"
+              :title="
+                dynamicFilter === 'video'
+                  ? '还没有视频动态'
+                  : dynamicFilter === 'image'
+                    ? '还没有图文动态'
+                    : '还没有发布过动态'
+              "
+              :description="
+                isSelf
+                  ? '一段日常、一个灵感，都值得在这里留下。'
+                  : '为下一次分享留一点期待，新的动态会出现在这里。'
+              "
+            />
 
             <div v-if="dynamics.length < dynamicTotal" class="text-center pt-2">
               <button
@@ -1880,12 +1907,24 @@ const privacySettings = [
                 <div class="uvc-time">{{ fmtTime(v.createdAt) }}</div>
               </div>
             </div>
-            <div
+            <EmptyState
               v-else-if="!videosLoading"
-              class="py-16 text-center text-muted-foreground/80 text-sm-plus"
+              variant="profile-video"
+              title="还没有投稿视频"
+              :description="
+                isSelf
+                  ? '每一部作品，都从一个想法开始。让第一帧画面在这里亮起。'
+                  : '这里为好作品留着位置，期待 TA 的下一次创作。'
+              "
             >
-              暂无视频
-            </div>
+              <RouterLink
+                v-if="isSelf"
+                to="/creator/upload"
+                class="inline-flex min-h-9 items-center gap-2 text-sm text-primary"
+              >
+                去投稿 <ChevronRight :size="14" />
+              </RouterLink>
+            </EmptyState>
 
             <div v-if="videos.length < videoTotal" class="text-center mt-6">
               <button
@@ -2033,12 +2072,19 @@ const privacySettings = [
                 </div>
               </div>
             </div>
-            <div
+            <EmptyState
               v-else-if="!folderVideosLoading"
-              class="py-16 text-center text-muted-foreground/80 text-sm-plus"
+              variant="profile-collection"
+              title="还没有收藏内容"
+              description="把心动的画面收进来，留给下一次重温。"
             >
-              收藏夹为空
-            </div>
+              <RouterLink
+                to="/"
+                class="inline-flex min-h-9 items-center gap-2 text-sm text-primary"
+              >
+                去发现好内容 <ChevronRight :size="14" />
+              </RouterLink>
+            </EmptyState>
 
             <div v-if="folderVideos.length < folderVideoTotal" class="text-center mt-6">
               <button
@@ -2050,6 +2096,17 @@ const privacySettings = [
               </button>
             </div>
           </div>
+          <EmptyState
+            v-else-if="foldersLoaded && folders.length === 0"
+            class="min-w-0 flex-1"
+            variant="profile-collection"
+            title="这里还没有收藏夹"
+            description="先发现喜欢的内容，再为它们留一个专属的位置。"
+          >
+            <RouterLink to="/" class="inline-flex min-h-9 items-center gap-2 text-sm text-primary">
+              去发现好内容 <ChevronRight :size="14" />
+            </RouterLink>
+          </EmptyState>
         </div>
 
         <!-- ==================== SETTINGS TAB ==================== -->
@@ -2267,12 +2324,28 @@ const privacySettings = [
                   </button>
                 </div>
               </div>
-              <div
+              <EmptyState
                 v-if="followingList.length === 0 && !followingLoading"
-                class="py-16 text-center text-muted-foreground/80 text-sm-plus"
+                :variant="followingKeyword ? 'auto' : 'profile-following'"
+                icon="search"
+                :title="followingKeyword ? '未找到匹配的关注用户' : '还没有关注任何人'"
+                :description="
+                  followingKeyword
+                    ? '换个关键词，试着搜索完整昵称。'
+                    : isSelf
+                      ? '找到喜欢的创作者，让每一次更新都与你相遇。'
+                      : 'TA 还在寻找感兴趣的创作者。'
+                "
+                :announce="Boolean(followingKeyword)"
               >
-                {{ followingKeyword ? '未找到匹配的关注用户' : '暂无关注' }}
-              </div>
+                <RouterLink
+                  v-if="isSelf && !followingKeyword"
+                  to="/"
+                  class="inline-flex min-h-9 items-center gap-2 text-sm text-primary"
+                >
+                  去首页逛逛 <ChevronRight :size="14" />
+                </RouterLink>
+              </EmptyState>
               <div
                 v-if="followingLoading && followingList.length === 0"
                 class="py-16 text-center text-muted-foreground/80 text-sm-plus"
@@ -2324,12 +2397,20 @@ const privacySettings = [
                   </button>
                 </div>
               </div>
-              <div
+              <EmptyState
                 v-if="fansList.length === 0 && !fansLoading"
-                class="py-16 text-center text-muted-foreground/80 text-sm-plus"
-              >
-                {{ fansKeyword ? '未找到匹配的粉丝' : '暂无粉丝' }}
-              </div>
+                :variant="fansKeyword ? 'auto' : 'profile-fans'"
+                icon="search"
+                :title="fansKeyword ? '未找到匹配的粉丝' : '还没有粉丝'"
+                :description="
+                  fansKeyword
+                    ? '换个关键词，试着搜索完整昵称。'
+                    : isSelf
+                      ? '持续分享你的热爱，让同频的人慢慢找到你。'
+                      : '每一次相遇，都可能从一份共同的热爱开始。'
+                "
+                :announce="Boolean(fansKeyword)"
+              />
               <div
                 v-if="fansLoading && fansList.length === 0"
                 class="py-16 text-center text-muted-foreground/80 text-sm-plus"

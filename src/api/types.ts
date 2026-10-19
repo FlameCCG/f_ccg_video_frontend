@@ -7,6 +7,10 @@ export interface PaginationParams {
   pageSize?: number
 }
 
+export interface ApiRequestOptions {
+  silent?: boolean
+}
+
 export interface PaginatedResult<T> {
   list: T[]
   total: number

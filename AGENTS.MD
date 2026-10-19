@@ -25,7 +25,7 @@
 - API Base URL：`/v1`
 - Vite 已通过代理将 `/v1` 转发到后端
 - API 文档入口：`docs/index.md`
-- 分模块 API 文档：`docs/01-10-*.md`
+- 分模块 API 文档：`../f_ccg_video_back_ddd/docs/openapi-md/user/`（以后端 DDD 版本为准）
 - 前端接口封装：`src/api/*.ts`
 - 通用请求层：`src/api/request.ts`
 - 统一质量门禁命令：`pnpm -s check:commit`
@@ -140,9 +140,9 @@ API 判定规则必须遵守：
 1. 若存在 `tasks.md`，先读 `tasks.md`
 2. 再读 `docs/index.md`
 3. 再读当前任务对应模块文档，如：
-   - 用户：`docs/01-user-management.md`
-   - 视频：`docs/05-video-management.md`
-   - 评论：`docs/06-comment-management.md`
+   - 用户：`../f_ccg_video_back_ddd/docs/openapi-md/user/01-user-management.md`
+   - 视频：`../f_ccg_video_back_ddd/docs/openapi-md/user/05-video-management.md`
+   - 评论：`../f_ccg_video_back_ddd/docs/openapi-md/user/06-comment-management.md`
 4. 打开对应 `src/api/*.ts`
 5. 查看已有页面、组件、store、route、composable
 6. 确认是否已有相近实现可以复用

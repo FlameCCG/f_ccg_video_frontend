@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { shallowRef, computed, watch, onMounted, onUnmounted } from 'vue'
+import { shallowRef, computed, watch, onMounted, onUnmounted, nextTick } from 'vue'
 import { Eye, EyeOff, Loader2, User, Lock, Mail, Send, ArrowLeft } from 'lucide-vue-next'
 import { toast } from 'vue-sonner'
 import { useAuthStore } from '@/stores/auth'
@@ -11,9 +11,12 @@ import {
   getQQLoginUrl,
   getXLoginUrl,
 } from '@/api/site'
-import { sendEmailCaptcha } from '@/api/captcha'
+import {
+  sendEmailCaptcha,
+  type InteractiveCaptchaPayload,
+  type SendEmailCaptchaParams,
+} from '@/api/captcha'
 import { registerByEmail, resetPassword } from '@/api/user'
-import type { ClickCaptchaPoint } from '@/api/user'
 import {
   clearOAuthSession,
   createCodeChallenge,
@@ -26,44 +29,14 @@ import { Dialog, DialogContent, DialogTitle, DialogDescription } from '@/compone
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import GraphicsCaptcha from '@/components/captcha/GraphicsCaptcha.vue'
-import ClickCaptchaDialog from '@/components/captcha/ClickCaptchaDialog.vue'
-import SlideCaptchaDialog from '@/components/captcha/SlideCaptchaDialog.vue'
+import InteractiveCaptchaDialog from '@/components/captcha/InteractiveCaptchaDialog.vue'
+import { useCaptchaTypeQueue } from '@/composables/useCaptchaTypeQueue'
 import AuthLainMark from '@/components/auth/AuthLainMark.vue'
 
-interface SlideCaptchaExposed {
-  success: (result?: { token: string; x: number; y: number }) => void
-  fail: () => void
-  refresh: () => void
-  reset: () => void
-}
-
-/** 点选验证码与滑块同构：确定只是提交，成功/失败由这里按后端结果驱动 */
-interface ClickCaptchaExposed {
+interface CaptchaExposed {
   success: () => void
   fail: (message?: string) => void
-  refresh: () => void
   reset: () => void
-}
-
-interface ClickCaptchaSubmission {
-  token: string
-  dots: ClickCaptchaPoint[]
-}
-
-/** 仅滑块/图形验证码校验失败（不含发送频率等业务错误） */
-const isCaptchaBusinessError = (message: string): boolean => {
-  const lower = message.toLowerCase()
-  return (
-    lower.includes('验证码错误') ||
-    lower.includes('验证码验证失败') ||
-    lower.includes('验证码已过期') ||
-    lower.includes('请填写图形验证码') ||
-    lower.includes('图形验证码') ||
-    lower.includes('captcha verification') ||
-    lower.includes('captcha expired') ||
-    lower.includes('slide captcha') ||
-    lower.includes('invalid slide captcha')
-  )
 }
 
 type AuthMode = 'login' | 'register' | 'forgot'
@@ -115,10 +88,15 @@ const graphicsCaptchaValue = shallowRef<{ captchaID: string; captchaCode: string
   captchaID: '',
   captchaCode: '',
 })
-const clickCaptchaOpen = shallowRef(false)
-const clickCaptchaDialogRef = shallowRef<ClickCaptchaExposed | null>(null)
-const slideCaptchaOpen = shallowRef(false)
-const slideCaptchaDialogRef = shallowRef<SlideCaptchaExposed | null>(null)
+const captchaOpen = shallowRef(false)
+const captchaType = shallowRef<'click' | 'slide'>('slide')
+const captchaRevision = shallowRef(0)
+const captchaDialogRef = shallowRef<CaptchaExposed | null>(null)
+const loginCaptchaQueue = useCaptchaTypeQueue(() => 'login')
+const emailCaptchaQueue = useCaptchaTypeQueue(() => 'register')
+const captchaAction = shallowRef<'login' | 'email' | null>(null)
+const isSelectingCaptcha = shallowRef(false)
+let captchaSelectionId = 0
 
 const isSubmitting = shallowRef(false)
 const isSendingEmail = shallowRef(false)
@@ -170,7 +148,7 @@ const canSendEmail = computed(() => {
   ) {
     return false
   }
-  return !isSendingEmail.value
+  return !isSendingEmail.value && !isSelectingCaptcha.value
 })
 
 /** 仅在站点配置加载完成后展示 OAuth，避免首屏误用默认开关 */
@@ -197,7 +175,12 @@ const modeSubtitle = computed(() => {
 })
 
 const switchMode = (newMode: AuthMode) => {
+  captchaSelectionId += 1
+  isSelectingCaptcha.value = false
+  captchaAction.value = null
+  captchaOpen.value = false
   mode.value = newMode
+  ;(newMode === 'login' ? loginCaptchaQueue : emailCaptchaQueue).warmup()
   resetForms()
 }
 
@@ -229,15 +212,7 @@ const refreshGraphicsCaptcha = () => {
 }
 
 const buildEmailCaptchaPayload = (type: 1 | 2, email: string) => {
-  const payload: {
-    type: 1 | 2
-    email: string
-    captchaID?: string
-    captchaCode?: string
-    slideCaptchaToken?: string
-    slideCaptchaX?: number
-    slideCaptchaY?: number
-  } = {
+  const payload: SendEmailCaptchaParams = {
     type,
     email: email.trim(),
   }
@@ -250,41 +225,54 @@ const buildEmailCaptchaPayload = (type: 1 | 2, email: string) => {
   return payload
 }
 
+/** 使用后端预取的类型打开弹窗，渲染后立即准备下一次类型。 */
+const openInteractiveCaptcha = async (action: 'login' | 'email'): Promise<boolean | null> => {
+  const selectionId = ++captchaSelectionId
+  isSelectingCaptcha.value = true
+  try {
+    const queue = action === 'login' ? loginCaptchaQueue : emailCaptchaQueue
+    const type = await queue.take()
+    if (selectionId !== captchaSelectionId || !props.open) return null
+    captchaAction.value = action
+    captchaOpen.value = type !== 'none'
+    if (type !== 'none') {
+      captchaType.value = type
+      captchaRevision.value += 1
+    }
+    await nextTick()
+    queue.warmup()
+    return type !== 'none'
+  } catch (error: unknown) {
+    if (selectionId === captchaSelectionId) {
+      toast.error(error instanceof Error ? error.message : '验证码准备失败，请重试')
+      ;(action === 'login' ? loginCaptchaQueue : emailCaptchaQueue).warmup()
+    }
+    return null
+  } finally {
+    if (selectionId === captchaSelectionId) isSelectingCaptcha.value = false
+  }
+}
+
 const handleLoginClick = async () => {
-  if (!isLoginFormValid.value) return
-  if (siteStore.isLoginClickCaptchaEnabled) {
-    clickCaptchaOpen.value = true
-    return
-  }
-  // 无验证码路径：没有弹窗承载失败态，仍走 request 层的 toast
-  if (await doLogin({ token: '', dots: [] })) finishLogin()
+  if (!isLoginFormValid.value || isSubmitting.value || isSelectingCaptcha.value) return
+  const opened = await openInteractiveCaptcha('login')
+  if (opened === false && (await doLogin({}))) finishLogin()
 }
 
-/**
- * 点选验证码提交：先问后端，再让验证码演结果。
- * 不能反过来 —— 原实现是验证码自己 setTimeout 后宣布成功、关窗，再去登录，
- * 后端说验证码错了的时候用户已经看完成功动画了。
- */
-const handleClickCaptchaConfirm = async (value: ClickCaptchaSubmission) => {
-  // silent + onError：失败原因显示在验证码弹窗内联提示里，不再叠一个 toast。
-  // 失败可能是验证码点错，也可能是密码错 —— 原因必须传进去，否则用户只看到「已换一张」。
-  let reason = ''
-  const success = await doLogin(value, {
-    silent: true,
-    onError: (message) => {
-      reason = message
-    },
-  })
-  if (success) {
-    clickCaptchaDialogRef.value?.success()
-  } else {
-    clickCaptchaDialogRef.value?.fail(reason)
-  }
+const handleCaptchaRetry = () => {
+  if (isSelectingCaptcha.value || !captchaAction.value || !captchaOpen.value) return
+  void openInteractiveCaptcha(captchaAction.value)
+}
+const handleCaptchaCancel = () => {
+  captchaSelectionId += 1
+  isSelectingCaptcha.value = false
+  captchaAction.value = null
 }
 
-/** 验证码成功动画播完并自行关闭后，才收掉登录弹窗 */
-const handleClickCaptchaVerified = () => {
-  finishLogin()
+/** 成功动画和验证码弹窗离场结束后再关闭登录表单。 */
+const handleCaptchaVerified = () => {
+  if (captchaAction.value === 'login') finishLogin()
+  captchaAction.value = null
 }
 
 const finishLogin = () => {
@@ -293,7 +281,7 @@ const finishLogin = () => {
 }
 
 const doLogin = async (
-  captcha: ClickCaptchaSubmission,
+  captcha: InteractiveCaptchaPayload,
   options?: { silent?: boolean; onError?: (message: string) => void }
 ): Promise<boolean> => {
   isSubmitting.value = true
@@ -302,8 +290,7 @@ const doLogin = async (
       {
         username: loginUsername.value.trim(),
         password: loginPassword.value,
-        captchaToken: captcha.token,
-        captchaDots: captcha.dots,
+        ...captcha,
       },
       options
     )
@@ -327,10 +314,9 @@ const startEmailCountdown = () => {
 /**
  * 发送邮箱验证码：
  * - 站点开启 textGraphicCaptcha 时需填写图形验证码
- * - 站点开启 slideCaptcha 时点击「发送验证码」弹滑块
- * - 滑块校验失败只在弹窗内提示，不弹 toast
+ * - 发送前由后端选择点选或滑块验证码
  */
-const handleSendEmailCode = () => {
+const handleSendEmailCode = async () => {
   if (!canSendEmail.value) return
 
   if (
@@ -341,67 +327,56 @@ const handleSendEmailCode = () => {
     return
   }
 
-  const needsSlide =
-    (mode.value === 'register' || mode.value === 'forgot') &&
-    siteStore.isRegisterSlideCaptchaEnabled
-
-  if (needsSlide) {
-    slideCaptchaOpen.value = true
-    return
-  }
-
-  void sendEmailCodeWithoutSlide()
+  const opened = await openInteractiveCaptcha('email')
+  if (opened === false) await sendEmailCode()
 }
 
-const sendEmailCodeWithoutSlide = async () => {
-  isSendingEmail.value = true
-  try {
-    const type = mode.value === 'register' ? 1 : 2
-    const email = mode.value === 'register' ? registerEmail.value : forgotEmail.value
-    const result = await sendEmailCaptcha(buildEmailCaptchaPayload(type, email))
-    emailID.value = result.emailID
-    toast.success('验证码已发送到您的邮箱')
-    startEmailCountdown()
-    refreshGraphicsCaptcha()
-  } catch {
-    refreshGraphicsCaptcha()
-  } finally {
-    isSendingEmail.value = false
-  }
-}
-
-/** 滑块释放后：带 silent 发送邮箱验证码，失败仅滑块内反馈 */
-const handleSlideCaptchaConfirm = async (value: { token: string; x: number; y: number }) => {
-  if (mode.value !== 'register' && mode.value !== 'forgot') return
-
+const sendEmailCode = async (
+  captcha: InteractiveCaptchaPayload = {},
+  silent = false
+): Promise<string | null> => {
   isSendingEmail.value = true
   try {
     const type = mode.value === 'register' ? 1 : 2
     const email = mode.value === 'register' ? registerEmail.value : forgotEmail.value
     const result = await sendEmailCaptcha(
-      {
-        ...buildEmailCaptchaPayload(type, email),
-        slideCaptchaToken: value.token,
-        slideCaptchaX: value.x,
-        slideCaptchaY: value.y,
-      },
-      { silent: true }
+      { ...buildEmailCaptchaPayload(type, email), ...captcha },
+      { silent }
     )
     emailID.value = result.emailID
-    slideCaptchaDialogRef.value?.success(value)
     toast.success('验证码已发送到您的邮箱')
     startEmailCountdown()
     refreshGraphicsCaptcha()
+    return null
   } catch (error: unknown) {
-    slideCaptchaDialogRef.value?.fail()
     refreshGraphicsCaptcha()
-    const message = error instanceof Error ? error.message : ''
-    if (message && (message.includes('图形验证码') || !isCaptchaBusinessError(message))) {
-      toast.error(message)
-    }
+    return error instanceof Error ? error.message : '发送失败，请重试'
   } finally {
     isSendingEmail.value = false
   }
+}
+
+const handleCaptchaConfirm = async (payload: InteractiveCaptchaPayload) => {
+  if (!captchaAction.value || isSubmitting.value || isSendingEmail.value) return
+  const selectionId = captchaSelectionId
+  let reason = ''
+  let success = false
+  if (captchaAction.value === 'login') {
+    success = await doLogin(payload, {
+      silent: true,
+      onError: (message) => {
+        reason = message
+      },
+    })
+  } else {
+    const error = await sendEmailCode(payload, true)
+    success = error === null
+    reason = error ?? ''
+  }
+  if (selectionId !== captchaSelectionId || !props.open) return
+  const dialog = captchaDialogRef.value
+  if (success) dialog?.success()
+  else dialog?.fail(reason)
 }
 
 const handleRegister = async () => {
@@ -576,12 +551,17 @@ watch(
     resetSocialRedirecting()
     if (newVal) {
       mode.value = props.initialMode || 'login'
+      loginCaptchaQueue.reset()
+      emailCaptchaQueue.reset()
+      ;(mode.value === 'login' ? loginCaptchaQueue : emailCaptchaQueue).warmup()
       if (!siteStore.isLoaded) {
         void siteStore.fetchConfig()
       }
     } else {
-      clickCaptchaOpen.value = false
-      slideCaptchaOpen.value = false
+      captchaSelectionId += 1
+      isSelectingCaptcha.value = false
+      captchaAction.value = null
+      captchaOpen.value = false
     }
   },
   { immediate: true }
@@ -708,9 +688,12 @@ onUnmounted(() => {
             <Button
               type="submit"
               class="auth-primary-btn"
-              :disabled="!isLoginFormValid || isSubmitting"
+              :disabled="!isLoginFormValid || isSubmitting || isSelectingCaptcha"
             >
-              <Loader2 v-if="isSubmitting" class="mr-2 h-4 w-4 animate-spin" />
+              <Loader2
+                v-if="isSubmitting || isSelectingCaptcha"
+                class="mr-2 h-4 w-4 animate-spin"
+              />
               {{ isSubmitting ? '登录中...' : '登录' }}
             </Button>
 
@@ -1074,16 +1057,16 @@ onUnmounted(() => {
     </DialogContent>
   </Dialog>
 
-  <ClickCaptchaDialog
-    ref="clickCaptchaDialogRef"
-    v-model:open="clickCaptchaOpen"
-    @confirm="handleClickCaptchaConfirm"
-    @verified="handleClickCaptchaVerified"
-  />
-  <SlideCaptchaDialog
-    ref="slideCaptchaDialogRef"
-    v-model:open="slideCaptchaOpen"
-    @confirm="handleSlideCaptchaConfirm"
+  <InteractiveCaptchaDialog
+    ref="captchaDialogRef"
+    v-model:open="captchaOpen"
+    :type="captchaType"
+    :scene="captchaAction === 'login' ? 'login' : 'register'"
+    :revision="captchaRevision"
+    @confirm="handleCaptchaConfirm"
+    @verified="handleCaptchaVerified"
+    @retry="handleCaptchaRetry"
+    @cancel="handleCaptchaCancel"
   />
 </template>
 

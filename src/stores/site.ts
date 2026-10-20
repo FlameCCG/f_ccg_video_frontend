@@ -22,6 +22,7 @@ export const useSiteStore = defineStore('site', () => {
     () => config.value?.login.textGraphicCaptcha ?? false
   )
   const isLoginClickCaptchaEnabled = computed(() => config.value?.login.textClickCaptcha ?? false)
+  const isLoginSlideCaptchaEnabled = computed(() => config.value?.login.slideCaptcha ?? false)
 
   // Getters - Register
   const isRegisterEmailCaptchaEnabled = computed(() => config.value?.register.emailCaptcha ?? false)
@@ -29,6 +30,9 @@ export const useSiteStore = defineStore('site', () => {
     () => config.value?.register.textGraphicCaptcha ?? false
   )
   const isRegisterSlideCaptchaEnabled = computed(() => config.value?.register.slideCaptcha ?? false)
+  const isRegisterClickCaptchaEnabled = computed(
+    () => config.value?.register.textClickCaptcha ?? false
+  )
 
   // Getters - Storage
   const normalizedStorage = computed(() => normalizeStorageConfig(config.value?.storage))
@@ -93,11 +97,13 @@ export const useSiteStore = defineStore('site', () => {
     isPasswordLoginEnabled,
     isLoginGraphicsCaptchaEnabled,
     isLoginClickCaptchaEnabled,
+    isLoginSlideCaptchaEnabled,
 
     // Getters - Register
     isRegisterEmailCaptchaEnabled,
     isRegisterGraphicsCaptchaEnabled,
     isRegisterSlideCaptchaEnabled,
+    isRegisterClickCaptchaEnabled,
 
     // Getters - Storage
     maxChunkSize,

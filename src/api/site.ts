@@ -15,6 +15,9 @@ export interface LoginConfig {
   usernamePwdLogin: boolean
   textGraphicCaptcha: boolean
   textClickCaptcha: boolean
+  slideCaptcha: boolean
+  slideCaptchaTTL: number
+  slideCaptchaPadding: number
   textClickCaptchaTTL: number
   textClickCaptchaPadding: number
 }
@@ -24,6 +27,9 @@ export interface RegisterConfig {
   emailCaptcha: boolean
   textGraphicCaptcha: boolean
   slideCaptcha: boolean
+  textClickCaptcha: boolean
+  textClickCaptchaTTL: number
+  textClickCaptchaPadding: number
   slideCaptchaTTL: number
   slideCaptchaPadding: number
 }

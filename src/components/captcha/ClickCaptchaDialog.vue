@@ -14,7 +14,7 @@
  */
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { RefreshCw, Target } from 'lucide-vue-next'
-import { getClickCaptcha, type ClickCaptcha } from '@/api/captcha'
+import { getClickCaptcha, type CaptchaScene, type ClickCaptcha } from '@/api/captcha'
 import type { ClickCaptchaPoint } from '@/api/user'
 import { Button, buttonVariants } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog'
@@ -41,9 +41,15 @@ interface ClickCaptchaSubmission {
   dots: ClickCaptchaPoint[]
 }
 
-const props = defineProps<{
-  open: boolean
-}>()
+const props = withDefaults(
+  defineProps<{
+    open: boolean
+    scene?: CaptchaScene
+    embedded?: boolean
+    autoRetry?: boolean
+  }>(),
+  { scene: 'login', embedded: false, autoRetry: true }
+)
 
 const emit = defineEmits<{
   (e: 'update:open', value: boolean): void
@@ -52,6 +58,8 @@ const emit = defineEmits<{
   /** 校验通过且判定动画已播完 */
   (e: 'verified', value: ClickCaptchaSubmission): void
   (e: 'cancel'): void
+  (e: 'retry'): void
+  (e: 'settled'): void
 }>()
 
 /** 后端没有返回「要点几个字」，所以不设下限门槛；这里只防手滑连点 */
@@ -84,7 +92,8 @@ let pendingVerified: ClickCaptchaSubmission | null = null
 const frame = useFrameWriter()
 const state = useCaptchaState({
   onReset: () => {
-    void loadCaptcha()
+    if (props.autoRetry) void loadCaptcha()
+    else emit('retry')
   },
 })
 const status = state.status
@@ -93,6 +102,10 @@ const isVerifying = state.isVerifying
 const isSettled = state.isSettled
 
 const settle = useSettleSignal(() => {
+  if (props.embedded) {
+    emit('settled')
+    return
+  }
   pendingVerified = lastSubmission.value
   emit('update:open', false)
 })
@@ -151,7 +164,7 @@ async function loadCaptcha(): Promise<void> {
   resetPicks()
 
   try {
-    const data = await getClickCaptcha()
+    const data = await getClickCaptcha(props.scene)
     if (requestId !== captchaRequestId) return
     captchaData.value = data
   } catch {
@@ -166,7 +179,9 @@ async function loadCaptcha(): Promise<void> {
 
 function handleRefresh(): void {
   if (!canRefresh.value) return
-  void loadCaptcha()
+  state.clearStateTimers()
+  if (props.autoRetry) void loadCaptcha()
+  else emit('retry')
 }
 
 function cacheHoverRect(): void {
@@ -344,9 +359,18 @@ defineExpose({
 </script>
 
 <template>
-  <Dialog :open="open" @update:open="handleOpenChange">
-    <DialogContent
-      class="cap-dialog max-w-[min(100vw-1.5rem,360px)] gap-0 overflow-hidden rounded-2xl border-border/60 bg-background p-0 shadow-cinematic sm:max-w-[400px]"
+  <component
+    :is="embedded ? 'div' : Dialog"
+    :open="embedded ? undefined : open"
+    @update:open="handleOpenChange"
+  >
+    <component
+      :is="embedded ? 'div' : DialogContent"
+      :class="
+        embedded
+          ? undefined
+          : 'cap-dialog max-w-[min(100vw-1.5rem,360px)] gap-0 overflow-hidden rounded-2xl border-border/60 bg-background p-0 shadow-cinematic sm:max-w-[400px]'
+      "
       overlay-class="cap-dialog-overlay"
       @after-leave="handleAfterLeave"
       @pointer-down-outside="(e: Event) => e.preventDefault()"
@@ -525,8 +549,8 @@ defineExpose({
           </div>
         </div>
       </div>
-    </DialogContent>
-  </Dialog>
+    </component>
+  </component>
 </template>
 
 <style scoped lang="scss">

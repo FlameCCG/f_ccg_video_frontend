@@ -26,6 +26,9 @@ export interface LoginPwdParams {
   password: string
   captchaToken?: string
   captchaDots?: ClickCaptchaPoint[]
+  slideCaptchaToken?: string
+  slideCaptchaX?: number
+  slideCaptchaY?: number
 }
 
 export interface LoginQQParams {
@@ -326,9 +329,9 @@ export interface CreateTagParams {
  * 用户名密码登录
  * POST /common/user/login/pwd
  * 认证: 可选登录（客户端可携带 Token）
- * 依赖接口: 点击验证码接口（启用时）
- * 接口说明: 使用用户名/邮箱和密码登录，需要先通过点击验证码
- * 重要说明: 是否需要提交 captchaToken/captchaDots，应根据 GET /common/site/config 返回的 data.site.login.textClickCaptcha 判断
+ * 依赖接口: 点选或滑块验证码接口（启用时）
+ * 接口说明: 使用用户名/邮箱和密码登录，按后端选定的类型完成验证码
+ * 重要说明: /common/captcha/type?scene=login 返回 click/slide/none，提交对应的一组验证数据
  */
 export const loginByPassword = (
   params: LoginPwdParams,

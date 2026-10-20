@@ -4,7 +4,18 @@
  * 切换 TEXT/IMAGE/VIDEO 时不会触发父级消息列表重渲染。
  */
 import { computed, ref, watch, onBeforeUnmount, onMounted, nextTick, useId } from 'vue'
-import { ArrowUp, Square, Settings2, X, MessageCircle, Image, Clapperboard } from 'lucide-vue-next'
+import {
+  ArrowUp,
+  Square,
+  Settings2,
+  X,
+  MessageCircle,
+  Image,
+  Clapperboard,
+  Paperclip,
+  UploadCloud,
+  ChevronDown,
+} from 'lucide-vue-next'
 import { toast } from 'vue-sonner'
 import type { AiModelOption } from '@/api/ai'
 import type { AiComposerSendPayload, AiModelType, AiPastedImage } from '@/components/ai/ai-types'
@@ -61,13 +72,16 @@ const resizeInput = () => {
 watch(inputContent, resizeInput, { flush: 'post' })
 onMounted(resizeInput)
 const pastedImages = ref<AiPastedImage[]>([])
+const fileInputRef = ref<HTMLInputElement | null>(null)
+const dragDepth = ref(0)
+const isDragging = computed(() => dragDepth.value > 0)
 const showSettings = ref(false)
 const settingsId = useId()
-const focusInput = () => textareaRef.value?.focus()
+const focusInput = () => textareaRef.value?.focus({ preventScroll: true })
 const choosePrompt = async (mode: AiModelType, prompt: string) => {
   if (props.isSending) return
   setModel(mode)
-  inputContent.value = inputContent.value.trim() ? inputContent.value + '\n' + prompt : prompt
+  inputContent.value = prompt
   await nextTick()
   focusInput()
 }
@@ -86,6 +100,29 @@ const vidModel = ref(props.defaultVideoModel)
 const vidResolution = ref('720p')
 const vidRatio = ref('16:9')
 const vidDuration = ref(8)
+const selectedModelLabel = computed(() => {
+  const options =
+    activeModel.value === 'text'
+      ? props.chatModelOptions
+      : activeModel.value === 'image'
+        ? props.imageModelOptions
+        : props.videoModelOptions
+  const value =
+    activeModel.value === 'text'
+      ? chatModel.value
+      : activeModel.value === 'image'
+        ? imgModel.value
+        : vidModel.value
+  return options.find((option) => option.value === value)?.label || value || '默认模型'
+})
+const modeHint = computed(() => {
+  if (activeModel.value === 'image')
+    return isSingleImageEdit.value
+      ? '以这张图片为起点，描述你想做的改变'
+      : '描述越具体，画面越接近你的想象'
+  if (activeModel.value === 'video') return '写下场景、镜头和动作，让灵感开始流动'
+  return '随意提问，也可以上传图片一起聊'
+})
 
 const IMAGE_RATIO_OPTIONS = ['1:1', '3:4', '4:3', '9:16', '16:9'] as const
 const IMAGE_RESOLUTION_OPTIONS = ['1k', '2k', '3k', '4k'] as const
@@ -191,26 +228,69 @@ watch([vidDuration, isFastVideoModel, isReferenceVideoMode], () => {
 const setModel = (mode: AiModelType) => {
   if (props.coverPickerMode && mode !== 'image') return
   activeModel.value = mode
+  void nextTick(focusInput)
+}
+
+const addImages = (files: File[]) => {
+  let skipped = false
+  let overLimit = false
+  for (const file of files) {
+    if (!file.type.startsWith('image/')) {
+      skipped = true
+      continue
+    }
+    if (pastedImages.value.length >= 7) {
+      overLimit = true
+      continue
+    }
+    pastedImages.value.push({ url: URL.createObjectURL(file), file })
+  }
+  if (skipped) toast.warning('目前支持上传图片文件')
+  if (overLimit) toast.warning('最多可以添加 7 张图片')
+}
+
+const handleFileChange = (event: Event) => {
+  const input = event.target as HTMLInputElement
+  addImages(Array.from(input.files ?? []))
+  input.value = ''
+  focusInput()
+}
+
+const handleDragEnter = (event: DragEvent) => {
+  if (!event.dataTransfer?.types.includes('Files')) return
+  event.preventDefault()
+  dragDepth.value++
+}
+
+const handleDragOver = (event: DragEvent) => {
+  if (!event.dataTransfer?.types.includes('Files')) return
+  event.preventDefault()
+  event.dataTransfer.dropEffect = 'copy'
+}
+
+const handleDragLeave = () => {
+  dragDepth.value = Math.max(0, dragDepth.value - 1)
+}
+
+const handleDrop = (event: DragEvent) => {
+  dragDepth.value = 0
+  if (!event.dataTransfer?.files.length) return
+  event.preventDefault()
+  addImages(Array.from(event.dataTransfer.files))
+  focusInput()
 }
 
 const handlePaste = (e: ClipboardEvent) => {
   const items = e.clipboardData?.items
   if (!items) return
 
-  for (let i = 0; i < items.length; i++) {
-    const item = items[i]
-    if (item && item.type.indexOf('image') !== -1) {
-      const file = item.getAsFile()
-      if (file) {
-        if (pastedImages.value.length >= 7) {
-          toast.warning('最多只能选取7张图片')
-          continue
-        }
-        const url = URL.createObjectURL(file)
-        pastedImages.value.push({ url, file })
-      }
-    }
-  }
+  const files = Array.from(items)
+    .filter((item) => item.type.startsWith('image/'))
+    .map((item) => item.getAsFile())
+    .filter((file): file is File => file !== null)
+  if (!files.length) return
+  e.preventDefault()
+  addImages(files)
 }
 
 const removePastedImage = (index: number) => {
@@ -269,12 +349,23 @@ onBeforeUnmount(() => {
 
 <template>
   <div class="shrink-0 relative z-20 ai-composer">
-    <div
-      class="absolute top-0 left-0 right-0 h-12 -translate-y-full bg-gradient-to-t from-[var(--bg-surface-0)] to-transparent pointer-events-none"
-    ></div>
-
     <div class="ai-composer__inner">
-      <div class="ai-composer__surface">
+      <div
+        class="ai-composer__surface"
+        :class="{
+          'ai-composer__surface--dragging': isDragging,
+          'ai-composer__surface--sending': isSending,
+        }"
+        @dragenter="handleDragEnter"
+        @dragover="handleDragOver"
+        @dragleave="handleDragLeave"
+        @drop="handleDrop"
+      >
+        <div v-if="isDragging" class="ai-composer__dropzone">
+          <UploadCloud :size="28" :stroke-width="1.5" />
+          <strong>松开，把图片带进灵感里</strong>
+          <span>支持同时添加多张图片，最多 7 张</span>
+        </div>
         <div class="ai-composer__toolbar">
           <div class="ai-composer__modes" role="group" aria-label="创作模式">
             <button
@@ -309,18 +400,16 @@ onBeforeUnmount(() => {
           </div>
           <button
             type="button"
-            class="w-8 h-8 flex items-center justify-center rounded-xl border"
-            :class="
-              showSettings
-                ? 'border-primary text-primary surface-tint'
-                : 'text-[var(--text-2)] bg-[var(--bg-surface-2)] border-[var(--border-color)] hover:text-[var(--text-1)]'
-            "
+            class="ai-composer__settings-toggle"
+            :class="{ 'is-active': showSettings }"
             aria-label="生成设置"
             :aria-expanded="showSettings"
             :aria-controls="settingsId"
             @click="showSettings = !showSettings"
           >
             <Settings2 class="w-4 h-4" />
+            <span>参数</span>
+            <ChevronDown :size="12" class="ai-composer__settings-chevron" />
           </button>
         </div>
 
@@ -519,7 +608,7 @@ onBeforeUnmount(() => {
               <img
                 :src="img.url"
                 class="h-16 w-16 object-cover rounded-[12px] shadow-sm border border-[var(--border-color)]"
-                alt=""
+                :alt="`参考图片 ${idx + 1}`"
               />
               <button
                 type="button"
@@ -549,33 +638,78 @@ onBeforeUnmount(() => {
               @paste="handlePaste"
               @keydown="handleKeydown"
             ></textarea>
-
-            <button
-              type="button"
-              class="ai-composer__send"
-              :class="
-                !canSend && !isSending
-                  ? 'bg-[var(--bg-surface-2)] text-[var(--text-2)] cursor-not-allowed shadow-none border border-[var(--border-color)]'
-                  : 'ai-composer__send--ready'
-              "
-              :disabled="!canSend && !isSending"
-              :aria-label="isSending ? '停止生成' : '发送消息'"
-              :title="isSending ? '停止等待本次生成' : '发送消息（Shift + Enter 换行）'"
-              @click="isSending ? emit('stop') : handleSend()"
-            >
-              <Square v-if="isSending" class="w-4 h-4" />
-              <ArrowUp v-else :size="19" />
-            </button>
+          </div>
+          <div class="ai-composer__bottom">
+            <div class="ai-composer__tools">
+              <input
+                ref="fileInputRef"
+                type="file"
+                class="ai-composer__file-input"
+                accept="image/*"
+                multiple
+                tabindex="-1"
+                aria-label="选择参考图片"
+                @change="handleFileChange"
+              />
+              <button
+                type="button"
+                class="ai-composer__attach"
+                aria-label="添加图片"
+                title="添加图片，也可以拖放或粘贴"
+                :disabled="pastedImages.length >= 7"
+                @click="fileInputRef?.click()"
+              >
+                <Paperclip :size="17" />
+                <span v-if="pastedImages.length" class="ai-composer__attachment-count">{{
+                  pastedImages.length
+                }}</span>
+              </button>
+              <span class="ai-composer__tool-divider"></span>
+              <button
+                type="button"
+                class="ai-composer__model-select"
+                :title="selectedModelLabel"
+                :aria-expanded="showSettings"
+                :aria-controls="settingsId"
+                @click="showSettings = !showSettings"
+              >
+                <span class="ai-composer__model-dot"></span>
+                <span>{{ selectedModelLabel }}</span>
+                <ChevronDown :size="12" />
+              </button>
+            </div>
+            <div class="ai-composer__submit-group">
+              <span class="ai-composer__send-hint">{{
+                isSending ? '正在生成，可随时停止' : '让灵感发生'
+              }}</span>
+              <button
+                type="button"
+                class="ai-composer__send"
+                :class="
+                  !canSend && !isSending
+                    ? 'bg-[var(--bg-surface-2)] text-[var(--text-2)] cursor-not-allowed shadow-none border border-[var(--border-color)]'
+                    : 'ai-composer__send--ready'
+                "
+                :disabled="!canSend && !isSending"
+                :aria-label="isSending ? '停止生成' : '发送消息'"
+                :title="isSending ? '停止等待本次生成' : '发送消息（Shift + Enter 换行）'"
+                @click="isSending ? emit('stop') : handleSend()"
+              >
+                <Square v-if="isSending" class="w-4 h-4" />
+                <ArrowUp v-else :size="19" />
+              </button>
+            </div>
           </div>
         </div>
       </div>
 
       <div class="ai-composer__footnote">
-        <span>AI 也会有灵感偏差，请留意甄别</span
+        <span class="ai-composer__mode-hint">{{ modeHint }}</span
         ><span class="ai-composer__shortcut"
           ><kbd>Enter</kbd> 发送 · <kbd>Shift Enter</kbd> 换行</span
         >
       </div>
+      <p class="ai-composer__disclaimer">由 AI 生成，精彩之余，也请核实重要信息</p>
     </div>
   </div>
 </template>
@@ -584,40 +718,48 @@ onBeforeUnmount(() => {
 .ai-composer {
   position: relative;
   flex-shrink: 0;
-  contain: layout style;
+  background: linear-gradient(transparent, var(--bg-surface-0) 28%);
 }
 .ai-composer__inner {
   width: 100%;
-  max-width: 792px;
+  max-width: 816px;
   margin: 0 auto;
-  padding: 0 28px 18px;
+  padding: 6px 28px 14px;
 }
 .ai-composer__surface {
+  position: relative;
   display: flex;
   flex-direction: column;
-  padding: 4px;
-  background: var(--bg-surface-1);
-  border: 1px solid var(--field-border);
-  border-radius: 18px;
+  padding: 5px;
+  background: var(--bg-surface-0);
+  border: 1px solid color-mix(in oklch, var(--brand-blue) 17%, var(--border-color));
+  border-radius: 22px;
   box-shadow: var(--shadow-raised-value);
+  transition:
+    border-color 180ms ease,
+    box-shadow 180ms ease;
 }
 .ai-composer__surface:focus-within {
-  border-color: var(--field-border-focus);
+  border-color: color-mix(in oklch, var(--brand-blue) 55%, var(--border-color));
   box-shadow:
-    0 0 0 3px var(--field-focus-ring),
-    var(--shadow-raised-value);
+    0 0 0 4px color-mix(in oklch, var(--brand-blue) 6%, transparent),
+    0 10px 34px color-mix(in oklch, var(--brand-blue) 9%, transparent);
 }
 .ai-composer__toolbar {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  padding: 8px 12px 6px;
+  padding: 7px 9px 9px;
 }
 .ai-composer__modes {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 3px;
+  padding: 3px;
+  background: var(--bg-surface-1);
+  border: 1px solid color-mix(in oklch, var(--border-color) 50%, transparent);
+  border-radius: 12px;
 }
 .ai-composer__settings {
   max-height: min(220px, 28dvh);
@@ -632,6 +774,7 @@ onBeforeUnmount(() => {
 }
 .ai-composer__input {
   min-width: 0;
+  min-height: 52px;
   caret-color: var(--brand-blue);
 }
 .ai-composer__input::placeholder {
@@ -641,8 +784,8 @@ onBeforeUnmount(() => {
 .ai-composer__send {
   display: grid;
   flex-shrink: 0;
-  width: 38px;
-  height: 38px;
+  width: 36px;
+  height: 36px;
   place-items: center;
   border-radius: 12px;
   transition: transform 160ms var(--ease-out-quart);
@@ -650,6 +793,7 @@ onBeforeUnmount(() => {
 .ai-composer__send--ready {
   color: var(--bg-surface-0);
   background: var(--text-1);
+  box-shadow: 0 3px 8px color-mix(in oklch, var(--text-1) 12%, transparent);
 }
 .ai-composer__send--ready:hover {
   transform: translateY(-2px);
@@ -661,32 +805,198 @@ onBeforeUnmount(() => {
   display: flex;
   justify-content: space-between;
   gap: 10px;
-  padding: 12px 4px 0;
+  padding: 11px 5px 0;
   color: var(--text-2);
   font-size: 10px;
 }
 .ai-composer__footnote kbd {
+  padding: 2px 4px;
+  border: 1px solid color-mix(in oklch, var(--border-color) 80%, transparent);
+  border-radius: 4px;
   font-family: inherit;
+  font-size: 9px;
+}
+.ai-composer__disclaimer {
+  margin: 10px 0 0;
+  color: var(--text-2);
+  font-size: 9px;
+  text-align: center;
+}
+.ai-composer__settings-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 34px;
+  padding: 0 9px;
+  color: var(--text-2);
+  border-radius: 9px;
+  font-size: 11px;
+}
+.ai-composer__settings-toggle:hover,
+.ai-composer__settings-toggle.is-active {
+  color: var(--brand-blue);
+  background: var(--accent-surface);
+}
+.ai-composer__settings-chevron {
+  transition: transform 180ms ease;
+}
+.ai-composer__settings-toggle.is-active .ai-composer__settings-chevron {
+  transform: rotate(180deg);
+}
+.ai-composer__settings {
+  border-style: dashed;
+}
+.ai-composer__settings select {
+  min-height: 28px;
+}
+.ai-composer__bottom,
+.ai-composer__tools,
+.ai-composer__submit-group {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+.ai-composer__bottom {
+  justify-content: space-between;
+  padding: 4px 3px 0;
+}
+.ai-composer__tools {
+  flex: 1;
+  gap: 8px;
+}
+.ai-composer__file-input {
+  display: none;
+}
+.ai-composer__attach {
+  position: relative;
+  display: grid;
+  flex-shrink: 0;
+  width: 32px;
+  height: 32px;
+  place-items: center;
+  color: var(--text-2);
+  border-radius: 9px;
+}
+.ai-composer__attach:hover:not(:disabled) {
+  color: var(--brand-blue);
+  background: var(--accent-surface);
+}
+.ai-composer__attach:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+.ai-composer__attachment-count {
+  position: absolute;
+  top: -2px;
+  right: -2px;
+  display: grid;
+  width: 14px;
+  height: 14px;
+  place-items: center;
+  color: var(--bg-surface-0);
+  background: var(--text-1);
+  border-radius: 50%;
+  font-size: 9px;
+}
+.ai-composer__tool-divider {
+  flex-shrink: 0;
+  width: 1px;
+  height: 14px;
+  background: var(--border-color);
+}
+.ai-composer__model-select {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  max-width: 240px;
+  min-height: 30px;
+  padding: 4px 7px;
+  color: var(--text-2);
+  border-radius: 8px;
+  font-size: 11px;
+}
+.ai-composer__model-select:hover {
+  color: var(--text-1);
+  background: var(--bg-surface-1);
+}
+.ai-composer__model-select > span:nth-child(2) {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ai-composer__model-select svg {
+  flex-shrink: 0;
+}
+.ai-composer__model-dot {
+  flex-shrink: 0;
+  width: 5px;
+  height: 5px;
+  background: var(--brand-blue);
+  border-radius: 50%;
+}
+.ai-composer__submit-group {
+  flex-shrink: 0;
+}
+.ai-composer__send-hint {
+  color: var(--text-2);
+  font-size: 10px;
+}
+.ai-composer__surface--sending .ai-composer__send--ready {
+  color: var(--text-1);
+  background: var(--bg-surface-2);
+  border: 1px solid var(--border-color);
+}
+.ai-composer__surface--dragging {
+  border-color: var(--brand-blue);
+}
+.ai-composer__dropzone {
+  position: absolute;
+  z-index: 5;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  color: var(--brand-blue);
+  background: color-mix(in oklch, var(--bg-surface-0) 96%, transparent);
+  border: 2px dashed var(--brand-blue);
+  border-radius: 21px;
+  pointer-events: none;
+}
+.ai-composer__dropzone strong {
+  font-size: 14px;
+  font-weight: 500;
+}
+.ai-composer__dropzone span {
+  color: var(--text-2);
+  font-size: 11px;
 }
 .ai-model-tab {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  min-height: 32px;
-  padding: 6px 10px;
+  min-height: 29px;
+  padding: 5px 13px;
   color: var(--text-2);
   background: transparent;
   border: 1px solid transparent;
   border-radius: 8px;
   font-size: 12px;
   font-weight: 500;
+  transition:
+    color 160ms ease,
+    background 160ms ease,
+    box-shadow 160ms ease;
 }
 .ai-model-tab:disabled {
   cursor: not-allowed;
   opacity: 0.4;
 }
 .ai-model-tab--active {
-  color: var(--text-1);
+  color: var(--brand-blue);
   background: var(--bg-surface-0);
   border-color: var(--border-color);
   box-shadow: var(--shadow-surface-value);
@@ -704,7 +1014,8 @@ onBeforeUnmount(() => {
   .ai-composer__inner {
     padding: 0 12px max(14px, env(safe-area-inset-bottom));
   }
-  .ai-composer__shortcut {
+  .ai-composer__shortcut,
+  .ai-composer__send-hint {
     display: none;
   }
   .ai-composer__footnote {
@@ -718,10 +1029,33 @@ onBeforeUnmount(() => {
     gap: 5px;
     padding: 6px 8px;
   }
+  .ai-composer__surface {
+    border-radius: 18px;
+  }
+  .ai-composer__input {
+    min-height: 54px;
+  }
+  .ai-composer__settings-toggle {
+    gap: 4px;
+    padding: 0 7px;
+  }
+  .ai-composer__settings-toggle > span,
+  .ai-composer__settings-chevron {
+    display: none;
+  }
+  .ai-composer__model-select {
+    max-width: 190px;
+  }
+  .ai-composer__disclaimer {
+    margin-top: 7px;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .ai-composer__send {
+  .ai-composer__send,
+  .ai-composer__surface,
+  .ai-composer__settings-chevron,
+  .ai-model-tab {
     transition: none;
   }
 }

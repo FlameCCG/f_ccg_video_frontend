@@ -25,7 +25,9 @@ onBeforeUnmount(() => clearTimeout(timer))
   <button
     type="button"
     class="message-copy"
+    :class="{ 'message-copy--copied': copied }"
     :aria-label="copied ? '回复已复制' : '复制回复'"
+    :title="copied ? '回复已复制' : '复制回复'"
     @click="copy"
   >
     <Check v-if="copied" :size="13" /><Copy v-else :size="13" />
@@ -39,14 +41,30 @@ onBeforeUnmount(() => clearTimeout(timer))
   align-items: center;
   gap: 6px;
   align-self: flex-start;
-  padding: 6px 8px;
-  margin-left: -8px;
-  border-radius: 6px;
+  min-height: 30px;
+  padding: 6px 10px;
+  margin-left: -4px;
+  border: 1px solid transparent;
+  border-radius: 8px;
   color: var(--text-2);
   font-size: 11px;
+  transition:
+    color 160ms ease,
+    background 160ms ease,
+    border-color 160ms ease;
 }
 .message-copy:hover {
-  background: var(--bg-surface-2);
+  background: var(--bg-surface-1);
+  border-color: var(--border-color);
   color: var(--text-1);
+}
+.message-copy--copied {
+  color: var(--brand-blue);
+  background: var(--accent-surface);
+}
+@media (prefers-reduced-motion: reduce) {
+  .message-copy {
+    transition: none;
+  }
 }
 </style>

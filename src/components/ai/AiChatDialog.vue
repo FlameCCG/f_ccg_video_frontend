@@ -6,11 +6,11 @@ import {
   X,
   Download,
   Loader2,
-  Bot,
+  Maximize2,
+  Minimize2,
   UploadCloud,
   ArrowDown,
-  ChevronDown,
-  Brain,
+  Check,
 } from 'lucide-vue-next'
 import {
   fetchAiChatStream,
@@ -48,6 +48,8 @@ import {
 } from 'reka-ui'
 import AiChatWelcome from './AiChatWelcome.vue'
 import AiMessageActions from './AiMessageActions.vue'
+import AiReasoningPanel from './AiReasoningPanel.vue'
+import AiStudioMark from './AiStudioMark.vue'
 import { setLive2dPaused } from '@/utils/live2d'
 
 const props = withDefaults(
@@ -106,9 +108,15 @@ const messages = ref<ChatMessage[]>([])
 const composerRef = ref<InstanceType<typeof AiChatComposer> | null>(null)
 
 const hasConversation = computed(() => messages.value.length > 0)
+const isExpanded = ref(false)
 const choosePrompt = (mode: AiModelType, prompt: string) =>
   composerRef.value?.choosePrompt(mode, prompt)
 const isSending = ref(false)
+const activeResponseId = computed(() =>
+  isSending.value ? messages.value[messages.value.length - 1]?.id : undefined
+)
+const isActiveMessage = (msg: ChatMessage) =>
+  activeResponseId.value === msg.id && !msg.error && !msg.notice
 let activeRequest: AbortController | null = null
 const stopRequest = () => activeRequest?.abort()
 /** 流式输出中：关闭 scroll-smooth，减少强制布局抖动 */
@@ -177,6 +185,11 @@ const handleClose = () => {
   emit('update:open', false)
 }
 
+const handleOpenAutoFocus = (event: Event) => {
+  event.preventDefault()
+  if (event.target instanceof HTMLElement) event.target.focus({ preventScroll: true })
+}
+
 const openImagePreview = (url: string) => {
   if (!url) return
   previewImageUrl.value = url
@@ -207,7 +220,7 @@ const scheduleScroll = (force = false) => {
     scrollRafId = null
     const el = chatScrollRef.value
     if (!el) return
-    el.scrollTop = el.scrollHeight
+    el.scrollTop = hasConversation.value ? el.scrollHeight : 0
   })
 }
 
@@ -402,8 +415,10 @@ const textStreamBuffer = createStreamBuffer({
   onFlush: applyStreamFlush,
 })
 
+const codeCopyTimers = new Map<HTMLButtonElement, number>()
+
 const handleAssistantMarkupClick = async (event: MouseEvent) => {
-  const target = event.target as HTMLElement | null
+  const target = event.target instanceof Element ? event.target : null
   const copyButton = target?.closest<HTMLButtonElement>('[data-copy-code]')
   if (!copyButton) return
 
@@ -411,25 +426,45 @@ const handleAssistantMarkupClick = async (event: MouseEvent) => {
   event.stopPropagation()
 
   const encoded = copyButton.dataset.copyCode
-  if (!encoded) return
+  if (encoded === undefined || copyButton.disabled) return
+
+  copyButton.disabled = true
 
   try {
     await navigator.clipboard.writeText(decodeCopyPayload(encoded))
-    copyButton.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-[var(--status-success-ink)]"><path d="M20 6 9 17l-5-5"/></svg>`
+    if (!copyButton.isConnected) return
+
+    const label = copyButton.querySelector('.ai-code-copy-label')
+    if (label) label.textContent = '已复制'
     copyButton.dataset.copied = 'true'
-    toast.success('代码已复制')
-    window.setTimeout(() => {
-      if (!document.contains(copyButton)) return
-      copyButton.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="group-hover/copy:text-[var(--brand-blue)]"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>`
-      copyButton.dataset.copied = 'false'
-    }, 1400)
+    copyButton.setAttribute('aria-label', '代码已复制')
+    copyButton.title = '代码已复制'
+
+    window.clearTimeout(codeCopyTimers.get(copyButton))
+    codeCopyTimers.set(
+      copyButton,
+      window.setTimeout(() => {
+        codeCopyTimers.delete(copyButton)
+        if (!copyButton.isConnected) return
+        if (label) label.textContent = '复制'
+        delete copyButton.dataset.copied
+        copyButton.setAttribute('aria-label', '复制代码')
+        copyButton.title = '复制代码'
+      }, 2000)
+    )
   } catch {
     toast.error('复制失败')
+  } finally {
+    copyButton.disabled = false
   }
 }
 
 onBeforeUnmount(() => {
   stopRequest()
+  for (const timer of codeCopyTimers.values()) {
+    window.clearTimeout(timer)
+  }
+  codeCopyTimers.clear()
   if (scrollRafId !== null) cancelAnimationFrame(scrollRafId)
   textStreamBuffer.dispose()
   for (const timer of pendingRenderTimers.values()) {
@@ -1167,20 +1202,37 @@ const handleComposerSend = (payload: AiComposerSendPayload) => {
   <DialogRoot :open="open" @update:open="emit('update:open', $event)">
     <DialogPortal>
       <DialogOverlay class="ai-dialog-overlay" />
-      <DialogContent class="ai-dialog-shell">
+      <DialogContent
+        class="ai-dialog-shell"
+        :class="{ 'ai-dialog-shell--expanded': isExpanded }"
+        @open-auto-focus="handleOpenAutoFocus"
+      >
         <header class="ai-dialog-header">
           <div class="ai-dialog-identity">
-            <span class="ai-dialog-mark"><Bot :size="21" :stroke-width="1.6" /></span>
+            <span class="ai-dialog-mark"><AiStudioMark :size="25" /></span>
             <div>
-              <DialogTitle class="ai-dialog-title">灵感会客室<span>AI</span></DialogTitle>
-              <DialogDescription class="ai-dialog-description">你的全能视频助手</DialogDescription>
+              <DialogTitle class="ai-dialog-title">灵感工作室<span>AI STUDIO</span></DialogTitle>
+              <DialogDescription class="ai-dialog-description"
+                >想法在这里，成为可能。</DialogDescription
+              >
             </div>
           </div>
           <div class="ai-header-actions">
             <span class="ai-session-status" role="status"
               ><i :class="{ 'is-active': isSending }"></i
-              >{{ isSending ? '正在回应' : '随时，聊聊' }}</span
+              >{{ isSending ? '灵感生成中' : '准备好与你共创' }}</span
             >
+            <button
+              type="button"
+              class="ai-close ai-expand"
+              :aria-label="isExpanded ? '还原窗口' : '展开工作室'"
+              :title="isExpanded ? '还原窗口' : '展开工作室'"
+              :aria-pressed="isExpanded"
+              @click="isExpanded = !isExpanded"
+            >
+              <Minimize2 v-if="isExpanded" :size="16" />
+              <Maximize2 v-else :size="16" />
+            </button>
             <button type="button" aria-label="关闭 AI 助手" class="ai-close" @click="handleClose">
               <X :size="18" />
             </button>
@@ -1192,7 +1244,10 @@ const handleComposerSend = (payload: AiComposerSendPayload) => {
           ref="chatScrollRef"
           class="custom-scrollbar ai-chat-scroll"
           aria-label="对话记录"
-          :class="isStreamingUi ? 'ai-chat-scroll--streaming' : ''"
+          :class="{
+            'ai-chat-scroll--streaming': isStreamingUi,
+            'ai-chat-scroll--welcome': !hasConversation,
+          }"
           @scroll.passive="handleChatScroll"
         >
           <AiChatWelcome
@@ -1218,12 +1273,16 @@ const handleComposerSend = (payload: AiComposerSendPayload) => {
               activeAssetActionKey,
               isCoverPickerMode,
               isSending,
+              activeResponseId,
             ]"
             class="flex w-full group ai-msg-row"
-            :class="msg.role === 'user' ? 'ai-msg-row--user' : 'ai-msg-row--assistant'"
+            :class="[
+              msg.role === 'user' ? 'ai-msg-row--user' : 'ai-msg-row--assistant',
+              { 'ai-msg-row--active': isActiveMessage(msg) },
+            ]"
           >
             <div v-if="msg.role === 'assistant'" class="ai-message-avatar" aria-hidden="true">
-              <Bot :size="18" :stroke-width="1.5" />
+              <AiStudioMark :size="21" />
             </div>
 
             <!-- Content Area -->
@@ -1235,7 +1294,22 @@ const handleComposerSend = (payload: AiComposerSendPayload) => {
               ]"
             >
               <div v-if="msg.role === 'assistant'" class="ai-message-author">
-                视频助手<span>AI</span>
+                <span class="ai-message-name">灵感助手</span
+                ><span class="ai-message-label">AI</span>
+                <span
+                  v-if="isActiveMessage(msg)"
+                  class="ai-response-state ai-response-state--live"
+                  role="status"
+                >
+                  <i></i
+                  >{{ msg.content ? '正在回复' : msg.reasoningContent ? '正在思考' : '正在准备' }}
+                </span>
+                <span v-else-if="!msg.error && !msg.notice" class="ai-response-state">
+                  <Check :size="12" />{{ msg.type === 'text' ? '回复完成' : '生成完成' }}
+                </span>
+                <span v-else class="ai-response-state">{{
+                  msg.error ? '生成遇到问题' : '已停止'
+                }}</span>
               </div>
               <!-- User Attached Images -->
               <div
@@ -1252,15 +1326,21 @@ const handleComposerSend = (payload: AiComposerSendPayload) => {
               </div>
 
               <!-- 按需展开思考过程 -->
-              <details v-if="msg.reasoningContent" class="ai-reasoning">
-                <summary>
-                  <Brain :size="14" /><span>{{
-                    isSending && !msg.content ? '正在梳理思路' : '查看思考过程'
-                  }}</span
-                  ><ChevronDown :size="14" class="ai-reasoning-chevron" />
-                </summary>
-                <div class="ai-reasoning-content custom-scrollbar">{{ msg.reasoningContent }}</div>
-              </details>
+              <AiReasoningPanel
+                v-if="msg.reasoningContent"
+                :content="msg.reasoningContent"
+                :state="
+                  msg.error
+                    ? 'error'
+                    : msg.notice
+                      ? 'stopped'
+                      : isActiveMessage(msg)
+                        ? msg.content
+                          ? 'writing'
+                          : 'thinking'
+                        : 'done'
+                "
+              />
 
               <!-- Markdown Content -->
               <div
@@ -1328,12 +1408,23 @@ const handleComposerSend = (payload: AiComposerSendPayload) => {
                 class="ai-waiting"
                 role="status"
               >
-                <span class="ai-waiting-dots" aria-hidden="true"><i></i><i></i><i></i></span>
-                <span>正在想一想</span>
+                <div class="ai-waiting-orbit" aria-hidden="true">
+                  <AiStudioMark :size="23" />
+                </div>
+                <div class="ai-waiting-copy">
+                  <span
+                    >正在接住你的灵感<span class="ai-waiting-dots" aria-hidden="true"
+                      ><i></i><i></i><i></i></span
+                  ></span>
+                  <small>连接想法，准备回应</small>
+                </div>
+                <div class="ai-waiting-lines" aria-hidden="true"><i></i><i></i><i></i></div>
               </div>
 
               <AiMessageActions
-                v-if="msg.role === 'assistant' && msg.content && !msg.isLoading && !isSending"
+                v-if="
+                  msg.role === 'assistant' && msg.content && !msg.isLoading && !isActiveMessage(msg)
+                "
                 :content="msg.content"
               />
 
@@ -1621,7 +1712,8 @@ const handleComposerSend = (payload: AiComposerSendPayload) => {
   position: fixed;
   z-index: 99998;
   inset: 0;
-  background: var(--scrim-overlay);
+  background: color-mix(in oklch, var(--scrim-overlay) 85%, #15253830);
+  backdrop-filter: blur(10px);
   animation: ai-fade-in 180ms ease-out;
 }
 
@@ -1631,17 +1723,46 @@ const handleComposerSend = (payload: AiComposerSendPayload) => {
   inset: 0;
   display: flex;
   flex-direction: column;
-  width: min(880px, calc(100% - 48px));
-  height: min(820px, calc(100dvh - 64px));
+  width: min(960px, calc(100% - 64px));
+  height: min(860px, calc(100dvh - 64px));
   margin: auto;
   overflow: hidden;
   color: var(--text-1);
-  background: var(--bg-surface-0);
-  border: 1px solid var(--border-color);
-  border-radius: 24px;
-  box-shadow: var(--shadow-cinematic-value);
+  background:
+    radial-gradient(
+      ellipse at 12% 0%,
+      color-mix(in oklch, var(--brand-blue) 7%, transparent),
+      transparent 45%
+    ),
+    radial-gradient(
+      ellipse at 96% 26%,
+      color-mix(in oklch, var(--brand-pink) 5%, transparent),
+      transparent 42%
+    ),
+    var(--bg-surface-0);
+  border: 1px solid color-mix(in oklch, var(--bg-surface-0) 60%, var(--border-color));
+  border-radius: 28px;
+  box-shadow:
+    0 32px 100px #071b3438,
+    0 3px 12px #071b3410,
+    inset 0 1px 0 #ffffff30;
   contain: layout style;
   animation: ai-panel-in 280ms var(--ease-out-quint);
+}
+
+.ai-dialog-shell--expanded {
+  width: calc(100% - 40px);
+  height: calc(100dvh - 40px);
+}
+
+.ai-dialog-shell:focus {
+  outline: none;
+}
+
+.ai-dialog-shell :deep(button:focus-visible),
+.ai-dialog-shell :deep(summary:focus-visible) {
+  outline: 2px solid var(--brand-blue);
+  outline-offset: 4px;
 }
 
 .ai-dialog-header {
@@ -1650,8 +1771,8 @@ const handleComposerSend = (payload: AiComposerSendPayload) => {
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-  padding: 21px 28px;
-  border-bottom: 1px solid color-mix(in oklch, var(--border-color) 65%, transparent);
+  padding: 21px 30px;
+  border-bottom: 1px solid color-mix(in oklch, var(--border-color) 50%, transparent);
 }
 
 .ai-dialog-identity,
@@ -1665,10 +1786,14 @@ const handleComposerSend = (payload: AiComposerSendPayload) => {
   width: 40px;
   height: 40px;
   place-items: center;
-  color: var(--brand-blue);
-  background: var(--accent-surface);
-  border: 1px solid color-mix(in oklch, var(--brand-blue) 20%, var(--border-color));
-  border-radius: 14px;
+  flex-shrink: 0;
+  color: var(--bg-surface-0);
+  background: color-mix(in oklch, var(--text-1) 90%, var(--brand-blue));
+  border: 1px solid color-mix(in oklch, var(--text-1) 78%, var(--brand-blue));
+  border-radius: 12px;
+  box-shadow:
+    inset 0 1px 0 #ffffff18,
+    0 3px 8px color-mix(in oklch, var(--text-1) 10%, transparent);
 }
 .ai-dialog-title {
   display: flex;
@@ -1688,6 +1813,14 @@ const handleComposerSend = (payload: AiComposerSendPayload) => {
   font-weight: 500;
   letter-spacing: 0.04em;
 }
+.ai-dialog-title span {
+  padding: 3px 6px;
+  color: var(--brand-blue);
+  background: color-mix(in oklch, var(--brand-blue) 7%, transparent);
+  border-color: color-mix(in oklch, var(--brand-blue) 18%, transparent);
+  font-size: 8px;
+  letter-spacing: 0.1em;
+}
 .ai-dialog-description {
   margin-top: 4px;
   color: var(--text-2);
@@ -1704,7 +1837,7 @@ const handleComposerSend = (payload: AiComposerSendPayload) => {
 .ai-session-status i {
   width: 5px;
   height: 5px;
-  background: var(--text-2);
+  background: var(--brand-blue);
   border-radius: 50%;
 }
 .ai-session-status .is-active {
@@ -1718,6 +1851,9 @@ const handleComposerSend = (payload: AiComposerSendPayload) => {
   place-items: center;
   color: var(--text-2);
   border-radius: 10px;
+  transition:
+    color 160ms ease,
+    background 160ms ease;
 }
 .ai-close:hover {
   color: var(--text-1);
@@ -1725,16 +1861,24 @@ const handleComposerSend = (payload: AiComposerSendPayload) => {
 }
 
 .ai-chat-scroll {
+  container: ai-chat / size;
   display: flex;
   flex: 1;
   flex-direction: column;
-  gap: 28px;
+  gap: 24px;
   min-height: 0;
-  padding: 26px clamp(20px, 5vw, 60px) 32px;
+  padding: 28px max(28px, calc((100% - 760px) / 2)) 32px;
   overflow: hidden auto;
   overscroll-behavior: contain;
-  scrollbar-gutter: stable;
   contain: layout style;
+}
+.ai-chat-scroll--welcome {
+  padding-top: 18px;
+  padding-bottom: 18px;
+  scrollbar-width: none;
+}
+.ai-chat-scroll--welcome::-webkit-scrollbar {
+  display: none;
 }
 .ai-conversation-start {
   display: flex;
@@ -1765,12 +1909,21 @@ const handleComposerSend = (payload: AiComposerSendPayload) => {
 .ai-message-avatar {
   display: grid;
   flex-shrink: 0;
-  width: 30px;
-  height: 30px;
+  width: 34px;
+  height: 34px;
+  margin-top: 3px;
   place-items: center;
   color: var(--brand-blue);
-  background: var(--accent-surface);
-  border-radius: 10px;
+  background: linear-gradient(
+    145deg,
+    var(--bg-surface-0),
+    color-mix(in oklch, var(--brand-blue) 14%, var(--bg-surface-0))
+  );
+  border: 1px solid color-mix(in oklch, var(--brand-blue) 14%, transparent);
+  border-radius: 11px;
+  box-shadow:
+    inset 0 1px 0 #ffffff40,
+    0 4px 10px #193d6b08;
 }
 .ai-message-content {
   display: flex;
@@ -1780,7 +1933,29 @@ const handleComposerSend = (payload: AiComposerSendPayload) => {
   max-width: calc(100% - 42px);
 }
 .ai-msg-row--assistant .ai-message-content {
+  position: relative;
   flex: 1;
+  gap: 17px;
+  padding: 19px 22px 15px;
+  background: linear-gradient(
+    145deg,
+    color-mix(in oklch, var(--brand-blue) 2%, var(--bg-surface-0)),
+    var(--bg-surface-0) 45%
+  );
+  border: 1px solid color-mix(in oklch, var(--border-color) 75%, transparent);
+  border-radius: 6px 22px 22px;
+  box-shadow: 0 6px 24px #193d6b04;
+}
+.ai-msg-row--active .ai-message-content {
+  border-color: color-mix(in oklch, var(--brand-blue) 28%, var(--border-color));
+}
+.ai-msg-row--active .ai-message-avatar {
+  color: var(--bg-surface-0);
+  background: linear-gradient(
+    145deg,
+    var(--brand-blue),
+    color-mix(in oklch, var(--brand-blue) 65%, var(--brand-pink))
+  );
 }
 .ai-msg-row--user .ai-message-content {
   max-width: 82%;
@@ -1789,18 +1964,49 @@ const handleComposerSend = (payload: AiComposerSendPayload) => {
   display: flex;
   align-items: center;
   gap: 8px;
-  min-height: 28px;
+  width: 100%;
+  min-height: 22px;
   color: var(--text-2);
   font-size: 11px;
   font-weight: 500;
+}
+.ai-message-author .ai-message-name {
+  padding: 0;
+  color: var(--text-1);
+  border: 0;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+}
+.ai-message-author .ai-response-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 0;
+  margin-left: auto;
+  border: 0;
+  font-size: 10px;
+  letter-spacing: 0;
+}
+.ai-message-author .ai-response-state--live {
+  color: var(--brand-blue);
+}
+.ai-response-state i {
+  width: 5px;
+  height: 5px;
+  background: currentColor;
+  border-radius: 50%;
+  box-shadow: 0 0 0 3px color-mix(in oklch, var(--brand-blue) 9%, transparent);
+  animation: ai-breathe 1.5s ease-in-out infinite;
 }
 .ai-user-bubble {
   padding: 12px 18px;
   overflow-wrap: anywhere;
   color: var(--text-1);
-  background: color-mix(in oklch, var(--brand-blue) 8%, var(--bg-surface-1));
-  border: 1px solid color-mix(in oklch, var(--brand-blue) 12%, var(--border-color));
-  border-radius: 18px 18px 5px;
+  background: color-mix(in oklch, var(--brand-blue) 10%, var(--bg-surface-0));
+  border: 1px solid color-mix(in oklch, var(--brand-blue) 16%, var(--border-color));
+  border-radius: 20px 20px 6px;
+  box-shadow: 0 3px 10px #193d6b04;
   font-size: 14px;
   line-height: 1.85;
   white-space: pre-wrap;
@@ -1811,51 +2017,91 @@ const handleComposerSend = (payload: AiComposerSendPayload) => {
   color: var(--text-1);
   font-family: inherit;
   font-size: 14px;
-  line-height: 1.9;
-  overflow-wrap: anywhere;
-}
-.ai-reasoning {
-  width: 100%;
-  color: var(--text-2);
-  background: var(--bg-surface-1);
-  border: 1px solid var(--border-color);
-  border-radius: 12px;
-  font-size: 12px;
-}
-.ai-reasoning summary {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 11px 13px;
-  cursor: pointer;
-  list-style: none;
-}
-.ai-reasoning summary::-webkit-details-marker {
-  display: none;
-}
-.ai-reasoning-chevron {
-  margin-left: auto;
-  transition: transform 180ms var(--ease-out-quart);
-}
-.ai-reasoning[open] .ai-reasoning-chevron {
-  transform: rotate(180deg);
-}
-.ai-reasoning-content {
-  max-height: 220px;
-  padding: 12px 16px;
-  overflow: auto;
-  border-top: 1px solid var(--border-color);
-  line-height: 1.8;
-  white-space: pre-wrap;
+  line-height: 1.95;
+  letter-spacing: 0.01em;
   overflow-wrap: anywhere;
 }
 .ai-waiting {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 12px;
-  min-height: 32px;
+  gap: 15px;
+  width: 100%;
+  padding: 12px 0 8px;
   color: var(--text-2);
   font-size: 12px;
+}
+.ai-waiting-orbit {
+  position: relative;
+  display: grid;
+  flex-shrink: 0;
+  width: 46px;
+  height: 46px;
+  place-items: center;
+  color: var(--brand-blue);
+  background: radial-gradient(
+    circle,
+    color-mix(in oklch, var(--brand-blue) 12%, transparent),
+    transparent 70%
+  );
+}
+.ai-waiting-orbit::before,
+.ai-waiting-orbit::after {
+  position: absolute;
+  inset: 0;
+  border: 1px solid color-mix(in oklch, var(--brand-blue) 20%, transparent);
+  border-top-color: var(--brand-blue);
+  border-radius: 50%;
+  content: '';
+  animation: ai-orbit-turn 3s linear infinite;
+}
+.ai-waiting-orbit::after {
+  inset: 6px;
+  border-top-color: var(--brand-pink);
+  animation-direction: reverse;
+  animation-duration: 4s;
+}
+.ai-waiting-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+.ai-waiting-copy > span {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-1);
+}
+.ai-waiting-copy small {
+  font-size: 10px;
+}
+.ai-waiting-lines {
+  display: grid;
+  gap: 9px;
+  width: 100%;
+  padding-top: 9px;
+}
+.ai-waiting-lines i {
+  height: 7px;
+  background: linear-gradient(
+    90deg,
+    var(--bg-surface-1),
+    color-mix(in oklch, var(--brand-blue) 8%, var(--bg-surface-0)),
+    var(--bg-surface-1)
+  );
+  border-radius: 8px;
+  animation: ai-breathe 2s ease-in-out infinite;
+}
+.ai-waiting-lines i:nth-child(1) {
+  width: 92%;
+}
+.ai-waiting-lines i:nth-child(2) {
+  width: 78%;
+  animation-delay: 120ms;
+}
+.ai-waiting-lines i:nth-child(3) {
+  width: 46%;
+  animation-delay: 240ms;
 }
 .ai-waiting-dots {
   display: flex;
@@ -1900,12 +2146,13 @@ const handleComposerSend = (payload: AiComposerSendPayload) => {
 }
 :deep(.ai-stream-cursor) {
   display: inline-block;
-  width: 5px;
-  height: 14px;
-  margin-left: 5px;
-  vertical-align: -2px;
+  width: 7px;
+  height: 7px;
+  margin-left: 7px;
+  vertical-align: 1px;
   background: var(--brand-blue);
-  border-radius: 2px;
+  border-radius: 50%;
+  box-shadow: 0 0 0 4px color-mix(in oklch, var(--brand-blue) 9%, transparent);
   animation: ai-breathe 900ms ease-in-out infinite;
 }
 :deep(.markdown-body > :first-child) {
@@ -1913,9 +2160,11 @@ const handleComposerSend = (payload: AiComposerSendPayload) => {
 }
 :deep(.markdown-body blockquote) {
   margin: 16px 0;
-  padding: 4px 16px;
+  padding: 12px 16px;
   color: var(--text-2);
+  background: color-mix(in oklch, var(--brand-blue) 4%, var(--bg-surface-0));
   border-left: 2px solid var(--brand-blue);
+  border-radius: 0 10px 10px 0;
 }
 :deep(.markdown-body table) {
   display: block;
@@ -1993,6 +2242,12 @@ const handleComposerSend = (payload: AiComposerSendPayload) => {
   }
 }
 
+@keyframes ai-orbit-turn {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 @media (width <= 600px) {
   .ai-dialog-shell {
     width: 100%;
@@ -2006,6 +2261,16 @@ const handleComposerSend = (payload: AiComposerSendPayload) => {
   .ai-session-status {
     display: none;
   }
+  .ai-expand {
+    display: none;
+  }
+  .ai-dialog-title {
+    gap: 7px;
+    font-size: 14px;
+  }
+  .ai-header-actions {
+    gap: 4px;
+  }
   .ai-chat-scroll {
     gap: 24px;
     padding: 20px 18px 28px;
@@ -2017,8 +2282,15 @@ const handleComposerSend = (payload: AiComposerSendPayload) => {
     gap: 9px;
   }
   .ai-message-avatar {
-    width: 27px;
-    height: 27px;
+    display: none;
+  }
+  .ai-msg-row--assistant .ai-message-content {
+    max-width: 100%;
+    padding: 15px 14px 12px;
+    border-radius: 18px;
+  }
+  .ai-message-author {
+    gap: 6px;
   }
   .ai-msg-row--user .ai-message-content {
     max-width: 90%;
@@ -2039,13 +2311,14 @@ const handleComposerSend = (payload: AiComposerSendPayload) => {
   .ai-msg-row,
   .ai-session-status .is-active,
   .ai-waiting-dots i,
+  .ai-waiting-lines i,
+  .ai-waiting-orbit::before,
+  .ai-waiting-orbit::after,
+  .ai-response-state i,
   .animate-shimmer,
   :deep(.ai-stream-cursor),
   :deep(.animate-spin) {
     animation: none;
-  }
-  .ai-reasoning-chevron {
-    transition: none;
   }
 }
 
@@ -2086,11 +2359,17 @@ const handleComposerSend = (payload: AiComposerSendPayload) => {
 }
 
 :deep(.markdown-body .ai-code-block) {
+  --ai-code-bg: color-mix(in oklch, var(--bg-surface-0) 65%, var(--bg-surface-1));
+  --ai-code-toolbar-bg: color-mix(in oklch, var(--bg-surface-1) 65%, var(--bg-surface-2));
+  --ai-code-border: color-mix(in oklch, var(--border-color) 80%, var(--bg-surface-1));
+
+  min-width: 0;
+  max-width: 100%;
   overflow: hidden;
-  border-radius: 1.15rem;
-  border: 1px solid var(--border-color);
-  background: var(--bg-surface-0);
-  margin: 1.5em 0;
+  border-radius: 0.875rem;
+  border: 1px solid var(--ai-code-border);
+  background: var(--ai-code-bg);
+  margin: 1.25em 0;
   box-shadow: var(--shadow-surface-value);
 }
 
@@ -2099,58 +2378,132 @@ const handleComposerSend = (payload: AiComposerSendPayload) => {
   align-items: center;
   justify-content: space-between;
   gap: 0.75rem;
-  padding: 0.75rem 0.95rem;
-  border-bottom: 1px solid var(--border-color);
-  background: color-mix(in oklab, var(--bg-surface-1) 82%, var(--bg-surface-0));
+  min-height: 2.875rem;
+  padding: 0.375rem 0.625rem 0.375rem 1rem;
+  border-bottom: 1px solid var(--ai-code-border);
+  background: var(--ai-code-toolbar-bg);
+  user-select: none;
 }
 
 :deep(.markdown-body .ai-code-language) {
-  font-size: 0.7rem;
-  font-weight: 700;
-  letter-spacing: 0.22em;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 0;
+  font-family: 'JetBrains Mono', 'Fira Code', ui-monospace, monospace;
+  font-size: 0.6875rem;
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  line-height: 1.5;
   color: var(--text-2);
 }
 
+:deep(.markdown-body .ai-code-language svg) {
+  flex-shrink: 0;
+}
+
+:deep(.markdown-body .ai-code-language > span) {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 :deep(.markdown-body .ai-code-copy) {
-  min-width: 4.5rem;
-  border: 1px solid var(--border-color);
-  border-radius: 999px;
-  background: var(--bg-surface-0);
-  color: var(--text-1);
-  padding: 0.38rem 0.8rem;
-  font-size: 0.72rem;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  transition: transform 180ms var(--ease-out-quart);
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  gap: 0.375rem;
+  min-width: 5rem;
+  min-height: 2rem;
+  padding: 0.375rem 0.625rem;
+  border: 1px solid transparent;
+  border-radius: 0.5rem;
+  background: transparent;
+  color: var(--text-2);
+  font-family: inherit;
+  font-size: 0.75rem;
+  font-weight: 500;
+  letter-spacing: 0;
+  line-height: 1.25;
+  white-space: nowrap;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: transform 140ms var(--ease-out-quart);
 }
 
 :deep(.markdown-body .ai-code-copy:hover) {
-  transform: translateY(-1px);
-  border-color: var(--text-2);
-  background: var(--bg-surface-1);
+  border-color: var(--ai-code-border);
+  background: var(--bg-surface-0);
+  color: var(--text-1);
+}
+
+:deep(.markdown-body .ai-code-copy:focus-visible) {
+  outline: 2px solid var(--brand-blue);
+  outline-offset: 2px;
+}
+
+:deep(.markdown-body .ai-code-copy:active) {
+  transform: scale(0.97);
+}
+
+:deep(.markdown-body .ai-code-copy:disabled) {
+  cursor: wait;
 }
 
 :deep(.markdown-body .ai-code-copy[data-copied='true']) {
-  background: var(--text-1);
-  border-color: var(--text-1);
-  color: var(--bg-surface-0);
+  background: color-mix(in oklch, var(--status-success) 9%, var(--ai-code-toolbar-bg));
+  border-color: color-mix(in oklch, var(--status-success) 24%, var(--ai-code-border));
+  color: var(--status-success-ink);
+}
+
+:deep(.markdown-body .ai-code-copy-icons) {
+  display: grid;
+  width: 0.875rem;
+  height: 0.875rem;
+}
+
+:deep(.markdown-body .ai-code-copy-icons svg) {
+  grid-area: 1 / 1;
+  transition:
+    opacity 140ms var(--ease-out-quart),
+    transform 140ms var(--ease-out-quart);
+}
+
+:deep(.markdown-body .ai-code-check-icon) {
+  opacity: 0;
+  transform: translateY(3px);
+}
+
+:deep(.markdown-body .ai-code-copy[data-copied='true'] .ai-code-copy-icon) {
+  opacity: 0;
+  transform: translateY(-3px);
+}
+
+:deep(.markdown-body .ai-code-copy[data-copied='true'] .ai-code-check-icon) {
+  opacity: 1;
+  transform: translateY(0);
 }
 
 :deep(.markdown-body pre) {
   background: transparent;
-  color: inherit;
-  padding: 1rem 1.1rem 1.15rem;
+  color: var(--text-1);
+  padding: 1.125rem 1.25rem;
   border-radius: 0;
   border: 0;
   overflow-x: auto;
   margin: 0;
   font-family: 'JetBrains Mono', 'Fira Code', ui-monospace, SFMono-Regular, monospace;
-  font-size: 0.85em;
-  line-height: 1.7;
+  font-size: 0.8125rem;
+  line-height: 1.8;
+  tab-size: 2;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-color) transparent;
+  overscroll-behavior-x: contain;
 }
 
 :deep(.markdown-body code:not(pre code)) {
-  background-color: var(--bg-surface-2);
+  background-color: color-mix(in oklch, var(--bg-surface-2) 70%, var(--bg-surface-0));
   color: var(--text-1);
   padding: 0.2em 0.4em;
   border-radius: 6px;
@@ -2159,7 +2512,14 @@ const handleComposerSend = (payload: AiComposerSendPayload) => {
 }
 
 :deep(.markdown-body pre code) {
-  /* 不要写死 color，否则会盖掉子 span 的 token 色观感 */
+  display: block;
+  padding: 0;
+  border: 0;
+  font: inherit;
+  letter-spacing: 0;
+  white-space: pre;
+  overflow-wrap: normal;
+  word-break: normal;
   color: inherit;
   background: transparent;
 }
@@ -2180,13 +2540,12 @@ const handleComposerSend = (payload: AiComposerSendPayload) => {
 :deep(.markdown-body .hljs-literal),
 :deep(.markdown-body .hljs-section),
 :deep(.markdown-body .hljs-link) {
-  color: var(--brand-blue);
-  font-weight: 600;
+  color: var(--status-info-ink);
+  font-weight: 500;
 }
 
 :deep(.markdown-body .hljs-built_in),
 :deep(.markdown-body .hljs-type),
-:deep(.markdown-body .hljs-params),
 :deep(.markdown-body .hljs-class .hljs-title),
 :deep(.markdown-body .hljs-title.class_) {
   color: var(--status-warning-ink);
@@ -2211,7 +2570,7 @@ const handleComposerSend = (payload: AiComposerSendPayload) => {
 :deep(.markdown-body .hljs-title.function_),
 :deep(.markdown-body .hljs-function .hljs-title),
 :deep(.markdown-body .hljs-attribute) {
-  color: var(--brand-blue);
+  color: var(--status-info-ink);
 }
 
 :deep(.markdown-body .hljs-variable),
@@ -2240,6 +2599,30 @@ const handleComposerSend = (payload: AiComposerSendPayload) => {
   font-weight: 700;
 }
 
+@media (width <= 600px) {
+  :deep(.markdown-body .ai-code-toolbar) {
+    padding-left: 0.875rem;
+  }
+
+  :deep(.markdown-body .ai-code-block pre) {
+    padding: 1rem 0.875rem;
+    font-size: 0.75rem;
+  }
+}
+
+@media (pointer: coarse) {
+  :deep(.markdown-body .ai-code-copy) {
+    min-height: 2.75rem;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :deep(.markdown-body .ai-code-copy),
+  :deep(.markdown-body .ai-code-copy-icons svg) {
+    transition: none;
+  }
+}
+
 :deep(.markdown-body p) {
   margin-bottom: 1.2em;
   line-height: 1.75;
@@ -2260,6 +2643,14 @@ const handleComposerSend = (payload: AiComposerSendPayload) => {
   margin-bottom: 0.5em;
 }
 
+.custom-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: transparent transparent;
+}
+.custom-scrollbar:hover,
+.custom-scrollbar:focus-within {
+  scrollbar-color: var(--border-color) transparent;
+}
 .custom-scrollbar::-webkit-scrollbar {
   width: 4px;
   height: 4px;
@@ -2269,12 +2660,22 @@ const handleComposerSend = (payload: AiComposerSendPayload) => {
   }
 
   &-thumb {
-    background: var(--border-color);
+    background: transparent;
     border-radius: 4px;
   }
 }
 
 .custom-scrollbar:hover::-webkit-scrollbar-thumb {
-  background: var(--text-2);
+  background: var(--border-color);
+}
+.ai-chat-scroll--welcome,
+.ai-chat-scroll--welcome:hover,
+.ai-chat-scroll--welcome:focus-within {
+  scrollbar-width: none;
+}
+@media (hover: none) {
+  .custom-scrollbar:not(.ai-chat-scroll--welcome) {
+    scrollbar-color: var(--border-color) transparent;
+  }
 }
 </style>

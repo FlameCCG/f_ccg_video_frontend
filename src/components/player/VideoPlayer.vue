@@ -1450,20 +1450,31 @@ onBeforeUnmount(() => {
   --art-theme: var(--color-primary);
   --art-font-color: var(--media-overlay-text);
   --art-background-color: var(--player-cinema-black);
-  // 深色内芯负责亮画面对比，浅色外缘负责暗画面对比，避免依赖视频背景或阴影。
+  // 媒体控制层始终覆盖深色遮罩；以柔和蓝和银灰区分播放、缓冲与底轨。
+  // 从主题 token 派生，避免浅色主题下控制条变白、暗色主题下品牌色过亮。
+  --player-progress-neutral: color-mix(
+    in oklch,
+    var(--media-overlay-text) 94%,
+    var(--brand-blue)
+  );
   --player-progress-track: color-mix(
     in oklch,
-    var(--player-cinema-black) 76%,
-    var(--media-overlay-text)
-  );
-  --player-progress-track-edge: color-mix(
-    in oklch,
-    var(--media-overlay-text) 78%,
+    var(--player-progress-neutral) 28%,
     var(--player-cinema-black)
   );
   --player-progress-loaded: color-mix(
     in oklch,
-    var(--media-overlay-text) 58%,
+    var(--player-progress-neutral) 48%,
+    var(--player-cinema-black)
+  );
+  --player-progress-played: color-mix(
+    in oklch,
+    var(--brand-blue) 76%,
+    var(--media-overlay-text)
+  );
+  --player-progress-tip-bg: color-mix(
+    in oklch,
+    var(--player-progress-track) 92%,
     var(--player-cinema-black)
   );
   --art-progress-color: var(--player-progress-track);
@@ -1533,12 +1544,12 @@ onBeforeUnmount(() => {
 
 :deep(.art-control-progress-inner) {
   box-sizing: border-box;
-  height: 6px !important;
+  height: 4px !important;
   overflow: visible;
-  border: 1px solid var(--player-progress-track-edge);
+  border: 0;
   background: var(--player-progress-track) !important;
   border-radius: 999px !important;
-  box-shadow: none !important;
+  box-shadow: 0 0 0 1px color-mix(in oklch, var(--media-overlay) 40%, transparent) !important;
   transition: none !important;
 }
 
@@ -1555,7 +1566,7 @@ onBeforeUnmount(() => {
   width: 0;
   height: 0;
   border-right: 4px solid transparent;
-  border-bottom: 5px solid var(--brand-blue);
+  border-bottom: 5px solid var(--player-progress-played);
   border-left: 4px solid transparent;
   content: '';
 }
@@ -1570,26 +1581,15 @@ onBeforeUnmount(() => {
   box-shadow: none !important;
 }
 
-:deep(.art-progress-loaded::after) {
-  position: absolute;
-  top: 0;
-  right: 0;
-  width: 12px;
-  height: 100%;
-  border-radius: 999px;
-  background: linear-gradient(90deg, transparent, rgb(255 255 255 / 0.4));
-  content: '';
-}
-
 :deep(.art-progress-played) {
-  background: var(--brand-blue) !important;
+  background: var(--player-progress-played) !important;
   border-radius: inherit !important;
   box-shadow: none !important;
 }
 
 :deep(.art-progress-indicator) {
-  background-color: var(--media-overlay-text) !important;
-  border: 2px solid var(--player-progress-track) !important;
+  background-color: var(--player-progress-neutral) !important;
+  border: 2px solid var(--player-progress-played) !important;
   width: 12px !important;
   height: 12px !important;
   border-radius: 50% !important;
@@ -1637,8 +1637,8 @@ onBeforeUnmount(() => {
   border: 1px solid color-mix(in oklch, var(--media-overlay-text) 16%, transparent) !important;
   border-radius: 999px !important;
   color: var(--media-overlay-text) !important;
-  background: rgb(3 5 8 / 0.9) !important;
-  box-shadow: 0 8px 24px -10px rgb(0 0 0 / 0.94) !important;
+  background: var(--player-progress-tip-bg) !important;
+  box-shadow: 0 4px 12px -4px var(--media-overlay) !important;
   font-size: 11px !important;
   font-weight: 650;
   font-variant-numeric: tabular-nums;
@@ -1657,7 +1657,7 @@ onBeforeUnmount(() => {
   left: 50%;
   width: 0;
   height: 0;
-  border-top: 6px solid var(--brand-blue);
+  border-top: 6px solid var(--player-progress-tip-bg);
   border-right: 5px solid transparent;
   border-left: 5px solid transparent;
   content: '';

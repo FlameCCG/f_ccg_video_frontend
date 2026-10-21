@@ -68,7 +68,6 @@ type PreciseDanmuPluginInstance = DanmuPluginInstance & {
   __preciseTimeOffsetSchedulerInstalled?: boolean
 }
 
-const VOLUME_STORAGE_KEY = 'artplayer_volume'
 const DEFAULT_DANMU_FONT_SIZE = 24
 const DANMU_FONT_SIZE_MIN = 12
 const DANMU_FONT_SIZE_MAX = 120
@@ -1124,7 +1123,7 @@ const initPlayer = () => {
     : resolveMediaUrl(defaultMp4.value?.fileUrl)
   if (!startUrl) return
 
-  const savedVolume = parseFloat(localStorage.getItem(VOLUME_STORAGE_KEY) ?? '0.7')
+  const savedVolume = videoStore.playerState.volume
   // 续播：DASH→MP4 兜底重建优先用保留位置，否则用后端 watchProgress。
   const startAt = pendingSeekTime ?? videoStore.watchProgress ?? 0
   pendingSeekTime = null
@@ -1178,6 +1177,7 @@ const initPlayer = () => {
     lang: 'zh-cn',
     theme: 'var(--color-primary)',
     volume: savedVolume,
+    muted: videoStore.playerState.muted,
     setting: true,
     flip: true,
     playbackRate: true,
@@ -1246,7 +1246,7 @@ const initPlayer = () => {
   }
 
   art.on('video:volumechange', () => {
-    localStorage.setItem(VOLUME_STORAGE_KEY, String(art.volume))
+    videoStore.updatePlayerState({ volume: art.volume, muted: art.muted })
   })
 
   art.on('video:timeupdate', () => {
@@ -1452,11 +1452,7 @@ onBeforeUnmount(() => {
   --art-background-color: var(--player-cinema-black);
   // 媒体控制层始终覆盖深色遮罩；以柔和蓝和银灰区分播放、缓冲与底轨。
   // 从主题 token 派生，避免浅色主题下控制条变白、暗色主题下品牌色过亮。
-  --player-progress-neutral: color-mix(
-    in oklch,
-    var(--media-overlay-text) 94%,
-    var(--brand-blue)
-  );
+  --player-progress-neutral: color-mix(in oklch, var(--media-overlay-text) 94%, var(--brand-blue));
   --player-progress-track: color-mix(
     in oklch,
     var(--player-progress-neutral) 28%,
@@ -1467,11 +1463,7 @@ onBeforeUnmount(() => {
     var(--player-progress-neutral) 48%,
     var(--player-cinema-black)
   );
-  --player-progress-played: color-mix(
-    in oklch,
-    var(--brand-blue) 76%,
-    var(--media-overlay-text)
-  );
+  --player-progress-played: color-mix(in oklch, var(--brand-blue) 76%, var(--media-overlay-text));
   --player-progress-tip-bg: color-mix(
     in oklch,
     var(--player-progress-track) 92%,

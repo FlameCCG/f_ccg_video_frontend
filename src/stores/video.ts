@@ -13,6 +13,7 @@ import {
   type TripleParams,
 } from '@/api/video'
 import { useAuthStore } from './auth'
+import { usePlayerPreferencesStore } from './playerPreferences'
 
 export interface PlayerState {
   playing: boolean
@@ -36,6 +37,7 @@ export interface InteractionState {
 export const useVideoStore = defineStore(
   'video',
   () => {
+    const preferences = usePlayerPreferencesStore()
     // State
     const currentVideo = ref<VideoDetail | null>(null)
     const isLoading = ref(false)
@@ -46,8 +48,8 @@ export const useVideoStore = defineStore(
       playing: false,
       currentTime: 0,
       duration: 0,
-      volume: 0.7,
-      muted: false,
+      volume: preferences.volume,
+      muted: preferences.muted,
       playbackRate: 1,
       quality: '1080p',
       fullscreen: false,
@@ -230,7 +232,18 @@ export const useVideoStore = defineStore(
      * 更新播放器状态
      */
     const updatePlayerState = (updates: Partial<PlayerState>) => {
-      playerState.value = { ...playerState.value, ...updates }
+      for (const key of Object.keys(updates) as (keyof PlayerState)[]) {
+        const value = updates[key]
+        if (value !== undefined && playerState.value[key] !== value) {
+          Object.assign(playerState.value, { [key]: value })
+        }
+      }
+      if (updates.volume !== undefined && preferences.volume !== updates.volume) {
+        preferences.volume = updates.volume
+      }
+      if (updates.muted !== undefined && preferences.muted !== updates.muted) {
+        preferences.muted = updates.muted
+      }
     }
 
     /**
@@ -338,9 +351,5 @@ export const useVideoStore = defineStore(
       updateStats,
     }
   },
-  {
-    persist: {
-      pick: ['playerState.volume', 'playerState.muted'],
-    },
-  }
+  { persist: false }
 )

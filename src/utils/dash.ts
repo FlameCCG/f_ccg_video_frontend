@@ -8,6 +8,7 @@ import type {
   Representation,
 } from 'dashjs'
 import type { VideoResourceItem } from '@/api/video'
+import { fallbackDashQualityLabel, matchDashQualityLabels } from '@/utils/dashQualityLabel'
 import { resolveMediaUrl } from '@/utils/media'
 
 // dash.js 较重（MSE 自适应内核），只在真正播放 DASH 流时按需加载，避免在每个
@@ -293,68 +294,10 @@ export const setupDashQualityMenu = (
     }
   }
 
-  /**
-   * 将 DASH representation 按「高度 + 同高度内码率排名」匹配到后端 MP4 的中文标签。
-   * 例如 1080P 高码率 DASH 档 → "1080p 高码率"， 1080P 标准档 → "1080p 高清"。
-   * 匹配不上的兜底用 "720P" / "360P" 等高度标签。
-   */
-  const buildLabelMap = (
-    reps: Representation[],
-    mp4Labels: { resolution: string; bitrate: number; fileUrl?: string }[]
-  ): Map<number, string> => {
-    const result = new Map<number, string>()
-
-    const parseHeight = (s: string): number => {
-      const m = s.match(/^(\d+)[pP]/)
-      return m ? Number(m[1]) : 0
-    }
-
-    // 按高度分组 MP4，组内按码率降序
-    const mp4ByHeight = new Map<number, { resolution: string; bitrate: number }[]>()
-    for (const l of mp4Labels) {
-      const h = parseHeight(l.resolution)
-      if (!mp4ByHeight.has(h)) mp4ByHeight.set(h, [])
-      mp4ByHeight.get(h)!.push(l)
-    }
-    for (const [, items] of mp4ByHeight) items.sort((a, b) => b.bitrate - a.bitrate)
-
-    // 按高度分组 DASH，组内按带宽降序
-    const dashByHeight = new Map<number, Representation[]>()
-    for (const r of reps) {
-      const h = r.height || 0
-      if (!dashByHeight.has(h)) dashByHeight.set(h, [])
-      dashByHeight.get(h)!.push(r)
-    }
-    for (const [, items] of dashByHeight)
-      items.sort((a, b) => (b.bandwidth || 0) - (a.bandwidth || 0))
-
-    // 同高度内按码率降序排名一一匹配。后端 DASH MPD 与 MP4 资源的档位数量/顺序一致，
-    // 按排名匹配即可：最高带宽 DASH 档 → 最高码率 MP4 标签（如 "1080p 高码率"）。
-    for (const [h, dashReps] of dashByHeight) {
-      const labels = mp4ByHeight.get(h) ?? []
-      for (let i = 0; i < dashReps.length; i++) {
-        const rep = dashReps[i]!
-        const matched = labels[i]
-        const label = matched
-          ? matched.resolution
-          : rep.height
-            ? `${rep.height}P`
-            : `${Math.round((rep.bandwidth || 0) / 1000)} kbps`
-        result.set(rep.index, label)
-      }
-    }
-
-    return result
-  }
-
-  /** 已匹配的 index → MP4 中文标签（如 "1080p 高码率"） */
+  /** 已匹配的 index → MP4 中文标签（如 "1080p 高码率"、"4k 超高清"） */
   let labelMap = new Map<number, string>()
 
-  const formatLabel = (rep: Representation): string => {
-    if (rep.height) return `${rep.height}P`
-    if (rep.bandwidth) return `${Math.round(rep.bandwidth / 1000)} kbps`
-    return `清晰度 ${rep.index + 1}`
-  }
+  const formatLabel = (rep: Representation): string => fallbackDashQualityLabel(rep)
 
   /** 优先用匹配到的 MP4 中文标签，否则兜底 formatLabel */
   const resolveLabel = (rep: Representation): string => {
@@ -531,7 +474,7 @@ export const setupDashQualityMenu = (
     try {
       reps = dash.getRepresentationsByType('video')
       // 匹配 MP4 中文标签（如 "1080p 高码率"），匹配不上的兜底用高度标签
-      labelMap = buildLabelMap(reps, options.labels ?? [])
+      labelMap = matchDashQualityLabels(reps, options.labels ?? [])
     } catch (error) {
       console.error('[dash] getRepresentationsByType failed', error)
       return

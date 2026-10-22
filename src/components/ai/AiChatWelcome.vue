@@ -43,7 +43,7 @@ const coverSuggestions = ['电影感光影', '极简留白', '梦幻插画']
       <div class="chat-welcome__orbit chat-welcome__orbit--outer"></div>
       <div class="chat-welcome__orbit"></div>
       <div class="chat-welcome__orb"><AiStudioMark :size="44" /></div>
-      <span class="chat-welcome__satellite"></span>
+      <span class="chat-welcome__flight"><span class="chat-welcome__satellite"></span></span>
       <span class="chat-welcome__star">✦</span>
     </div>
     <div class="chat-welcome__eyebrow">A LITTLE SPARK. ENDLESS POSSIBILITIES.</div>
@@ -104,6 +104,9 @@ const coverSuggestions = ['电影感光影', '极简留白', '梦幻插画']
   text-align: center;
 
   &__art {
+    --orbit-x: 92px;
+    --orbit-y: 41px;
+
     position: relative;
     display: grid;
     width: 210px;
@@ -111,6 +114,8 @@ const coverSuggestions = ['电影感光影', '极简留白', '梦幻插画']
     margin: 0 auto 6px;
     place-items: center;
     isolation: isolate;
+    pointer-events: none;
+    animation: spark-arrive 800ms var(--ease-out-quint) both;
   }
   &__art::before {
     position: absolute;
@@ -122,12 +127,15 @@ const coverSuggestions = ['电影感光影', '极简留白', '梦幻插画']
       transparent 67%
     );
     content: '';
+    animation: studio-glow 6s ease-in-out infinite;
   }
   &__orb {
+    position: relative;
     display: grid;
     width: 76px;
     height: 76px;
     place-items: center;
+    overflow: hidden;
     color: var(--bg-surface-0);
     background: linear-gradient(
       145deg,
@@ -139,7 +147,21 @@ const coverSuggestions = ['电影感光影', '极简留白', '梦幻插画']
     box-shadow:
       inset 0 1px 0 #ffffff20,
       0 12px 28px color-mix(in oklch, var(--text-1) 12%, transparent);
-    animation: spark-arrive 800ms cubic-bezier(0.16, 1, 0.3, 1) both;
+    animation: studio-float 6s ease-in-out infinite;
+  }
+  &__orb::after {
+    position: absolute;
+    inset: -30% -70%;
+    background: linear-gradient(
+      110deg,
+      transparent 40%,
+      color-mix(in oklch, var(--bg-surface-0) 13%, transparent) 49%,
+      transparent 58%
+    );
+    content: '';
+    transform: translateX(-70%);
+    opacity: 0;
+    animation: studio-sheen 9s ease-in-out infinite;
   }
   &__orbit {
     position: absolute;
@@ -154,17 +176,29 @@ const coverSuggestions = ['电影感光影', '极简留白', '梦幻插画']
     width: 184px;
     height: 82px;
     border-color: color-mix(in oklch, var(--brand-blue) 10%, transparent);
+    animation: studio-ring 8s ease-in-out infinite;
+  }
+  &__flight {
+    position: absolute;
+    z-index: -1;
+    top: 50%;
+    left: 50%;
+    width: 0;
+    height: 0;
+    transform: rotate(-20deg);
   }
   &__satellite {
     position: absolute;
-    top: 39px;
-    right: 29px;
+    top: -4.5px;
+    left: -4.5px;
     width: 9px;
     height: 9px;
     background: var(--brand-pink);
     border: 2px solid var(--bg-surface-0);
     border-radius: 50%;
     box-shadow: 0 0 0 5px color-mix(in oklch, var(--brand-pink) 10%, transparent);
+    transform: translate(calc(var(--orbit-x) * 0.7071), calc(var(--orbit-y) * -0.7071));
+    animation: studio-orbit 18s linear -2.25s infinite;
   }
   &__star {
     position: absolute;
@@ -172,6 +206,7 @@ const coverSuggestions = ['电影感光影', '极简留白', '梦幻插画']
     left: 29px;
     color: var(--brand-blue);
     font-size: 17px;
+    animation: studio-twinkle 5s ease-in-out -1.5s infinite;
   }
   &__eyebrow {
     color: var(--text-2);
@@ -346,6 +381,116 @@ const coverSuggestions = ['电影感光影', '极简留白', '梦幻插画']
     transform: translateY(0) scale(1);
   }
 }
+@keyframes studio-float {
+  0%,
+  100% {
+    transform: translateY(3px) rotate(-2deg);
+  }
+  50% {
+    transform: translateY(-5px) rotate(2deg);
+  }
+}
+@keyframes studio-glow {
+  0%,
+  100% {
+    transform: scale(0.94);
+    opacity: 0.55;
+  }
+  50% {
+    transform: scale(1.06);
+    opacity: 1;
+  }
+}
+@keyframes studio-ring {
+  0%,
+  100% {
+    opacity: 0.55;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+@keyframes studio-twinkle {
+  0%,
+  100% {
+    transform: scale(0.85) rotate(-8deg);
+    opacity: 0.45;
+  }
+  50% {
+    transform: scale(1.08) rotate(8deg);
+    opacity: 0.9;
+  }
+}
+@keyframes studio-sheen {
+  0%,
+  65% {
+    transform: translateX(-70%);
+    opacity: 0;
+  }
+  70% {
+    opacity: 1;
+  }
+  90% {
+    transform: translateX(70%);
+    opacity: 0;
+  }
+  100% {
+    transform: translateX(70%);
+    opacity: 0;
+  }
+}
+// An ellipse sampled at 22.5 degrees; only transform changes each frame.
+@keyframes studio-orbit {
+  0%,
+  100% {
+    transform: translate(var(--orbit-x), 0);
+  }
+  6.25% {
+    transform: translate(calc(var(--orbit-x) * 0.9239), calc(var(--orbit-y) * 0.3827));
+  }
+  12.5% {
+    transform: translate(calc(var(--orbit-x) * 0.7071), calc(var(--orbit-y) * 0.7071));
+  }
+  18.75% {
+    transform: translate(calc(var(--orbit-x) * 0.3827), calc(var(--orbit-y) * 0.9239));
+  }
+  25% {
+    transform: translate(0, var(--orbit-y));
+  }
+  31.25% {
+    transform: translate(calc(var(--orbit-x) * -0.3827), calc(var(--orbit-y) * 0.9239));
+  }
+  37.5% {
+    transform: translate(calc(var(--orbit-x) * -0.7071), calc(var(--orbit-y) * 0.7071));
+  }
+  43.75% {
+    transform: translate(calc(var(--orbit-x) * -0.9239), calc(var(--orbit-y) * 0.3827));
+  }
+  50% {
+    transform: translate(calc(var(--orbit-x) * -1), 0);
+  }
+  56.25% {
+    transform: translate(calc(var(--orbit-x) * -0.9239), calc(var(--orbit-y) * -0.3827));
+  }
+  62.5% {
+    transform: translate(calc(var(--orbit-x) * -0.7071), calc(var(--orbit-y) * -0.7071));
+  }
+  68.75% {
+    transform: translate(calc(var(--orbit-x) * -0.3827), calc(var(--orbit-y) * -0.9239));
+  }
+  75% {
+    transform: translate(0, calc(var(--orbit-y) * -1));
+  }
+  81.25% {
+    transform: translate(calc(var(--orbit-x) * 0.3827), calc(var(--orbit-y) * -0.9239));
+  }
+  87.5% {
+    transform: translate(calc(var(--orbit-x) * 0.7071), calc(var(--orbit-y) * -0.7071));
+  }
+  93.75% {
+    transform: translate(calc(var(--orbit-x) * 0.9239), calc(var(--orbit-y) * -0.3827));
+  }
+}
 @media (width <= 600px) {
   .chat-welcome {
     padding: 4px 0 16px;
@@ -411,6 +556,8 @@ const coverSuggestions = ['电影感光影', '极简留白', '梦幻插画']
   .chat-welcome {
     padding: 0 0 8px;
     &__art {
+      --orbit-x: 81px;
+      --orbit-y: 31px;
       height: 108px;
       margin-bottom: 4px;
     }
@@ -426,10 +573,6 @@ const coverSuggestions = ['电影感光影', '极简留白', '梦幻插画']
     &__orbit--outer {
       width: 162px;
       height: 62px;
-    }
-    &__satellite {
-      top: 21px;
-      right: 38px;
     }
     &__star {
       bottom: 21px;
@@ -454,6 +597,8 @@ const coverSuggestions = ['电影感光影', '极简留白', '梦幻插画']
 @container ai-chat (height <= 350px) {
   .chat-welcome {
     &__art {
+      --orbit-x: 69px;
+      --orbit-y: 24px;
       height: 76px;
     }
     &__orb {
@@ -477,10 +622,6 @@ const coverSuggestions = ['电影感光影', '极简留白', '梦幻插画']
       bottom: 10px;
       left: 45px;
       font-size: 13px;
-    }
-    &__satellite {
-      top: 10px;
-      right: 45px;
     }
     &__eyebrow {
       display: none;
@@ -507,7 +648,13 @@ const coverSuggestions = ['电影感光影', '极简留白', '梦幻插画']
   }
 }
 @media (prefers-reduced-motion: reduce) {
-  .chat-welcome__orb {
+  .chat-welcome__art,
+  .chat-welcome__art::before,
+  .chat-welcome__orb,
+  .chat-welcome__orb::after,
+  .chat-welcome__orbit--outer,
+  .chat-welcome__satellite,
+  .chat-welcome__star {
     animation: none;
   }
   .inspiration-card,

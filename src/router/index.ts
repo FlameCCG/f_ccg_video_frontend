@@ -1,4 +1,5 @@
 import { createRouter, createWebHistory, type RouteRecordRaw } from 'vue-router'
+import { nextTick } from 'vue'
 import { useAuthStore } from '@/stores/auth'
 
 // Layout components
@@ -276,10 +277,15 @@ const router = createRouter({
   /**
    * 置顶要等离场动画播完再做，否则用户看到的是「页面一边淡出、一边被拽回顶部」。
    * .route-leave-active 是 140ms（var(--duration-fast)），这里留 150ms 余量。
-   * 返回上一页时 savedPosition 立即生效，不加延迟——恢复滚动位置越快越不突兀。
+   * 返回上一页时等待 DOM 与列表高度就绪后恢复 savedPosition，不额外等待离场动画。
    */
-  scrollBehavior(_to, _from, savedPosition) {
+  async scrollBehavior(_to, _from, savedPosition) {
     if (savedPosition) {
+      // 等缓存列表重新挂载、虚拟网格完成测量，避免在空页面上恢复时被浏览器截断。
+      await nextTick()
+      await new Promise<void>((resolve) =>
+        requestAnimationFrame(() => requestAnimationFrame(() => resolve()))
+      )
       return savedPosition
     }
     const reduced =

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, watch, nextTick } from 'vue'
+import { ref, onMounted, onBeforeUnmount, watch, nextTick } from 'vue'
 import { useRoute } from 'vue-router'
 import {
   getCommentList,
@@ -10,6 +10,7 @@ import {
 import CommentInput from './CommentInput.vue'
 import CommentItem from './CommentItem.vue'
 import EmptyState from '@/components/common/EmptyState.vue'
+import FeedError from '@/components/common/FeedError.vue'
 import SkeletonGroup from '@/components/common/SkeletonGroup.vue'
 import { Loader2 } from 'lucide-vue-next'
 import { toast } from 'vue-sonner'
@@ -33,6 +34,8 @@ const page = ref(1)
 const pageSize = ref(20)
 const sortBy = ref<'time' | 'hot'>('hot')
 const isLoading = ref(false)
+const loadError = ref('')
+let requestId = 0
 
 const getTargetCommentId = () => {
   const rawTarget = props.initialCommentId ?? route.query.commentId
@@ -55,11 +58,12 @@ const scrollAndHighlight = (el: HTMLElement) => {
   }, 2000)
 }
 
-const findAndExpandReply = async (targetId: number) => {
+const findAndExpandReply = async (targetId: number, currentRequest: number) => {
   for (const comment of comments.value) {
     if (comment.replyCount <= 0) continue
     try {
       const res = await getReplyList({ rootId: comment.id, page: 1, pageSize: 50 })
+      if (currentRequest !== requestId) return false
       const found = res.list.some((reply) => reply.id === targetId)
       if (found) {
         autoExpandRootId.value = comment.id
@@ -74,11 +78,12 @@ const findAndExpandReply = async (targetId: number) => {
   return false
 }
 
-const focusTargetComment = async () => {
+const focusTargetComment = async (currentRequest: number) => {
   const targetCommentId = getTargetCommentId()
   if (!targetCommentId) return
 
   await nextTick()
+  if (currentRequest !== requestId) return
   const targetEl = document.getElementById(`comment-${targetCommentId}`)
   if (targetEl) {
     scrollAndHighlight(targetEl)
@@ -86,39 +91,51 @@ const focusTargetComment = async () => {
     return
   }
 
-  await findAndExpandReply(targetCommentId)
-  emit('commentConsumed')
+  await findAndExpandReply(targetCommentId, currentRequest)
+  if (currentRequest === requestId) emit('commentConsumed')
 }
 
 const loadComments = async (reset = false) => {
-  if (isLoading.value) return
+  if (isLoading.value && !reset) return
+  const currentRequest = ++requestId
+  const requestedPage = reset ? 1 : page.value + 1
   if (reset) {
-    page.value = 1
+    page.value = 0
     comments.value = []
+    total.value = 0
+    autoExpandRootId.value = null
+    autoExpandTargetId.value = null
   }
 
   isLoading.value = true
+  loadError.value = ''
   try {
     const res = await getCommentList({
       videoId: props.videoId || undefined,
       dynamicId: props.dynamicId || undefined,
-      page: page.value,
+      page: requestedPage,
       pageSize: pageSize.value,
       sortBy: sortBy.value,
     })
+    if (currentRequest !== requestId) return
     if (reset) {
       comments.value = res.list
     } else {
       comments.value.push(...res.list)
     }
     total.value = res.total
+    page.value = requestedPage
   } catch (error) {
+    if (currentRequest !== requestId) return
+    loadError.value = error instanceof Error ? error.message : '请稍后重试'
     console.error('Failed to load comments', error)
   } finally {
-    isLoading.value = false
+    if (currentRequest === requestId) isLoading.value = false
   }
-  await focusTargetComment()
+  if (currentRequest === requestId && !loadError.value) await focusTargetComment(currentRequest)
 }
+
+onBeforeUnmount(() => requestId++)
 
 const handleSortChange = (sort: 'time' | 'hot') => {
   if (sortBy.value === sort) return
@@ -264,6 +281,12 @@ onMounted(() => {
           </div>
         </div>
 
+        <FeedError
+          v-else-if="loadError"
+          key="error"
+          :message="loadError"
+          @retry="loadComments(true)"
+        />
         <EmptyState
           v-else
           key="empty"
@@ -273,17 +296,19 @@ onMounted(() => {
         />
       </Transition>
 
+      <FeedError
+        v-if="loadError && comments.length > 0"
+        :message="loadError"
+        has-items
+        @retry="loadComments()"
+      />
+
       <!-- Load More -->
       <div v-if="comments.length > 0 && comments.length < total" class="pt-4 text-center">
         <button
           class="ui-button inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-sm-plus text-muted-foreground/80 hover:text-primary"
           :disabled="isLoading"
-          @click="
-            () => {
-              page++
-              void loadComments()
-            }
-          "
+          @click="loadComments()"
         >
           <Loader2 v-if="isLoading" class="h-3.5 w-3.5 animate-spin" />
           {{ isLoading ? '正在加载…' : '加载更多评论' }}

@@ -279,7 +279,15 @@ const router = createRouter({
    * .route-leave-active 是 140ms（var(--duration-fast)），这里留 150ms 余量。
    * 返回上一页时等待 DOM 与列表高度就绪后恢复 savedPosition，不额外等待离场动画。
    */
-  async scrollBehavior(_to, _from, savedPosition) {
+  async scrollBehavior(to, from, savedPosition) {
+    // 同一视频切分 P 不应改变评论阅读位置。
+    if (
+      to.name === 'video-detail' &&
+      from.name === 'video-detail' &&
+      to.params.id === from.params.id
+    ) {
+      return false
+    }
     if (savedPosition) {
       // 等缓存列表重新挂载、虚拟网格完成测量，避免在空页面上恢复时被浏览器截断。
       await nextTick()

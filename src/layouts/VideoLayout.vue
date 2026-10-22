@@ -18,7 +18,10 @@ import Navbar from '@/components/layout/Navbar.vue'
     <main class="bg-card">
       <RouterView v-slot="{ Component, route }">
         <Transition name="route" mode="out-in">
-          <component :is="Component" :key="route.path" />
+          <component
+            :is="Component"
+            :key="route.name === 'video-detail' ? `video-${String(route.params.id)}` : route.path"
+          />
         </Transition>
       </RouterView>
     </main>

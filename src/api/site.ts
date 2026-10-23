@@ -138,6 +138,27 @@ export const hasStorageConfig = (
   return Boolean(storage && Object.keys(storage).length > 0)
 }
 
+/** 与后端分片校验一致：配置单位是 MB，比较时按 1024×1024 字节。 */
+export const BYTES_PER_MB = 1024 * 1024
+
+/**
+ * 公开配置里真正下发的单文件上限（MB）。
+ * 缺失、0 或非数字都视为「服务端不限制」，不能回落到本地默认值，否则会误拦合法文件。
+ */
+export const explicitMaxFileSizeMB = (
+  storage: Partial<StorageConfig> | null | undefined
+): number | null => {
+  const value = storage?.maxFileSize
+  if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) return null
+  return value
+}
+
+/** 整文件是否超过上限。上限未知时不在这里下结论，调用方要先确认配置已经加载。 */
+export const exceedsMaxUploadFileSize = (fileSizeBytes: number, maxFileSizeMB: number | null) => {
+  if (maxFileSizeMB == null || !Number.isFinite(fileSizeBytes) || fileSizeBytes < 0) return false
+  return fileSizeBytes > maxFileSizeMB * BYTES_PER_MB
+}
+
 // ============================================================================
 // Site API
 // ============================================================================

@@ -54,6 +54,8 @@ import { publishVideo, getPartitions, type Partition, type PublishVideoParams } 
 import { ApiBusinessError } from '@/api/request'
 import {
   DEFAULT_STORAGE_CONFIG,
+  exceedsMaxUploadFileSize,
+  explicitMaxFileSizeMB,
   getSiteConfig,
   hasStorageConfig,
   normalizeStorageConfig,
@@ -151,16 +153,22 @@ const addWorkFileInputRef = ref<HTMLInputElement | null>(null)
 const partitions = ref<Partition[]>([])
 const isPublishing = ref(false)
 const showBatchDialog = ref(false)
-const hasExplicitStorageConfig = ref(false)
 const uploadFeedback = ref<UploadFeedback | null>(null)
+/** loading：还在拉公开配置；ready：已拿到结果；unavailable：没读到，不能放行上传 */
+const storageLimitState = ref<'loading' | 'ready' | 'unavailable'>('loading')
+/** 服务端下发的单文件上限（MB）。null 表示已确认不限制，不能用本地默认值顶上 */
+const maxFileSizeMB = ref<number | null>(null)
 
 const storageConfig = ref<StorageConfig>({ ...DEFAULT_STORAGE_CONFIG })
 
 const chunkSizeBytes = computed(() => storageConfig.value.chunkSize * 1024 * 1024)
-const maxFileSizeBytes = computed(() => storageConfig.value.maxFileSize * 1024 * 1024)
-const effectiveMaxFileSizeBytes = computed(() =>
-  hasExplicitStorageConfig.value ? maxFileSizeBytes.value : Number.POSITIVE_INFINITY
-)
+
+let resolveStorageLimits = () => {}
+const storageLimitsReady = new Promise<void>((resolve) => {
+  resolveStorageLimits = resolve
+})
+
+const ensureStorageLimits = () => storageLimitsReady
 const VIDEO_FILE_EXTENSIONS = [
   'mp4',
   'm4v',
@@ -191,9 +199,14 @@ const uploadFacts = computed<{ icon: Component; title: string; text: string }[]>
   {
     icon: HardDrive,
     title: '单文件大小',
-    text: hasExplicitStorageConfig.value
-      ? `不超过 ${storageConfig.value.maxFileSize}MB`
-      : '本站未公开上限，超限时会明确提示原因',
+    text:
+      storageLimitState.value === 'loading'
+        ? '正在读取单文件上限'
+        : storageLimitState.value === 'unavailable'
+          ? '大小上限加载失败，请刷新后再选择文件'
+          : maxFileSizeMB.value != null
+            ? `不超过 ${maxFileSizeMB.value}MB`
+            : '本站未设置单文件上限',
   },
   {
     icon: Layers,
@@ -480,32 +493,36 @@ const showFileSizeLimitToast = (files: File[]) => {
 
   const firstFile = files[0]
   if (!firstFile) return
+  const limitMB = maxFileSizeMB.value
+  if (limitMB == null) return
   const title = files.length === 1 ? '文件超过大小上限' : '部分文件超过大小上限'
   const description =
     files.length === 1
-      ? `${firstFile.name} 当前约 ${formatFileSizeInMegabytes(firstFile)}，单文件最大只支持 ${storageConfig.value.maxFileSize}MB。`
+      ? `${firstFile.name} 当前约 ${formatFileSizeInMegabytes(firstFile)}，单文件最大只支持 ${limitMB}MB。`
       : `${formatRejectedSummary(
           files.map((file) => file.name),
           '部分文件'
-        )} 超过单文件 ${storageConfig.value.maxFileSize}MB 上限，请压缩后重试。`
+        )} 超过单文件 ${limitMB}MB 上限，请压缩后重试。`
 
   uploadFeedback.value = { title, description }
 }
 
 const getOversizeIssueText = (files: File[]) => {
+  const limitMB = maxFileSizeMB.value
   const [firstFile] = files
+  if (limitMB == null) return '超过单文件大小上限'
   if (!firstFile) {
-    return `超过 ${storageConfig.value.maxFileSize}MB`
+    return `超过 ${limitMB}MB`
   }
 
   if (files.length === 1) {
-    return `${firstFile.name} 当前约 ${formatFileSizeInMegabytes(firstFile)}，单文件最大只能上传 ${storageConfig.value.maxFileSize}MB`
+    return `${firstFile.name} 当前约 ${formatFileSizeInMegabytes(firstFile)}，单文件最大只能上传 ${limitMB}MB`
   }
 
   return `${formatRejectedSummary(
     files.map((file) => file.name),
     '部分文件'
-  )} 超过单文件 ${storageConfig.value.maxFileSize}MB 上限`
+  )} 超过单文件 ${limitMB}MB 上限`
 }
 
 const showPartCountLimitToast = (maxNum: number, currentCount: number) => {
@@ -775,11 +792,28 @@ const handleAICoverPick = (payload: { file: File; sourceUrl: string; prompt: str
   }
 }
 
-const importPendingAIVideoDraft = () => {
-  const draft = creatorBridgeStore.pendingVideoImport
-  if (!draft || importedAIDraftIds.has(draft.id)) return
+const importPendingAIVideoDraft = async () => {
+  const draftId = creatorBridgeStore.pendingVideoImport?.id
+  if (!draftId || importedAIDraftIds.has(draftId)) return
+  importedAIDraftIds.add(draftId)
+  await ensureStorageLimits()
 
-  importedAIDraftIds.add(draft.id)
+  const draft = creatorBridgeStore.pendingVideoImport
+  if (!draft || draft.id !== draftId) return
+
+  if (storageLimitState.value !== 'ready') {
+    uploadFeedback.value = {
+      title: '还不能开始上传',
+      description: '单文件大小上限没有加载成功，请刷新页面后再导入视频。',
+    }
+    return
+  }
+  if (exceedsConfiguredFileSizeLimit(draft.file)) {
+    creatorBridgeStore.clearPendingVideoImport()
+    showFileSizeLimitToast([draft.file])
+    return
+  }
+
   const workTitle = draft.title.trim() || getDefaultPartTitle(draft.file.name)
   const part = createVideoPart(draft.file, {
     title: workTitle,
@@ -794,29 +828,44 @@ const importPendingAIVideoDraft = () => {
   processUploadQueue()
 }
 
+const applyStorageConfig = (storage: Partial<StorageConfig> | null | undefined) => {
+  storageConfig.value = normalizeStorageConfig(hasStorageConfig(storage) ? storage : undefined)
+  maxFileSizeMB.value = explicitMaxFileSizeMB(storage)
+  storageLimitState.value = 'ready'
+}
+
 onMounted(async () => {
-  const [partitionRes, configRes] = await Promise.allSettled([getPartitions(), getSiteConfig()])
-  if (partitionRes.status === 'fulfilled') {
-    partitions.value = partitionRes.value
-  }
-  if (configRes.status === 'fulfilled') {
-    const siteStorage = configRes.value.site?.storage
-    hasExplicitStorageConfig.value = hasStorageConfig(siteStorage)
-    storageConfig.value = normalizeStorageConfig(siteStorage)
+  try {
+    const [partitionRes, configRes] = await Promise.allSettled([getPartitions(), getSiteConfig()])
+    if (partitionRes.status === 'fulfilled') {
+      partitions.value = partitionRes.value
+    }
+    if (configRes.status === 'fulfilled') {
+      applyStorageConfig(configRes.value.site?.storage)
+    } else {
+      storageLimitState.value = 'unavailable'
+      maxFileSizeMB.value = null
+    }
+  } finally {
+    if (storageLimitState.value === 'loading') {
+      storageLimitState.value = 'unavailable'
+      maxFileSizeMB.value = null
+    }
+    resolveStorageLimits()
   }
 
   refreshScheduleBoundary()
   scheduleBoundaryTimer = window.setInterval(refreshScheduleBoundary, 30000)
   window.addEventListener('dragover', handleWindowDragOver)
   window.addEventListener('drop', handleWindowDrop)
-  importPendingAIVideoDraft()
+  void importPendingAIVideoDraft()
 })
 
 watch(
   () => creatorBridgeStore.pendingVideoImport?.id,
   (draftId) => {
     if (!draftId) return
-    importPendingAIVideoDraft()
+    void importPendingAIVideoDraft()
   }
 )
 
@@ -951,7 +1000,7 @@ const onDrop = (e: DragEvent) => {
 
   const files = getFilesFromDataTransfer(e.dataTransfer)
   if (files.length > 0) {
-    handleFilesSelect(files)
+    void handleFilesSelect(files)
   }
 }
 
@@ -959,7 +1008,7 @@ const onDropAsParts = (e: DragEvent) => {
   isDragging.value = false
   const files = getFilesFromDataTransfer(e.dataTransfer)
   if (files.length > 0) {
-    handleFilesSelect(files)
+    void handleFilesSelect(files)
   }
 }
 
@@ -967,7 +1016,7 @@ const onDropAsNewWorks = (e: DragEvent) => {
   isDragging.value = false
   const files = getFilesFromDataTransfer(e.dataTransfer)
   if (files.length > 0) {
-    addFilesAsNewWorks(files)
+    void addFilesAsNewWorks(files)
   }
 }
 
@@ -981,11 +1030,11 @@ const onDropMissed = () => {
 }
 const onFileChange = (e: Event) => {
   const target = e.target as HTMLInputElement
-  const files = target.files
-  if (files && files.length > 0) {
-    handleFilesSelect(files)
-  }
+  const files = target.files ? Array.from(target.files) : []
   target.value = ''
+  if (files.length > 0) {
+    void handleFilesSelect(files)
+  }
 }
 
 const openVideoPicker = (target: 'initial' | 'append') => {
@@ -1104,7 +1153,14 @@ const isLikelyVideoFile = (file: File) => {
 }
 
 const exceedsConfiguredFileSizeLimit = (file: File) => {
-  return file.size > effectiveMaxFileSizeBytes.value
+  return exceedsMaxUploadFileSize(file.size, maxFileSizeMB.value)
+}
+
+const showStorageLimitUnavailable = (description: string) => {
+  uploadFeedback.value = {
+    title: '还不能开始上传',
+    description,
+  }
 }
 
 const processUploadQueue = () => {
@@ -1124,8 +1180,14 @@ const processUploadQueue = () => {
   }
 }
 
-const handleFilesSelect = (files: FileList | File[]) => {
+const handleFilesSelect = async (files: FileList | File[]) => {
   const allFiles = Array.from(files)
+  await ensureStorageLimits()
+  if (storageLimitState.value !== 'ready') {
+    showStorageLimitUnavailable('单文件大小上限没有加载成功，请刷新页面后再选择视频。')
+    return
+  }
+
   const unsupportedFiles = allFiles
     .map((file) => ({ file, reason: getVideoFileRejectionReason(file) }))
     .filter((entry) => entry.reason)
@@ -1172,9 +1234,7 @@ const handleFilesSelect = (files: FileList | File[]) => {
   const filesToAdd = videoFiles.slice(0, remaining)
   const ignoredByLimit = videoFiles.slice(remaining)
 
-  const oversized = hasExplicitStorageConfig.value
-    ? filesToAdd.filter((file) => exceedsConfiguredFileSizeLimit(file))
-    : []
+  const oversized = filesToAdd.filter((file) => exceedsConfiguredFileSizeLimit(file))
   const validFiles = filesToAdd.filter((file) => !exceedsConfiguredFileSizeLimit(file))
 
   const uploadIssues: string[] = []
@@ -1212,7 +1272,7 @@ const handleFilesSelect = (files: FileList | File[]) => {
       )}`
     )
   }
-  if (hasExplicitStorageConfig.value && oversized.length > 0) {
+  if (oversized.length > 0) {
     uploadIssues.push(getOversizeIssueText(oversized))
   }
   if (uploadIssues.length > 0) {
@@ -1223,7 +1283,7 @@ const handleFilesSelect = (files: FileList | File[]) => {
   }
 
   if (validFiles.length === 0) return
-  uploadFeedback.value = null
+  if (uploadIssues.length === 0) uploadFeedback.value = null
 
   const newParts: VideoPart[] = validFiles.map((file) => createVideoPart(file))
 
@@ -1249,6 +1309,20 @@ const uploadPart = async (part: VideoPart, isResume = false) => {
   const signal = part.abortController.signal
 
   try {
+    await ensureStorageLimits()
+    if (signal.aborted) throw new Error('canceled')
+    if (storageLimitState.value !== 'ready') {
+      part.status = 'error'
+      part.errorMessage = '单文件大小上限没有加载成功，请刷新页面后重试'
+      return
+    }
+    // 分片发出去之前就停。后端要等已落盘分片合计超限才会拒绝，大文件会白传很久。
+    if (exceedsConfiguredFileSizeLimit(part.file)) {
+      part.status = 'error'
+      part.errorMessage = getOversizeIssueText([part.file])
+      return
+    }
+
     if (!isResume) {
       part.progress = 0
       part.errorMessage = ''
@@ -1439,7 +1513,13 @@ const removeWork = (index: number) => {
 }
 
 /** 每个文件各自成为一个独立作品（「添加作品」按钮与拖拽落点共用） */
-const addFilesAsNewWorks = (files: File[]) => {
+const addFilesAsNewWorks = async (files: File[]) => {
+  await ensureStorageLimits()
+  if (storageLimitState.value !== 'ready') {
+    showStorageLimitUnavailable('单文件大小上限没有加载成功，请刷新页面后再选择视频。')
+    return
+  }
+
   const videoFiles = files.filter(isLikelyVideoFile)
   if (videoFiles.length === 0) {
     uploadFeedback.value = {
@@ -1448,19 +1528,20 @@ const addFilesAsNewWorks = (files: File[]) => {
     }
     return
   }
+  const oversized = videoFiles.filter((file) => exceedsConfiguredFileSizeLimit(file))
   const validFiles = videoFiles.filter((file) => !exceedsConfiguredFileSizeLimit(file))
   if (validFiles.length === 0) {
-    if (hasExplicitStorageConfig.value) {
-      showFileSizeLimitToast(videoFiles)
-    } else {
-      uploadFeedback.value = {
-        title: '没有可加入上传队列的视频',
-        description: '当前选择的文件未通过上传校验，请检查后重试。',
-      }
-    }
+    showFileSizeLimitToast(videoFiles)
     return
   }
-  uploadFeedback.value = null
+  if (oversized.length > 0) {
+    uploadFeedback.value = {
+      title: '部分文件未加入上传队列',
+      description: getOversizeIssueText(oversized),
+    }
+  } else {
+    uploadFeedback.value = null
+  }
   validFiles.forEach((file) => {
     const part = createVideoPart(file)
     const work = createWork([part])
@@ -1473,9 +1554,10 @@ const addFilesAsNewWorks = (files: File[]) => {
 
 const onAddWorkFileChange = (e: Event) => {
   const target = e.target as HTMLInputElement
-  if (!target.files?.length) return
-  addFilesAsNewWorks(Array.from(target.files))
+  const files = target.files ? Array.from(target.files) : []
   target.value = ''
+  if (!files.length) return
+  void addFilesAsNewWorks(files)
 }
 
 const replaceFileInputRef = ref<HTMLInputElement | null>(null)
@@ -1486,11 +1568,20 @@ const openReplacePicker = (index: number) => {
   replaceFileInputRef.value?.click()
 }
 
-const onReplaceFileChange = (e: Event) => {
+const onReplaceFileChange = async (e: Event) => {
   const target = e.target as HTMLInputElement
-  if (!target.files?.length || replaceTargetPartIndex.value === null) return
-  const file = target.files[0]
-  if (!file || !activeWork.value) return
+  const file = target.files?.[0]
+  const partIndex = replaceTargetPartIndex.value
+  target.value = ''
+  replaceTargetPartIndex.value = null
+  if (!file || partIndex === null || !activeWork.value) return
+  await ensureStorageLimits()
+  if (!activeWork.value) return
+
+  if (storageLimitState.value !== 'ready') {
+    showStorageLimitUnavailable('单文件大小上限没有加载成功，请刷新页面后再更换视频。')
+    return
+  }
 
   if (isSourceFileNameTooLong(file.name)) {
     toast({
@@ -1498,22 +1589,19 @@ const onReplaceFileChange = (e: Event) => {
       description: getSourceFileNameTooLongMessage(file.name),
       variant: 'destructive',
     })
-    target.value = ''
     return
   }
   const reason = getVideoFileRejectionReason(file)
   if (reason) {
     toast({ title: '无法更换', description: reason, variant: 'destructive' })
-    target.value = ''
     return
   }
   if (exceedsConfiguredFileSizeLimit(file)) {
     showFileSizeLimitToast([file])
-    target.value = ''
     return
   }
 
-  const part = activeWork.value.parts[replaceTargetPartIndex.value]
+  const part = activeWork.value.parts[partIndex]
   if (!part) return
   if (part.abortController) {
     part.abortController.abort()
@@ -1527,7 +1615,7 @@ const onReplaceFileChange = (e: Event) => {
   }
   part.sourceFileName = nextSourceName
 
-  if (replaceTargetPartIndex.value === 0) {
+  if (partIndex === 0) {
     clearVideoCoverSuggestions(activeWork.value)
   }
 
@@ -1541,9 +1629,6 @@ const onReplaceFileChange = (e: Event) => {
   part.uploadedBytes = 0
   part.speedBps = 0
   part.etaMs = 0
-
-  target.value = ''
-  replaceTargetPartIndex.value = null
 
   processUploadQueue()
 }

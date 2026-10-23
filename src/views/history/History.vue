@@ -577,12 +577,13 @@ watch(searchKeyword, (val) => {
 }
 
 .hist-batch-delete {
-  color: var(--color-background);
-  background-color: var(--color-foreground);
-  border: 1px solid var(--color-foreground);
+  color: var(--color-destructive-foreground);
+  background-color: var(--color-destructive);
+  border: 1px solid var(--color-destructive);
 
   &:hover:not(:disabled) {
-    opacity: 0.85;
+    background-color: color-mix(in oklch, var(--color-destructive) 88%, var(--color-foreground));
+    border-color: color-mix(in oklch, var(--color-destructive) 88%, var(--color-foreground));
   }
 
   &:active:not(:disabled) {
@@ -802,9 +803,9 @@ watch(searchKeyword, (val) => {
     width: 26px;
     height: 26px;
     border-radius: 50%;
-    background: color-mix(in oklch, var(--media-overlay) 78%, transparent);
+    background-color: color-mix(in oklch, var(--media-overlay) 78%, transparent);
     color: var(--media-overlay-text);
-    border: none;
+    border: 1px solid color-mix(in oklch, var(--media-overlay-text) 18%, transparent);
     cursor: pointer;
     display: flex;
     align-items: center;
@@ -812,10 +813,14 @@ watch(searchKeyword, (val) => {
     opacity: 0;
     transition:
       opacity var(--duration-fast) linear,
-      background-color var(--duration-fast) var(--ease-out-quart);
+      color var(--duration-fast) linear,
+      background-color var(--duration-fast) var(--ease-out-quart),
+      border-color var(--duration-fast) var(--ease-out-quart);
 
     &:hover {
-      background-color: var(--color-accent);
+      background-color: var(--status-danger);
+      color: var(--signal-foreground);
+      border-color: var(--status-danger);
     }
   }
 }
